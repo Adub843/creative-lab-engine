@@ -1,0 +1,12 @@
+{
+  "name": "business-console",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "netlify dev",
+    "check": "node --check assets/app.js && node --check assets/studio.js && node --check assets/data.js && node --check netlify/functions/images.mjs"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}
