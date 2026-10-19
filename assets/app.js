@@ -43,6 +43,7 @@ export function openService(s) {
   const body = document.getElementById("d-body");
   body.replaceChildren(
     el("div", { class: "stack" }, el("span", { class: "eyebrow" }, "What it does"), el("p", {}, s.does)),
+    s.source ? el("div", { class: "stack" }, el("span", { class: "eyebrow" }, "Code lives in"), el("p", {}, s.source)) : null,
     s.note ? el("div", { class: "stack" }, el("span", { class: "eyebrow" }, "Heads up"), el("p", {}, s.note)) : null,
     el("div", { class: "links" }, s.links.map((l) =>
       el("a", { href: l.url, target: ext(l.url) ? "_blank" : null, rel: "noopener", onclick: ext(l.url) ? null : closeDrawer },
@@ -152,6 +153,9 @@ const ED_LINKS = [
   ["Orders", "Shopify admin", "https://theelevateddesignsllc.com/admin/orders"],
   ["Products", "Shopify admin", "https://theelevateddesignsllc.com/admin/products"],
   ["Add a product", "Shopify admin", "https://theelevateddesignsllc.com/admin/products/new"],
+  ["Designs and listings", "Elevated Designs app", "https://charlestonprintdesigns.netlify.app/#/"],
+  ["Launch plan", "Elevated Designs app", "https://charlestonprintdesigns.netlify.app/#/plan"],
+  ["Market calendar", "Elevated Designs app", "https://charlestonprintdesigns.netlify.app/#/cal"],
   ["Design a shirt", "Design Studio", "#studio"],
   ["Discounts", "Shopify admin", "https://theelevateddesignsllc.com/admin/discounts"],
 ];

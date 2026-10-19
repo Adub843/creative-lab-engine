@@ -37,18 +37,14 @@ export const SERVICES = [
     does: "Charleston 3D's public website, built on Wix (site name \"Charelston3D\").",
     note: "Wix emailed on 8 Oct that the Wix Studio plan was canceled and the @charleston3d.com business email will expire at the end of the billing cycle.",
     links: [BRANDS.c3d.admin, { label: "Open live site", url: BRANDS.c3d.site }] },
-  { id: "cpd", name: "charlestonprintdesigns", brand: "c3d", kind: "Web app · Netlify", status: "live",
-    does: "The previous console. Functions: print, shop-img and state (saved data at /api/state in Netlify storage).",
-    note: "Last sent from a computer on 17 Oct, not from GitHub. Its pages move into this console once its files are downloaded.",
-    links: nl("charlestonprintdesigns") },
-  { id: "hype", name: "hype-chain-maker", brand: "c3d", kind: "Web app · Netlify", status: "live",
+  { id: "hype", source: "Your PC: Documents\\hype-chain-maker-site", name: "hype-chain-maker", brand: "c3d", kind: "Web app · Netlify", status: "live",
     does: "3D-print maker tool that exports .3MF files, with an order form and library and orders functions.",
     links: nl("hype-chain-maker") },
   { id: "npm", name: "nameplate-maker", brand: "c3d", kind: "Web app · Netlify", status: "live",
     does: "Probably a nameplate design tool for printing.", links: nl("nameplate-maker") },
   { id: "ff", name: "3d-print-file-finder", brand: "c3d", kind: "Web app · Netlify", status: "live",
     does: "Probably a tool for finding 3D-print files.", links: nl("3d-print-file-finder") },
-  { id: "pt", name: "print-trends", brand: "c3d", kind: "Web app · Netlify", status: "live",
+  { id: "pt", source: "Your PC: Documents\\print-trends", name: "print-trends", brand: "c3d", kind: "Web app · Netlify", status: "live",
     does: "Probably tracks what's selling in 3D prints.", links: nl("print-trends") },
   { id: "noz", name: "nozzlelog", brand: "c3d", kind: "Placeholder · Netlify", status: "empty",
     does: "Created but never launched. Probably meant as a printer log.", links: nlAdmin("nozzlelog") },
@@ -62,16 +58,25 @@ export const SERVICES = [
     links: [BRANDS.ed.admin, { label: "Open live store", url: BRANDS.ed.site },
       { label: "Products", url: "https://theelevateddesignsllc.com/admin/products" },
       { label: "Orders", url: "https://theelevateddesignsllc.com/admin/orders" }] },
+  { id: "cpd", name: "Elevated Designs app", brand: "ed", kind: "Web app · Netlify", status: "live",
+    does: "Your previous console, at charlestonprintdesigns.netlify.app. Every design with its Etsy listing text and photos, the 30-day launch plan, the Charleston market calendar and your business docs. It syncs between devices with a passcode.",
+    source: "Your PC: Documents\\GitHub\\elevated -designs (a local git copy, not on GitHub yet). Its README says it is the only source for this site.",
+    note: "Its 330 MB of design photos only exist on your PC and in the live site, so there is no backup of this app's code or images online.",
+    links: [{ label: "Designs", url: "https://charlestonprintdesigns.netlify.app/#/" },
+      { label: "Launch plan", url: "https://charlestonprintdesigns.netlify.app/#/plan" },
+      { label: "Market calendar", url: "https://charlestonprintdesigns.netlify.app/#/cal" },
+      { label: "Docs", url: "https://charlestonprintdesigns.netlify.app/#/docs" },
+      ...nlAdmin("charlestonprintdesigns")] },
   { id: "studio", name: "Design Studio", brand: "ed", kind: "In this console", status: "live",
     does: "Image library and shirt designer. Images are stored online, so your PC doesn't need to be on.",
     links: [{ label: "Open Design Studio", url: "#studio" }] },
 
   // Content and video
-  { id: "btd", name: "briefline-trend-desk", brand: "other", kind: "Web app · Netlify", status: "attn",
+  { id: "btd", source: "Your PC: Documents\\briefline-trend-desk", name: "briefline-trend-desk", brand: "other", kind: "Web app · Netlify", status: "attn",
     does: "Trend dashboard. Two functions (scan-a, scan-b) run by themselves every 3 hours.",
     note: "Scheduled scans use Netlify credits around the clock. The team hit 75% of 3,000 credits by 12 Oct.",
     links: nl("briefline-trend-desk") },
-  { id: "vs", name: "video-studio-hq", brand: "other", kind: "Web app · Netlify", status: "live",
+  { id: "vs", source: "Your PC: Documents\\video-studio", name: "video-studio-hq", brand: "other", kind: "Web app · Netlify", status: "live",
     does: "Single-page video studio tool.", links: nl("video-studio-hq") },
   { id: "fvc", name: "funnyvideoclips-submit", brand: "other", kind: "Website · Netlify", status: "live",
     does: "Clip submission page with terms and privacy pages.", links: nl("funnyvideoclips-submit") },
@@ -82,7 +87,7 @@ export const SERVICES = [
     links: [{ label: "Open YouTube Studio", url: "https://studio.youtube.com" }] },
 
   // Other apps
-  { id: "oops", name: "oops-i-bought-a-house", brand: "other", kind: "Web app · Netlify", status: "live",
+  { id: "oops", source: "Your PC: Documents\\oops-i-bought-a-house", name: "oops-i-bought-a-house", brand: "other", kind: "Web app · Netlify", status: "live",
     does: "Two-page app with identify and vision functions.", links: nl("oops-i-bought-a-house") },
   { id: "pr", name: "partreiver", brand: "other", kind: "Web app · Netlify", status: "attn",
     does: "Same two functions as oops-i-bought-a-house, byte for byte. Probably a copy.", links: nl("partreiver") },
@@ -117,8 +122,8 @@ export const SERVICES = [
     does: "Created but never launched.", links: nlAdmin(n) }));
 
 export const ROUTES = [
-  { brand: "c3d", hops: [["Customers find you", "wix"], ["Tools and orders", "hype"], ["Console", "cpd"], ["Code", "gh"]] },
-  { brand: "ed", hops: [["Design", "studio"], ["Sell", "shop"], ["Code", "gh"]] },
+  { brand: "c3d", hops: [["Customers find you", "wix"], ["Tools and orders", "hype"], ["Code", "gh"]] },
+  { brand: "ed", hops: [["Design", "studio"], ["Catalog and listings", "cpd"], ["Sell", "shop"], ["Code", "gh"]] },
   { brand: "other", hops: [["Spot trends", "btd"], ["Make videos", "vs"], ["Collect clips", "fvc"], ["Publish", "yt"]] },
 ];
 
@@ -129,5 +134,7 @@ export const CLEANUP = [
   { what: "workflow-notes and workflow-journal", why: "Two note apps", fix: "Merge into one" },
   { what: "creative-lab-hq and creativelab-links", why: "Two empty versions of one idea", fix: "Delete both" },
   { what: "briefline-trend-desk scans every 3 hours", why: "Likely the biggest drain on Netlify credits", fix: "Slow to once or twice a day" },
+  { what: "Documents\\PrintRoomDeploy (31 MB zip plus copies)", why: "The old Print Room, already merged into the Elevated Designs app", fix: "Delete the folder after a last look" },
+  { what: "Elevated Designs app has no online backup", why: "Code and 330 MB of photos live only on your PC and the live site", fix: "Push its code to GitHub and keep photos in cloud storage" },
   { what: "Wix plan canceled", why: "charleston3d.com and its email will expire", fix: "Renew Wix or move the site" },
 ];
