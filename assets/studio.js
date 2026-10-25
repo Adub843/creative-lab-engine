@@ -2,6 +2,7 @@
 // Images live in Netlify Blobs through /api/images, so the PC can stay off.
 // If that API can't be reached (opened as plain files, or not deployed yet), images are kept in this browser instead.
 import { el, store, toast } from "./app.js";
+import { consoleKey } from "./api.js";
 
 const API = "/api/images";
 const PRINT_W = 4500; // 15 in at 300 dpi
@@ -12,7 +13,7 @@ const COLORS = [
 ];
 
 // ---------- storage ----------
-const keyHeader = () => { const k = store.get("bc-key", ""); return k ? { "x-console-key": k } : {}; };
+const keyHeader = () => { const k = consoleKey.get(); return k ? { "x-console-key": k } : {}; };
 
 let localDb;
 const db = () => localDb ??= new Promise((ok, fail) => {
@@ -61,7 +62,7 @@ async function upload(file, tags) {
       headers: { "content-type": file.type, "x-filename": file.name, "x-tags": tags, ...keyHeader() },
       body: file,
     });
-    if (res.status === 401) throw Object.assign(new Error("Wrong or missing console key. Add it under Settings below."), { stop: true });
+    if (res.status === 401 || res.status === 403) throw Object.assign(new Error(res.status === 401 ? "Wrong or missing console key. Add it under Settings below." : "Uploads are off until CONSOLE_KEY is set for this console."), { stop: true });
     if (res.ok) return { saved: "cloud", item: (await res.json()).item };
     if (res.status === 413 || res.status === 415) throw Object.assign(new Error((await res.json().catch(() => ({}))).error ?? res.statusText), { stop: true });
   } catch (e) { if (e.stop) throw e; }
@@ -122,7 +123,7 @@ export async function renderStudio() {
   const opIn = el("input", { type: "range", min: 10, max: 100, value: 100 });
   const swatches = el("div", { class: "swatches" });
   const guide = el("input", { type: "checkbox", checked: true });
-  const keyIn = el("input", { class: "field", type: "password", placeholder: "Only needed if a key is set in Netlify", value: store.get("bc-key", "") });
+  const keyIn = el("input", { class: "field", type: "password", placeholder: "The CONSOLE_KEY value", autocomplete: "off", value: consoleKey.get() });
 
   // ----- library -----
   const drawLib = () => {
@@ -274,7 +275,7 @@ export async function renderStudio() {
   COLORS.forEach(([name, c]) => swatches.append(el("button", { type: "button", title: name, "aria-label": name, "data-c": c,
     style: `background:${c}`, onclick: () => { state.color = c; drawStage(); save(); } })));
   guide.addEventListener("change", drawStage);
-  keyIn.addEventListener("change", () => { store.set("bc-key", keyIn.value.trim()); toast("Console key saved on this device"); });
+  keyIn.addEventListener("change", () => { consoleKey.set(keyIn.value.trim()); toast("Console key kept for this browser tab"); });
 
   // ----- export -----
   async function exportPng() {

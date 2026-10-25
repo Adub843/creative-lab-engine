@@ -17,6 +17,7 @@ export const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage blocked */ } },
 };
 export const toast = (msg) => {
+  document.querySelectorAll(".toast").forEach((old) => old.remove());
   const t = el("div", { class: "toast", role: "status" }, msg);
   document.body.append(t);
   setTimeout(() => t.remove(), 3200);
@@ -60,6 +61,8 @@ scrim.addEventListener("click", closeDrawer);
 const PAGES = [
   { name: "Dashboard", url: "#dashboard", kind: "Page" },
   { name: "Charleston 3D", url: "#c3d", kind: "Page" },
+  { name: "Products", url: "#products", kind: "Page" },
+  { name: "Insights", url: "#insights", kind: "Page" },
   { name: "Elevated Designs", url: "#ed", kind: "Page" },
   { name: "Design Studio", url: "#studio", kind: "Page" },
   { name: "Service Map", url: "#map", kind: "Page" },
@@ -141,16 +144,20 @@ async function recentImages(n = 12) {
 
 // ---------- pages ----------
 const C3D_LINKS = [
-  ["Website", "charleston3d.com", BRANDS.c3d.site],
-  ["Products", "Pick what's on the site", "#products"],
+  ["Website", "charleston3d.com · Shopify", BRANDS.c3d.site],
+  ["Products", "Pick what's on the site", "#products/c3d"],
+  ["Insights", "Sales, visits, forecast", "#insights/c3d"],
   ["Shopify admin", "Orders and products", BRANDS.c3d.admin.url],
+  ["Theme", "Shopify theme editor", `${BRANDS.c3d.site}/admin/themes`],
   ["Order maker", "hype-chain-maker", "https://hype-chain-maker.netlify.app"],
   ["Nameplates", "nameplate-maker", "https://nameplate-maker.netlify.app"],
   ["File finder", "3d-print-file-finder", "https://3d-print-file-finder.netlify.app"],
   ["Print trends", "print-trends", "https://print-trends.netlify.app"],
 ];
 const ED_LINKS = [
-  ["Store", "theelevateddesignsllc.com", BRANDS.ed.site],
+  ["Website", "theelevateddesignsllc.com · Shopify", BRANDS.ed.site],
+  ["Products", "Pick what's on the site", "#products/ed"],
+  ["Insights", "Sales, visits, forecast", "#insights/ed"],
   ["Orders", "Shopify admin", "https://theelevateddesignsllc.com/admin/orders"],
   ["Products", "Shopify admin", "https://theelevateddesignsllc.com/admin/products"],
   ["Add a product", "Shopify admin", "https://theelevateddesignsllc.com/admin/products/new"],
@@ -159,6 +166,7 @@ const ED_LINKS = [
   ["Market calendar", "Elevated Designs app", "https://charlestonprintdesigns.netlify.app/#/cal"],
   ["Design a shirt", "Design Studio", "#studio"],
   ["Discounts", "Shopify admin", "https://theelevateddesignsllc.com/admin/discounts"],
+  ["Theme", "Shopify theme editor", `${BRANDS.ed.site}/admin/themes`],
 ];
 
 function header(eyebrow, title, sub, actions = []) {
@@ -191,7 +199,7 @@ function dashboard() {
     el("div", { class: "grid-2" },
       el("section", { class: "panel" }, el("h2", {}, "Needs you"), alertsList(attn)),
       el("section", { class: "panel" }, el("h2", {}, "Today's tasks"),
-        todoWidget("bc-todo", [{ t: "Pick which Charleston 3D products go on the new site", d: false }, { t: "Check Netlify credit usage", d: false }]))),
+        todoWidget("bc-todo", [{ t: "Pick which products are live on each store", d: false }, { t: "Check Insights for both stores", d: false }]))),
     el("section", { class: "panel" },
       el("div", { class: "panel-head" }, el("h2", {}, "Latest images"), el("a", { class: "btn ghost", href: "#studio" }, "Open library")), imgs),
   ];
@@ -242,7 +250,12 @@ function mapPage(initial = "all") {
 
 async function productsPage() {
   const { renderProducts } = await import("./products.js");
-  return [header("Charleston 3D", "Products", "Pick which designs are on charleston3d.com. Switching one on makes it active in Shopify and rebuilds the site."), await renderProducts()];
+  return [header("Both stores", "Products", "Pick which designs are live on each store's Shopify site. Switching one on makes it active and publishes it to the Online Store, so it shows up right away."), await renderProducts()];
+}
+
+async function insightsPage() {
+  const { renderInsights } = await import("./insights.js");
+  return [header("Both stores", "Insights", "Sales, visits and a 30-day forecast from Shopify, with what to do next."), await renderInsights()];
 }
 
 async function studioPage() {
@@ -266,12 +279,13 @@ async function render() {
     map: () => mapPage(pendingFilter ?? "all"),
     studio: studioPage,
     products: productsPage,
+    insights: insightsPage,
   };
   const make = pages[route] ?? dashboard;
   const nodes = await make();
   pendingFilter = null;
   view.replaceChildren(...[nodes].flat());
-  document.title = `${{ dashboard: "Dashboard", c3d: "Charleston 3D", ed: "Elevated Designs", map: "Service Map", studio: "Design Studio", products: "Products" }[route] ?? "Dashboard"} · Business Console`;
+  document.title = `${{ dashboard: "Dashboard", c3d: "Charleston 3D", ed: "Elevated Designs", map: "Service Map", studio: "Design Studio", products: "Products", insights: "Insights" }[route] ?? "Dashboard"} · Business Console`;
   view.focus({ preventScroll: true });
   window.scrollTo(0, 0);
 }

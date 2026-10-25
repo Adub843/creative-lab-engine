@@ -1,5 +1,6 @@
 // Everything the console knows about the two businesses and the services behind them.
 // Mapped 18 Oct 2026 from the connected Netlify, Wix and Shopify accounts and account emails.
+// 25 Oct 2026: both store sites are Shopify themes on their own stores (no Netlify hosting).
 // "probably" in a description means it was inferred from a name or setup, not opened.
 
 const nl = (n) => [
@@ -11,13 +12,13 @@ const nlAdmin = (n) => [{ label: "Open in Netlify", url: `https://app.netlify.co
 export const BRANDS = {
   c3d: {
     name: "Charleston 3D",
-    tagline: "Personalized 3D printed gifts, sold on a coded site with Shopify checkout",
+    tagline: "Personalized 3D printed gifts, sold on a hand-coded Shopify theme with Shopify checkout",
     site: "https://charleston3d.com",
-    admin: { label: "Shopify admin", url: "https://admin.shopify.com/" },
+    admin: { label: "Shopify admin", url: "https://charleston3d.com/admin" },
   },
   ed: {
     name: "Elevated Designs",
-    tagline: "Custom apparel and designs, sold on Shopify",
+    tagline: "Custom apparel and print designs, sold on a hand-coded Shopify theme with Shopify checkout",
     site: "https://theelevateddesignsllc.com",
     admin: { label: "Shopify admin", url: "https://theelevateddesignsllc.com/admin" },
   },
@@ -33,14 +34,15 @@ export const STATUS = {
 
 export const SERVICES = [
   // Charleston 3D
-  { id: "c3dsite", name: "charleston3d.com", brand: "c3d", kind: "Website · Netlify + Shopify", status: "attn",
-    does: "Charleston 3D's coded storefront (Astro on Netlify). Products come from Shopify and checkout is Shopify's. Pick what's on it from the Products page.",
-    source: "GitHub: Adub843/charleston3d-site",
-    note: "Being built in Oct 2026. charleston3d.com is set as the Shopify store's domain until the new site goes live. The old Wix plan was canceled on 8 Oct.",
-    links: [{ label: "Products on the site", url: "#products" }, { label: "Open live site", url: BRANDS.c3d.site }] },
+  { id: "c3dsite", name: "charleston3d.com", brand: "c3d", kind: "Website · Shopify theme", status: "attn",
+    does: "Charleston 3D's storefront: a hand-coded Shopify theme running on the Charleston3D store. Products, prices and checkout come live from Shopify, so a product switched on in Products shows up at once. No Netlify, no build step.",
+    source: "GitHub: Adub843/charleston3d-site, branch claude/shopify-theme (one theme for both stores)",
+    note: "The coded theme is being finished in Oct 2026; the live theme is still \"Charleston3D Lowcountry\" until it's published. The old Wix plan was canceled on 8 Oct.",
+    links: [{ label: "Products on the site", url: "#products/c3d" }, { label: "Insights", url: "#insights/c3d" },
+      { label: "Open live site", url: BRANDS.c3d.site }, { label: "Themes in Shopify", url: `${BRANDS.c3d.site}/admin/themes` }] },
   { id: "c3dshop", name: "Charleston3D store", brand: "c3d", kind: "Store backend · Shopify", status: "live",
-    does: "Shopify store (Basic plan) that holds the Charleston 3D catalog, takes payment and sends order emails. Moving checkout to Stripe is planned for January.",
-    links: [BRANDS.c3d.admin] },
+    does: "Shopify store (Basic plan) that holds the Charleston 3D catalog, hosts the site, takes payment and sends order emails.",
+    links: [BRANDS.c3d.admin, { label: "Orders", url: `${BRANDS.c3d.site}/admin/orders` }, { label: "Products", url: `${BRANDS.c3d.site}/admin/products` }] },
   { id: "hype", source: "Your PC: Documents\\hype-chain-maker-site", name: "hype-chain-maker", brand: "c3d", kind: "Web app · Netlify", status: "live",
     does: "3D-print maker tool that exports .3MF files, with an order form and library and orders functions.",
     links: nl("hype-chain-maker") },
@@ -56,13 +58,19 @@ export const SERVICES = [
     does: "Created but never launched. Probably meant as a print cost ledger.", links: nlAdmin("layerledger-agxn") },
 
   // Elevated Designs
-  { id: "shop", name: "Elevated Designs store", brand: "ed", kind: "Online store · Shopify", status: "live",
-    does: "Shopify store at theelevateddesignsllc.com on the Basic plan.",
+  { id: "edsite", name: "theelevateddesignsllc.com", brand: "ed", kind: "Website · Shopify theme", status: "attn",
+    does: "Elevated Designs' storefront: the same hand-coded Shopify theme as Charleston 3D with the Elevated Designs look, running on its own Shopify store. Products and checkout come live from Shopify.",
+    source: "GitHub: Adub843/charleston3d-site, branch claude/shopify-theme (Elevated Designs preset)",
+    note: "Being built in Oct 2026. Publish the theme in the Elevated Designs store when it's ready.",
+    links: [{ label: "Products on the site", url: "#products/ed" }, { label: "Insights", url: "#insights/ed" },
+      { label: "Open live site", url: BRANDS.ed.site }, { label: "Themes in Shopify", url: `${BRANDS.ed.site}/admin/themes` }] },
+  { id: "shop", name: "Elevated Designs store", brand: "ed", kind: "Store backend · Shopify", status: "live",
+    does: "Shopify store (Basic plan) that holds the Elevated Designs catalog, hosts theelevateddesignsllc.com and takes payment.",
     note: "The store's contact email is staticupload170@gmail.com, not the main Gmail.",
     links: [BRANDS.ed.admin, { label: "Open live store", url: BRANDS.ed.site },
       { label: "Products", url: "https://theelevateddesignsllc.com/admin/products" },
       { label: "Orders", url: "https://theelevateddesignsllc.com/admin/orders" }] },
-  { id: "cpd", name: "Elevated Designs app", brand: "ed", kind: "Web app · Netlify", status: "live",
+  { id: "cpd", name: "Elevated Designs app", brand: "ed", kind: "Design app · Netlify (not the store)", status: "live",
     does: "Your previous console, at charlestonprintdesigns.netlify.app. Every design with its Etsy listing text and photos, the 30-day launch plan, the Charleston market calendar and your business docs. It syncs between devices with a passcode.",
     source: "Your PC: Documents\\GitHub\\elevated -designs (a local git copy, not on GitHub yet). Its README says it is the only source for this site.",
     note: "Its 330 MB of design photos only exist on your PC and in the live site, so there is no backup of this app's code or images online.",
@@ -74,6 +82,9 @@ export const SERVICES = [
   { id: "studio", name: "Design Studio", brand: "ed", kind: "In this console", status: "live",
     does: "Image library and shirt designer. Images are stored online, so your PC doesn't need to be on.",
     links: [{ label: "Open Design Studio", url: "#studio" }] },
+  { id: "publish", name: "Products and Insights", brand: "other", kind: "In this console · both stores", status: "live",
+    does: "Switch products on or off each store's Shopify site, and see sales, visits, a 30-day forecast and next steps for each store.",
+    links: [{ label: "Products", url: "#products" }, { label: "Insights", url: "#insights" }] },
 
   // Content and video
   { id: "btd", source: "Your PC: Documents\\briefline-trend-desk", name: "briefline-trend-desk", brand: "other", kind: "Web app · Netlify", status: "attn",
@@ -126,8 +137,8 @@ export const SERVICES = [
     does: "Created but never launched.", links: nlAdmin(n) }));
 
 export const ROUTES = [
-  { brand: "c3d", hops: [["Pick products", "c3dsite"], ["Catalog and checkout", "c3dshop"], ["Customers find you", "c3dsite"], ["Code", "gh"]] },
-  { brand: "ed", hops: [["Design", "studio"], ["Catalog and listings", "cpd"], ["Sell", "shop"], ["Code", "gh"]] },
+  { brand: "c3d", hops: [["Pick products", "publish"], ["Catalog and checkout", "c3dshop"], ["Customers shop", "c3dsite"], ["Code", "gh"]] },
+  { brand: "ed", hops: [["Design", "studio"], ["Listings", "cpd"], ["Pick products", "publish"], ["Catalog and checkout", "shop"], ["Customers shop", "edsite"]] },
   { brand: "other", hops: [["Spot trends", "btd"], ["Make videos", "vs"], ["Collect clips", "fvc"], ["Publish", "yt"]] },
 ];
 
@@ -140,5 +151,6 @@ export const CLEANUP = [
   { what: "briefline-trend-desk scans every 3 hours", why: "Likely the biggest drain on Netlify credits", fix: "Slow to once or twice a day" },
   { what: "Documents\\PrintRoomDeploy (31 MB zip plus copies)", why: "The old Print Room, already merged into the Elevated Designs app", fix: "Delete the folder after a last look" },
   { what: "Elevated Designs app has no online backup", why: "Code and 330 MB of photos live only on your PC and the live site", fix: "Push its code to GitHub and keep photos in cloud storage" },
-  { what: "Old Wix site for charleston3d.com", why: "Plan canceled 8 Oct; the domain is now set up in Shopify and will move to the new coded site", fix: "Let the Wix site lapse once the new site is live" },
+  { what: "Old Wix site for charleston3d.com", why: "Plan canceled 8 Oct; the domain now points at the Shopify store, where the coded theme runs", fix: "Let the Wix site lapse" },
+  { what: "charleston3d-site Astro build on Netlify", why: "Replaced by the Shopify theme; the store sites are no longer hosted on Netlify", fix: "Delete the Netlify site and its build hook once the theme is live" },
 ];
