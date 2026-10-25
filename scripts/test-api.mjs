@@ -356,6 +356,16 @@ test("best sellers, losing momentum, repeat customers, suggestions", () => {
   assert.ok(r.suggestions.some((s) => /Holiday/.test(s)));
 });
 
+test("suggestions don't call a trend or a one-product store on a handful of orders", () => {
+  const A = "gid://shopify/Product/A";
+  // 1 order the month before, 3 this month: +200%, and A is 100% of revenue.
+  const nodes = [order(addDays(TODAY, -40), 50, [[A, "Anchor", 1]]), ...[1, 2, 3].map((d) => order(addDays(TODAY, -d), 50, [[A, "Anchor", 1]]))];
+  const r = buildInsights({ store: "ed", orderNodes: nodes, now: NOW, days: 30 });
+  assert.equal(r.periods["30"].growth.revenue, 200);
+  assert.ok(r.suggestions.some((s) => /too few to call a trend/.test(s)), r.suggestions.join("\n"));
+  assert.ok(!r.suggestions.some((s) => /Sales are (up|down)|carrying the store/.test(s)), r.suggestions.join("\n"));
+});
+
 test("sessions from ShopifyQL rows (objects or arrays), conversion as %", async () => {
   const { shopifyqlRows, sessionsSummary } = await import("../lib/insights.mjs");
   const table = { columns: [{ name: "day" }, { name: "sessions" }, { name: "conversion_rate" }], rows: [["2026-10-24", 100, 0.02], ["2026-10-25", 300, 0.01]] };
