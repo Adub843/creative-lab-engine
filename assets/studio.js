@@ -1,6 +1,6 @@
 // Design Studio: an online image library plus a drag-and-drop shirt designer.
 // Images live in Netlify Blobs through /api/images, so the PC can stay off.
-// If that API can't be reached (opened as plain files, or not deployed yet), images are kept in this browser instead.
+// If that API can't be reached (served as plain files, or not deployed yet), images are kept in this browser instead.
 import { el, store, toast } from "./app.js";
 import { consoleKey } from "./api.js";
 

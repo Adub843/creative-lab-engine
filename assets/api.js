@@ -1,11 +1,11 @@
 // Shared by the Products and Insights pages: the two stores, the console key (kept for this
 // browser session only), calls to the console API, and the store switcher.
 import { el, store } from "./app.js";
+import { BRANDS } from "./data.js";
 
-export const STORES = {
-  c3d: { name: "Charleston 3D", site: "https://charleston3d.com" },
-  ed: { name: "Elevated Designs", site: "https://theelevateddesignsllc.com" },
-};
+// Names and sites come from data.js; the keys match lib/shopify.mjs STORES.
+export const STORES = Object.fromEntries(["c3d", "ed"].map((k) => [k, { name: BRANDS[k].name, site: BRANDS[k].site }]));
+export const SETUP_URL = "https://github.com/Adub843/Business-console#connect-a-store";
 export const host = (url) => { try { return new URL(url).host; } catch { return url; } };
 
 // ---------- console key: sessionStorage only, gone when the tab closes ----------

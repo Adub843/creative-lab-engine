@@ -2,10 +2,9 @@
 // Charts are small inline SVGs drawn to the width of their box, with a hover/arrow-key readout and
 // a "Show numbers" table under each one.
 import { el } from "./app.js";
-import { STORES, api, host, initialStore, money, storeSwitcher } from "./api.js";
+import { SETUP_URL, STORES, api, host, initialStore, money, storeSwitcher } from "./api.js";
 
 const SVG = "http://www.w3.org/2000/svg";
-const SETUP_URL = "https://github.com/Adub843/Business-console#connect-a-store";
 const s = (tag, attrs = {}, ...kids) => {
   const e = document.createElementNS(SVG, tag);
   for (const [k, v] of Object.entries(attrs)) if (v != null) e.setAttribute(k, v);
@@ -152,7 +151,7 @@ export async function renderInsights() {
 
     if (d.missingScopes?.length)
       out.push(el("section", { class: "panel notice" }, el("h2", {}, "Add access to see everything"),
-        el("p", {}, "In Shopify admin, go to Settings > Apps and sales channels > Develop apps, open this store's console app, choose Configuration > Admin API access scopes, tick these, save, then reinstall the app:"),
+        el("p", {}, "Add these scopes to this store's console app, then reinstall it (in Shopify admin under Settings > Apps and sales channels > Develop apps, or in the app's version in the Dev Dashboard):"),
         el("ul", {}, d.missingScopes.map((m) => el("li", {}, el("code", {}, m.scope), ` for ${m.for}`)))));
 
     // KPIs

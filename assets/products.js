@@ -2,10 +2,9 @@
 // Switching one on makes it active in Shopify and publishes it to the Online Store channel, so the
 // theme shows it straight away. The switch flips at once and flips back if Shopify says no.
 import { el, toast } from "./app.js";
-import { STORES, api, host, initialStore, money, storeSwitcher } from "./api.js";
+import { SETUP_URL, STORES, api, host, initialStore, money, storeSwitcher } from "./api.js";
 
 const API = "/api/products";
-const SETUP_URL = "https://github.com/Adub843/Business-console#connect-a-store";
 const FILTERS = [["all", "All products"], ["live", "Live on the site"], ["off", "Not live"], ["draft", "Drafts"]];
 
 const thumb = (url) => {

@@ -158,14 +158,14 @@ const ED_LINKS = [
   ["Website", "theelevateddesignsllc.com · Shopify", BRANDS.ed.site],
   ["Products", "Pick what's on the site", "#products/ed"],
   ["Insights", "Sales, visits, forecast", "#insights/ed"],
-  ["Orders", "Shopify admin", "https://theelevateddesignsllc.com/admin/orders"],
-  ["Products", "Shopify admin", "https://theelevateddesignsllc.com/admin/products"],
-  ["Add a product", "Shopify admin", "https://theelevateddesignsllc.com/admin/products/new"],
+  ["Orders", "Shopify admin", `${BRANDS.ed.site}/admin/orders`],
+  ["Products", "Shopify admin", `${BRANDS.ed.site}/admin/products`],
+  ["Add a product", "Shopify admin", `${BRANDS.ed.site}/admin/products/new`],
   ["Designs and listings", "Elevated Designs app", "https://charlestonprintdesigns.netlify.app/#/"],
   ["Launch plan", "Elevated Designs app", "https://charlestonprintdesigns.netlify.app/#/plan"],
   ["Market calendar", "Elevated Designs app", "https://charlestonprintdesigns.netlify.app/#/cal"],
   ["Design a shirt", "Design Studio", "#studio"],
-  ["Discounts", "Shopify admin", "https://theelevateddesignsllc.com/admin/discounts"],
+  ["Discounts", "Shopify admin", `${BRANDS.ed.site}/admin/discounts`],
   ["Theme", "Shopify theme editor", `${BRANDS.ed.site}/admin/themes`],
 ];
 

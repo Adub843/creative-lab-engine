@@ -68,8 +68,8 @@ export const SERVICES = [
     does: "Shopify store (Basic plan) that holds the Elevated Designs catalog, hosts theelevateddesignsllc.com and takes payment.",
     note: "The store's contact email is staticupload170@gmail.com, not the main Gmail.",
     links: [BRANDS.ed.admin, { label: "Open live store", url: BRANDS.ed.site },
-      { label: "Products", url: "https://theelevateddesignsllc.com/admin/products" },
-      { label: "Orders", url: "https://theelevateddesignsllc.com/admin/orders" }] },
+      { label: "Products", url: `${BRANDS.ed.site}/admin/products` },
+      { label: "Orders", url: `${BRANDS.ed.site}/admin/orders` }] },
   { id: "cpd", name: "Elevated Designs app", brand: "ed", kind: "Design app · Netlify (not the store)", status: "live",
     does: "Your previous console, at charlestonprintdesigns.netlify.app. Every design with its Etsy listing text and photos, the 30-day launch plan, the Charleston market calendar and your business docs. It syncs between devices with a passcode.",
     source: "Your PC: Documents\\GitHub\\elevated -designs (a local git copy, not on GitHub yet). Its README says it is the only source for this site.",
@@ -123,6 +123,9 @@ export const SERVICES = [
   { id: "gh", name: "GitHub · Business-console", brand: "other", kind: "Code storage · GitHub", status: "live",
     does: "The single home for this console's code.",
     links: [{ label: "Open repository", url: "https://github.com/Adub843/Business-console" }] },
+  { id: "ghtheme", name: "GitHub · charleston3d-site", brand: "other", kind: "Code storage · GitHub", status: "live",
+    does: "The single home for the Shopify theme that runs both store sites (one theme, a Charleston3D and an Elevated Designs preset).",
+    links: [{ label: "Open theme code", url: "https://github.com/Adub843/charleston3d-site/tree/claude/shopify-theme" }] },
   { id: "nlteam", name: "Netlify team", brand: "other", kind: "Hosting account · Netlify", status: "attn",
     does: "Hosts 30 sites on the Pro plan: 16 live, 14 never launched.",
     note: "75% of this month's 3,000 credits used by 12 Oct. The cycle runs to 5 Nov.",
@@ -137,8 +140,8 @@ export const SERVICES = [
     does: "Created but never launched.", links: nlAdmin(n) }));
 
 export const ROUTES = [
-  { brand: "c3d", hops: [["Pick products", "publish"], ["Catalog and checkout", "c3dshop"], ["Customers shop", "c3dsite"], ["Code", "gh"]] },
-  { brand: "ed", hops: [["Design", "studio"], ["Listings", "cpd"], ["Pick products", "publish"], ["Catalog and checkout", "shop"], ["Customers shop", "edsite"]] },
+  { brand: "c3d", hops: [["Pick products", "publish"], ["Catalog and checkout", "c3dshop"], ["Customers shop", "c3dsite"], ["Theme code", "ghtheme"]] },
+  { brand: "ed", hops: [["Design", "studio"], ["Listings", "cpd"], ["Pick products", "publish"], ["Catalog and checkout", "shop"], ["Customers shop", "edsite"], ["Theme code", "ghtheme"]] },
   { brand: "other", hops: [["Spot trends", "btd"], ["Make videos", "vs"], ["Collect clips", "fvc"], ["Publish", "yt"]] },
 ];
 
