@@ -44,9 +44,14 @@ function fakeShopify(opts = {}) {
     const data = (d) => new Response(JSON.stringify({ data: d }), { status: 200, headers: { "content-type": "application/json" } });
     if (opts.override?.[op]) return opts.override[op](variables, data);
     switch (op) {
-      case "OnlineStorePublication": return data({ publications: { nodes: [
-        { id: "gid://shopify/Publication/9", catalog: { title: "Point of Sale" }, channels: { nodes: [{ handle: "pos", name: "Point of Sale" }] } },
-        { id: PUB, catalog: { title: "Online Store" }, channels: { nodes: [{ handle: "online_store", name: "Online Store" }] } }] } });
+      case "OnlineStorePublication":
+        // Admin API 2025-10 has no Publication.channels; the Online Store is the app catalog titled "Online Store".
+        assert.ok(!/channels/.test(query), "Publication.channels doesn't exist in 2025-10");
+        assert.match(query, /publications\(first: 50, catalogType: APP\)/);
+        return data({ publications: { nodes: opts.publications ?? [
+          { id: "gid://shopify/Publication/9", catalog: { title: "Point of Sale" } },
+          { id: "gid://shopify/Publication/7", catalog: null },
+          { id: PUB, catalog: { title: "Online Store" } }] } });
       case "ConsoleProducts": return data({ products: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [
         product({ status: "ACTIVE", publishedOnPublication: true, id: "gid://shopify/Product/100", handle: "keychain", title: "Keychain", totalInventory: 7, tracksInventory: true }),
         product()] } });
@@ -247,6 +252,13 @@ test("Shopify errors never leak the token", async () => {
   noLeak(auth);
 });
 
+test("no Online Store publication is a clear 502", async () => {
+  const sh = fakeShopify({ publications: [{ id: "gid://shopify/Publication/9", catalog: { title: "Point of Sale" } }] });
+  const res = await handleProducts(get({ store: "c3d" }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 502);
+  assert.equal(res.body.code, "no_online_store");
+});
+
 test("missing read_publications scope says which scope to add", async () => {
   const sh = fakeShopify({ override: { OnlineStorePublication: () => new Response(JSON.stringify({ errors: [{ message: "Access denied for publications field. Required access: `read_publications` access scope.", extensions: { code: "ACCESS_DENIED" } }] }), { status: 200 }) } });
   const res = await handleProducts(get({ store: "c3d" }), { env: envOf(), fetch: sh.fetch });
@@ -324,14 +336,58 @@ test("forecast: weekly linear trend projected 30 days", () => {
   assert.match(f.explanation, /straight line/);
 });
 
-test("forecast: falls back to 30-day average with little history, seasonal note in Nov–Dec", () => {
+test("forecast: falls back to the daily average with little history, seasonal note in Nov–Dec", () => {
   const orders = [{ day: TODAY, total: 300, items: [] }];
-  const f = forecast30(orders, TODAY, { firstOrderDay: TODAY });
+  const f = forecast30(orders, TODAY, {});
   assert.equal(f.method, "average");
-  assert.equal(f.next30, 300);
+  assert.equal(f.next30, 300, "a full 30 days of history repeats the last 30 days");
+  assert.equal(f.seasonal, "holiday");
   assert.ok(f.seasonalNote, "window runs into November");
   const june = forecast30(orders, "2026-06-01", {});
   assert.equal(june.seasonalNote, null);
+});
+
+test("forecast: one week of sales is scaled to 30 days, not repeated as a month", () => {
+  const start = addDays(TODAY, -6);
+  const orders = Array.from({ length: 7 }, (_, i) => ({ day: addDays(start, i), total: 10, items: [] })); // $10 a day for 7 days
+  const f = forecast30(orders, TODAY, { firstOrderDay: start });
+  assert.equal(f.method, "average");
+  assert.equal(f.weeksUsed, 1);
+  assert.equal(f.next30, 300);
+  assert.match(f.explanation, /7 days of sales/);
+  const first = forecast30([{ day: TODAY, total: 25, items: [] }], TODAY, { firstOrderDay: TODAY });
+  assert.equal(first.next30, 750, "first day of sales");
+  assert.equal(forecast30([], TODAY, {}).next30, 0, "no sales at all");
+});
+
+test("forecast: holiday season vs after Christmas", async () => {
+  const { seasonOf } = await import("../lib/insights.mjs");
+  assert.equal(seasonOf("2026-10-01"), null, "Oct 1 window ends Oct 31");
+  assert.equal(seasonOf("2026-10-02"), "holiday");
+  assert.equal(seasonOf("2026-12-12"), "holiday", "Dec 13 Priority cutoff still ahead");
+  assert.equal(seasonOf("2026-12-13", [{ end: "2026-12-13", revenue: 500 }]), "post-holiday", "cutoff passed");
+  assert.equal(seasonOf("2027-01-10", [{ end: "2026-12-20", revenue: 500 }]), "post-holiday");
+  assert.equal(seasonOf("2026-12-28", [{ end: "2026-12-20", revenue: 0 }]), null, "no holiday sales to warn about");
+  // The "holiday season is next" suggestion stops once the order-by dates have passed.
+  const dec = buildInsights({ store: "c3d", orderNodes: [order("2026-12-15", 50)], now: new Date("2026-12-20T15:00:00Z"), days: 30 });
+  assert.equal(dec.forecast.seasonal, "post-holiday");
+  assert.ok(!dec.suggestions.some((t) => /Holiday season is next/.test(t)), dec.suggestions.join("\n"));
+  assert.match(dec.forecast.seasonalNote, /after Christmas/);
+  const nov = buildInsights({ store: "ed", orderNodes: [order("2026-11-15", 50)], now: new Date("2026-11-20T15:00:00Z"), days: 30 });
+  assert.ok(nov.suggestions.some((t) => /Holiday season is next/.test(t)));
+});
+
+test("growth %: zero previous period, zero current, AOV with no orders", () => {
+  const r = buildInsights({ store: "c3d", orderNodes: [order(TODAY, 80)], now: NOW, days: 30 });
+  assert.equal(r.periods["7"].growth.revenue, null, "nothing before: no % (UI says New)");
+  assert.equal(r.periods["7"].growth.aov, null);
+  assert.equal(r.periods["7"].previous.aov, 0);
+  const none = buildInsights({ store: "c3d", orderNodes: [], now: NOW, days: 30 });
+  assert.deepEqual(none.periods["30"].growth, { revenue: 0, orders: 0, aov: 0 });
+  assert.equal(none.forecast.next30, 0);
+  assert.equal(none.series.length, 30);
+  assert.ok(none.series.every((d) => d.revenue === 0));
+  assert.match(none.suggestions[0], /No orders in the last 30 days/);
 });
 
 test("best sellers, losing momentum, repeat customers, suggestions", () => {
@@ -372,8 +428,14 @@ test("sessions from ShopifyQL rows (objects or arrays), conversion as %", async 
   const s = sessionsSummary(shopifyqlRows(table), 5);
   assert.equal(s.total, 400);
   assert.equal(s.conversionRate, 1.25);
-  const s2 = sessionsSummary([{ day: "2026-10-25", sessions: "50", conversion_rate: "2.0" }], 1);
-  assert.equal(s2.conversionRate, 2);
+  // Real 2025-10 shape: rows are objects keyed by column name, every value a string, PERCENT as a
+  // decimal (0.25 = 25%). A conversion rate under 1% must stay under 1%.
+  const s2 = sessionsSummary([{ day: "2026-10-24", sessions: "0", conversion_rate: null }, { day: "2026-10-25", sessions: "50", conversion_rate: "0.008" }], 1);
+  assert.equal(s2.total, 50);
+  assert.equal(s2.conversionRate, 0.8);
+  assert.deepEqual(s2.series.map((r) => r.conversionRate), [null, 0.8], "per-day rates are % too");
+  const s3 = sessionsSummary([{ day: "2026-10-25", sessions: "200" }], 3);
+  assert.equal(s3.conversionRate, 1.5, "no conversion column: orders / sessions");
 });
 
 // ---------- insights endpoint ----------
@@ -393,7 +455,7 @@ function fakeInsightsShopify({ denyOrders = false, denyCustomers = false, denyRe
     }
     if (op === "ConsoleSessions") {
       if (denyReports) return denied("read_reports", "shopifyqlQuery");
-      return ok({ shopifyqlQuery: { parseErrors: [], tableData: { columns: [{ name: "day" }, { name: "sessions" }, { name: "conversion_rate" }], rows: [{ day: "2026-10-25", sessions: 40, conversion_rate: 0.025 }] } } });
+      return ok({ shopifyqlQuery: { parseErrors: [], tableData: { columns: [{ name: "day", dataType: "DAY_TIMESTAMP" }, { name: "sessions", dataType: "INTEGER" }, { name: "conversion_rate", dataType: "PERCENT" }], rows: [{ day: "2026-10-25", sessions: "40", conversion_rate: "0.025" }] } } });
     }
     throw new Error(op);
   };
@@ -411,6 +473,8 @@ test("insights: full response with sessions", async () => {
   assert.equal(res.body.timeZone, "America/New_York");
   assert.deepEqual(res.body.missingScopes, []);
   assert.ok(sh.calls.find((c) => c.op === "ConsoleOrders").variables.q.startsWith("created_at:>=2026-04-28"), "reads 180 days for 90-day comparisons");
+  assert.equal(sh.calls.find((c) => c.op === "ConsoleSessions").variables.q,
+    "FROM sessions SHOW sessions, conversion_rate TIMESERIES day SINCE -89d UNTIL today ORDER BY day ASC", "90 days including today");
   assert.ok(res.body.suggestions.length > 0);
 });
 
@@ -437,6 +501,45 @@ test("insights: customer data denied retries without it", async () => {
   assert.equal(res.body.orders.available, true);
   assert.ok(res.body.missingScopes.some((m) => m.scope === "read_customers"));
   assert.equal(sh.calls.filter((c) => c.op === "ConsoleOrders").length, 2);
+});
+
+test("insights: protected customer data denial (no scope named) still shows sales", async () => {
+  const calls = [];
+  const fetch = async (url, init) => {
+    const { query } = JSON.parse(init.body);
+    const op = /query\s+(\w+)/.exec(query)[1];
+    calls.push(op);
+    const ok = (d) => new Response(JSON.stringify({ data: d }), { status: 200 });
+    if (op === "ConsoleShop") return ok({ shop: { currencyCode: "USD", ianaTimezone: "UTC" } });
+    if (op === "ConsoleOrders" && query.includes("customer {"))
+      return new Response(JSON.stringify({ errors: [{ message: "This app is not approved to access the Customer object.", extensions: { code: "ACCESS_DENIED" } }] }), { status: 200 });
+    if (op === "ConsoleOrders") return ok({ orders: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [order("2026-10-20", 40)] } });
+    return ok({ shopifyqlQuery: { parseErrors: ["Table not found: sessions"], tableData: null } });
+  };
+  const res = await handleInsights(keyed({ store: "c3d", days: "30" }), { env: envOf(), fetch, now: () => NOW });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.orders.available, true, "sales still shown");
+  assert.equal(res.body.periods["30"].current.revenue, 40);
+  assert.ok(!res.body.missingScopes.some((m) => m.scope === "read_orders"));
+  assert.equal(res.body.sessions.available, false, "parse errors degrade sessions");
+});
+
+test("insights: more orders than one read shows the truncated note", async () => {
+  let page = 0;
+  let t = NOW.getTime();
+  const fetch = async (url, init) => {
+    const { query } = JSON.parse(init.body);
+    const op = /query\s+(\w+)/.exec(query)[1];
+    const ok = (d) => new Response(JSON.stringify({ data: d }), { status: 200 });
+    if (op === "ConsoleShop") return ok({ shop: { currencyCode: "USD", ianaTimezone: "UTC" } });
+    if (op === "ConsoleOrders") { t += 3000; page++; return ok({ orders: { pageInfo: { hasNextPage: true, endCursor: `c${page}` }, nodes: [order("2026-10-20", 10)] } }); }
+    return ok({ shopifyqlQuery: { parseErrors: [], tableData: { columns: [], rows: [] } } });
+  };
+  const res = await handleInsights(keyed({ store: "c3d", days: "30" }), { env: envOf(), fetch, now: () => new Date(t) });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.orders.truncated, true);
+  assert.ok(page < 30, "stops on the time budget");
+  assert.ok(res.body.notes.some((n) => /more orders than the console reads/.test(n)));
 });
 
 test("insights: needs the key, valid store and days, and env", async () => {
