@@ -2,6 +2,17 @@
 
 One place to run Charleston 3D and Elevated Designs: dashboard, brand pages, a map of every connected service, product publishing and insights for both Shopify stores, and a design studio with an image library and shirt designer.
 
+## How it all fits together
+
+- **Charleston 3D** (charleston3d.com): everything 3D printing. Its own hand-coded Shopify theme in `Adub843/charleston3d-site` (branch `claude/shopify-theme`), Charleston 3D only. Products show a "Name to print" field only when this console marks them **Customizable** (the `customizable` tag); free custom requests come in through the theme's Custom request page as $0 orders.
+- **Elevated Designs** (theelevateddesignsllc.com): apparel and prints. Its own Shopify store and its own theme, to live in `Adub843/elevated-designs-site` (not created yet). This console lists designs on it in one click (Blank x Color x Size).
+- **The shirt app** (built separately) takes customers' shirt designs; its orders pay through the Elevated Designs Shopify checkout.
+- **This console** is private (behind `CONSOLE_KEY`): one page per brand, one image library, publishing and Insights. The two brands never share a request: every call names its store (`c3d` or `ed`) and the server refuses brand-specific actions on the other store.
+
+Neither store site is hosted on Netlify or has a build step: products, prices and checkout come live from Shopify, and every payment goes through Shopify checkout. Only this console runs on Netlify. The Elevated Designs **design app** (charlestonprintdesigns.netlify.app) is an older tool for designs and listings, not the store.
+
+## Code
+
 Static site plus small serverless functions. The only build step copies `index.html` and `assets/` into `dist/`, which is all that gets published, so `lib/`, `scripts/` and the rest of the repo are never downloadable from the site.
 
 - `index.html`: app shell
@@ -11,12 +22,6 @@ Static site plus small serverless functions. The only build step copies `index.h
 - `netlify/functions/products.mjs` (`/api/products`), `insights.mjs` (`/api/insights`), `images.mjs` (`/api/images`, image library in Netlify Blobs), `listings.mjs` (`/api/listings`)
 
 Run locally with `npm run dev` (`netlify dev`, needs the Netlify CLI), or serve the folder with any static server such as `python3 -m http.server` (the library then keeps images in the browser only, and Products and Insights say the API isn't running). Opening `index.html` straight from disk doesn't work: browsers block its module scripts on `file://`.
-
-## The store sites
-
-charleston3d.com and theelevateddesignsllc.com are **Shopify themes** on their own Shopify stores. They are not hosted on Netlify and have no build step: products, prices and checkout come live from Shopify. The theme code is in `Adub843/charleston3d-site` (branch `claude/shopify-theme`), one theme with a preset per store.
-
-The Elevated Designs **design app** (charlestonprintdesigns.netlify.app) is a separate tool for designs and listings, not the store.
 
 ## Products
 
@@ -28,7 +33,7 @@ The two brands are kept apart on the server: a store id must be `c3d` or `ed`, C
 
 ### Charleston 3D: Customizable
 
-Each Charleston 3D product also has a **Customizable** switch. Some 3D files can't be personalized, so this is chosen per product: on adds the Shopify tag `customizable`, off removes it (any capitalisation). The Charleston 3D theme shows the "Name to print" field only on products with that tag. Elevated Designs products have no such switch.
+Each Charleston 3D product also has a **Customizable** switch. Some 3D files can't be personalized, so this is chosen per product: on adds the Shopify tag `customizable`, off removes it (any capitalisation, and the older `personalized` / `personalised` tags the theme also honours, which the console shows as on). The Charleston 3D theme shows the "Name to print" field only on products with that tag. Elevated Designs products have no such switch.
 
 ### Elevated Designs: List a design
 
@@ -69,6 +74,8 @@ Then commit and deploy. Listings already in Shopify keep the prices and blanks t
 
 The forecast fits a straight line through the last 12 weeks of revenue (least squares) and continues it for 30 days; the range around it is the usual week-to-week wobble. With under 4 weeks of sales it repeats the last 30 days instead. When the next 30 days reach into November or December it says so, because holiday sales normally beat the trend. Next steps don't call sales up or down with under 5 orders in the previous 30 days, or say one product carries the store with under 10 orders.
 
+Cancelled, test and $0 orders are left out ($0 orders are Charleston 3D's free custom print requests, which are quote requests, not sales).
+
 If a scope is missing, that part of the page says which scope to add and the rest still works.
 
 ## Connect a store
@@ -85,7 +92,7 @@ Set these in Netlify (Site configuration > Environment variables). Never put the
 | `ED_SITE_URL` | Optional. Public site address, default `https://theelevateddesignsllc.com` |
 | `CONSOLE_KEY` | **Required.** A long random password, at least 16 characters (there's no lockout on wrong guesses, so make it long). The product list, publishing, the image library list, uploads and Insights are refused until it's set; enter the same value when the console asks for it (kept for that browser tab only). |
 | `ED_HANDLING_DAYS` | Optional. Business days to ship, used in new Elevated Designs listings, like `5-7` (the default) or `3-5`. |
-| `INDEXNOW_KEY` | Optional. An IndexNow key, used for both stores. In each store add a page with handle `indexnow-key` and template `page.indexnow`, and paste the same key in Theme settings > Search and AI, so it's served at `https://<site>/pages/indexnow-key`. |
+| `INDEXNOW_KEY` | Optional. An IndexNow key, used for both stores. In each store add a page with handle `indexnow-key` and template `page.indexnow`, paste the same key in Theme settings > Search and AI, and add a URL redirect from `/<key>.txt` to `/pages/indexnow-key`. Pings use `keyLocation=https://<site>/<key>.txt`, because a key under `/pages/` would only cover `/pages/` URLs, not products. |
 
 ### Admin API access scopes
 
