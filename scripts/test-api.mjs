@@ -55,6 +55,7 @@ function fakeShopify(opts = {}) {
       if (opts.upload === "throw") throw new Error("socket hang up");
       return new Response("", { status: opts.upload === "403" ? 403 : 201 });
     }
+    if (!/^https:\/\/[a-z0-9-]+\.myshopify\.com\//.test(u)) calls.push({ stray: u });
     assert.match(u, /^https:\/\/[a-z0-9-]+\.myshopify\.com\/admin\/api\/2025-10\/graphql\.json$/);
     assert.ok(init.signal, "every Shopify call has a timeout signal");
     const { query, variables } = JSON.parse(init.body);
@@ -85,7 +86,7 @@ function fakeShopify(opts = {}) {
       case "ConsoleListingLookup": return data({ products: { nodes: opts.listed ?? [] } });
       case "ConsoleStagedUpload": return data({ stagedUploadsCreate: opts.stageErrors
         ? { stagedTargets: [], userErrors: opts.stageErrors }
-        : { stagedTargets: [{ url: STAGED_URL, resourceUrl: `${STAGED_URL}tmp/123/${variables.input[0].filename}`,
+        : { stagedTargets: [{ url: opts.stagedUrl ?? STAGED_URL, resourceUrl: opts.resourceUrl ?? `${STAGED_URL}tmp/123/${variables.input[0].filename}`,
           parameters: [{ name: "Content-Type", value: variables.input[0].mimeType }, { name: "key", value: "tmp/123/x" }, { name: "policy", value: "abc" }] }], userErrors: [] } });
       case "ConsoleListingCreate": return data({ productSet: opts.createErrors
         ? { product: null, productSetOperation: null, userErrors: opts.createErrors }
@@ -968,6 +969,14 @@ const BAD_LISTINGS = [
   ["SEO description over 155", { seoDescription: "D".repeat(156) }, "bad_input"],
   ["script in description", { descriptionHtml: "<p>Nice</p><script>alert(1)</script>" }, "bad_input"],
   ["event handler in description", { descriptionHtml: "<p onclick=\"x()\">Nice shirt here</p>" }, "bad_input"],
+  // Security review: browsers run these, so they must not pass the description check.
+  ["handler after a slash", { descriptionHtml: "<p>Nice shirt</p><img/onerror=alert(1) src=x>" }, "bad_input"],
+  ["handler right after a quote", { descriptionHtml: "<p>Nice shirt</p><img src=\"x\"onerror=alert(1)>" }, "bad_input"],
+  ["javascript: written as an entity", { descriptionHtml: "<p><a href=\"javascript&#58;alert(1)\">Nice shirt</a></p>" }, "bad_input"],
+  ["javascript: with an encoded tab", { descriptionHtml: "<p><a href=\"java&#x09;script:alert(1)\">Nice shirt</a></p>" }, "bad_input"],
+  ["javascript&colon;", { descriptionHtml: "<p><a href=\"javascript&colon;alert(1)\">Nice shirt</a></p>" }, "bad_input"],
+  ["vbscript: link", { descriptionHtml: "<p><a href=\"vbscript:msgbox(1)\">Nice shirt</a></p>" }, "bad_input"],
+  ["tag outside the formatting list", { descriptionHtml: "<p>Nice shirt</p><details open ontoggle=alert(1)>x</details>" }, "bad_input"],
   ["customizable tag on ED", { tags: ["customizable"] }, "bad_input"],
   ["design tag forged", { tags: ["design:other-01234567"] }, "bad_input"],
   ["tag with comma", { tags: ["a,b"] }, "bad_input"],
@@ -1018,6 +1027,28 @@ for (const mode of ["403", "throw"])
     assert.match(res.body.error, /Nothing was listed/);
     assert.ok(!sh.calls.some((c) => c.op === "ConsoleListingCreate" || c.indexnow));
   });
+
+for (const [name, over] of [
+  ["http upload target", { stagedUrl: "http://shopify-staged-uploads.storage.googleapis.com/" }],
+  ["upload target on another host", { stagedUrl: "https://attacker.example/upload" }],
+  ["internal upload target", { stagedUrl: "https://169.254.169.254/latest/" }],
+  ["look-alike host", { stagedUrl: "https://storage.googleapis.com.attacker.example/" }],
+  ["resourceUrl on another host", { resourceUrl: "https://attacker.example/x.png" }],
+])
+  test(`listings: ${name} is refused before any bytes are sent`, async () => {
+    const sh = fakeShopify(over);
+    const res = await handleListings(post(LISTING), await listCtx(sh));
+    assert.equal(res.status, 502);
+    assert.equal(res.body.code, "upload_failed");
+    assert.ok(!sh.calls.some((c) => c.upload || c.stray || c.op === "ConsoleListingCreate"), JSON.stringify(sh.calls.filter((c) => c.stray)));
+  });
+
+test("listings: the description check keeps the generated copy and ordinary formatting", async () => {
+  const { unsafeHtml, listingTemplate } = await import("../lib/listings.mjs");
+  const { buildListing } = await import("../assets/listing.js");
+  assert.equal(unsafeHtml(buildListing({ name: "sunset_final.png" }, listingTemplate(envOf())).descriptionHtml), false);
+  assert.equal(unsafeHtml("<p>Soft &amp; comfy. <a href=\"https://theelevateddesignsllc.com/pages/faq\">Sizing</a> x < y, on sale</p><!-- note -->"), false);
+});
 
 test("listings: stagedUploadsCreate userErrors are 422 and stop before the upload", async () => {
   const sh = fakeShopify({ stageErrors: [{ field: ["input", "0", "mimeType"], message: "Mime type is not supported" }] });
