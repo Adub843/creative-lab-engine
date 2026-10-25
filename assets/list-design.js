@@ -14,6 +14,9 @@ const ext = () => el("span", { class: "ext", "aria-hidden": "true" }, "↗");
 
 let template = null; // from GET /api/listings, once per page load
 const listed = new Map(); // imageKey -> { url, adminUrl, title } for this visit
+// imageKey -> { body, out } for a listing Shopify is still making. Opening that design again goes
+// back to Check again, so a second List it can't start a second product while the first is made.
+const pendingOps = new Map();
 
 export function listPanel({ onListed = () => {} } = {}) {
   const state = { items: [], q: "", loading: false, error: null, loaded: false };
@@ -260,7 +263,7 @@ function makeSheet() {
         return;
       }
       busy = false;
-      if (out.pending) return waiting(item, body, out);
+      if (out.pending) { pendingOps.set(item.key, { body, out }); return waiting(item, body, out); }
       result(item, out);
       toast(out.message ?? "Listed");
       onDone(item.key, out);
@@ -273,6 +276,15 @@ function makeSheet() {
       const blanks = offer();
       if (!blanks.length) { showErr("Pick at least one shirt to offer, with at least one color."); shirts.querySelector("input").focus(); return; }
       if (!chosenSizes().length) { showErr("Pick at least one size."); f.querySelector(".lmore").open = true; sizes.querySelector("input").focus(); return; }
+      // The server refuses a shirt that comes in none of the chosen sizes; say so here instead.
+      const sizeless = blanks.map((s) => cat.blanks.find((b) => b.id === s.id)).find((b) => !chosenSizes().some((z) => b.sizes.includes(z)));
+      if (sizeless) {
+        showErr(`${blankLabel(sizeless)} comes in none of the chosen sizes (it has ${sizeless.sizes.join(", ")}). Pick one of those sizes or stop offering it.`);
+        f.querySelector(".lmore").open = true;
+        const box = f.querySelector(`#ls-blank-${CSS.escape(sizeless.id)}`);
+        if (box?.closest("details")) box.closest("details").open = true;
+        box?.focus(); return;
+      }
       if (count > L.variants) { showErr(counter.textContent); return; }
       if (!f.checkValidity()) {
         const bad = f.querySelector(":invalid:not(fieldset)");
@@ -311,12 +323,16 @@ function makeSheet() {
         const next = await api("/api/listings", { method: "POST", key: true, body: { ...body, operationId: out.operationId } });
         busy = false;
         if (next.pending) { check.disabled = false; check.textContent = "Check again"; msg.textContent = next.message ?? ""; return; }
+        pendingOps.delete(item.key);
         result(item, next);
         toast(next.message ?? "Listed");
         onDone(item.key, next);
       } catch (e) {
         busy = false; check.disabled = false; check.textContent = "Check again";
         msg.textContent = e.message;
+        // Shopify has no such operation: let List it start afresh next time.
+        if (e.code === "not_found") pendingOps.delete(item.key);
+        if (e.code === "partly_listed" && e.details?.product) onDone(item.key, { url: e.details.product.url, adminUrl: e.details.product.adminUrl, product: e.details.product });
       }
     });
     check.focus();
@@ -334,6 +350,8 @@ function makeSheet() {
       return fail(item, e);
     }
     if (!dlg.open) return;
+    const p = pendingOps.get(item.key);
+    if (p) return waiting(item, p.body, p.out);
     dlg.replaceChildren(form(item, template));
     dlg.querySelector("#ls-title").focus();
   }

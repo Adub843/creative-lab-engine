@@ -969,6 +969,101 @@ async function main() {
     assert.equal(await page.locator("#list-sheet[open]").count(), 0);
   });
 
+  await step("list a design: closing a listing still being made and opening it again goes back to Check again, never a second List it", async () => {
+    mode.listing = "pending";
+    await openSheet("palmetto");
+    await page.check("#ls-blank-gildan-5000");
+    const before = listings.length;
+    await page.click("#ls-submit");
+    await page.waitForSelector("#ls-pending");
+    await page.click("#ls-later");
+    assert.equal(await page.locator("#list-sheet[open]").count(), 0);
+    await card("palmetto").locator('button[data-act="list"]').click();
+    await page.waitForSelector("#list-sheet[open] #ls-pending");
+    assert.equal(await page.locator("#ls-title").count(), 0, "no form to send a second productSet from");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "ls-check");
+    await page.click("#ls-check");
+    await page.waitForSelector("#ls-result");
+    assert.equal(listings.length - before, 2, "one listing, then one check");
+    assert.equal(listings.at(-1).operationId, "gid://shopify/ProductSetOperation/42");
+    await page.click("#ls-done");
+    PRODUCTS.ed.pop();
+    mode.listing = "ok";
+    await openSheet("palmetto");
+    assert.equal(await page.locator("#ls-pending").count(), 0, "finished: the form is back");
+    await page.click("#ls-cancel");
+  });
+
+  await step("list a design: a shirt in none of the chosen sizes is caught before sending", async () => {
+    await openSheet("palmetto");
+    const before = listings.length;
+    await page.click(".lmore summary");
+    for (const s of ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"]) await page.uncheck(`#ls-size-${s}`);
+    await page.check("#ls-size-5XL"); // only the value tee (fruit-3930r) has 5XL among the defaults
+    assert.match(await page.locator("#ls-count").textContent(), /^4 variants/);
+    await page.click("#ls-submit");
+    await page.waitForSelector("#ls-error:not([hidden]) >> text=comes in none of the chosen sizes");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "ls-blank-gildan-64000");
+    assert.equal(listings.length, before, "nothing sent");
+    await page.uncheck("#ls-blank-gildan-64000");
+    await page.uncheck("#ls-blank-gildan-h000");
+    await page.click("#ls-submit");
+    await page.waitForSelector("#ls-result");
+    assert.equal(listings.at(-1).refused, undefined, `server would refuse: ${listings.at(-1).refused}`);
+    assert.equal(listings.at(-1).variants, 4);
+    await page.click("#ls-done");
+    PRODUCTS.ed.pop();
+  });
+
+  await step("list a design: markup bounds and cents, negative markup, and price rounding match the server", async () => {
+    await openSheet("palmetto");
+    const before = listings.length;
+    for (const bad of ["100.01", "-10.5", "2.555"]) {
+      await page.fill("#ls-markup", bad);
+      await page.click("#ls-submit");
+      assert.equal(await page.evaluate(() => document.activeElement?.id), "ls-markup", `${bad} caught`);
+    }
+    assert.equal(listings.length, before, "nothing sent for a bad markup");
+    await page.fill("#ls-markup", "-10");
+    assert.match(await page.locator("#ls-summary").textContent(), /\$3\.99 to /, "13.99 - 10");
+    await page.fill("#ls-markup", "0.1");
+    assert.match(await page.locator("#ls-summary").textContent(), /\$14\.09 to /, "no float noise");
+    await page.click("#ls-submit");
+    await page.waitForSelector("#ls-result");
+    assert.equal(listings.at(-1).markup, 0.1);
+    assert.equal(listings.at(-1).refused, undefined);
+    await page.click("#ls-done");
+    PRODUCTS.ed.pop();
+  });
+
+  await step("list a design: a very long design name gives a valid listing and fits at 390", async () => {
+    const long = `${"Supercalifragilistic".repeat(8)} lowcountry heron at dusk over the marsh with a very long file name indeed.png`;
+    images.set("mh2k6c-0a0b0c0d", { key: "mh2k6c-0a0b0c0d", name: long, type: "image/png", size: 68, tags: "", added: 2000 });
+    await page.fill("#lib-q", "");
+    await page.click("#lib-refresh");
+    await page.waitForSelector('.lcard[data-key="mh2k6c-0a0b0c0d"]');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(100);
+    await noOverflow("long name card 390");
+    await page.locator('.lcard[data-key="mh2k6c-0a0b0c0d"] button[data-act="list"]').click();
+    await page.waitForSelector("#list-sheet[open] #ls-title");
+    const t = await page.inputValue("#ls-title");
+    assert.ok(t.length <= 120 && t.length >= 2, `title ${t.length}`);
+    assert.ok((await page.inputValue("#ls-seo-title")).length <= 60);
+    assert.ok((await page.inputValue("#ls-seo-desc")).length <= 155);
+    const wide = await page.evaluate(() => [...document.querySelectorAll("#list-sheet *")].filter((e) => e.getBoundingClientRect().right > 390.5).map((e) => e.id || e.className || e.tagName));
+    assert.deepEqual(wide, [], "nothing in the sheet sticks out");
+    await page.click("#ls-submit");
+    await page.waitForSelector("#ls-result");
+    assert.equal(listings.at(-1).refused, undefined, `server would refuse: ${listings.at(-1).refused}`);
+    await page.click("#ls-done");
+    PRODUCTS.ed.pop();
+    images.delete("mh2k6c-0a0b0c0d");
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.click("#lib-refresh");
+    await page.waitForSelector('.lcard:has-text("palmetto moon")');
+  });
+
   await step("list a design: keyboard only: open, move through, close, focus returns", async () => {
     await page.locator("#lib-refresh").focus();
     await page.waitForSelector(".lcard button");
