@@ -1,10 +1,21 @@
 [build]
-  publish = "."
+  # Only the app itself is published: index.html and assets/ are copied into dist/, so lib/,
+  # scripts/, netlify/, package.json and the README are never downloadable from the site.
+  command = "rm -rf dist && mkdir dist && cp -R index.html assets dist/"
+  publish = "dist"
   functions = "netlify/functions"
+
+[dev]
+  # netlify dev serves the files in place (no build step needed locally).
+  framework = "#static"
+  publish = "."
 
 [[headers]]
   for = "/*"
   [headers.values]
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://cdn.shopify.com; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
     X-Frame-Options = "DENY"
+    Cross-Origin-Opener-Policy = "same-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=()"
