@@ -1,14 +1,14 @@
 // "List a design" on the Elevated Designs Products page: every design in the online image library
 // gets an "Add to Elevated Designs" button. It opens a short sheet filled in from the listing
-// template (assets/listing.js); everything is editable, and one "List it" puts the T-shirt on
-// theelevateddesignsllc.com, live straight away. Elevated Designs only: the server refuses any
+// template (assets/listing.js): which blanks (shirts) to offer and in which colors, a markup on
+// the catalog prices, and the copy. One "List it" puts it on theelevateddesignsllc.com, live
+// straight away, with Blank, Color and Size options. Elevated Designs only: the server refuses any
 // other store, and Charleston 3D never shows this panel.
 import { el, toast } from "./app.js";
 import { STORES, api, host } from "./api.js";
-import { buildListing, describe, seoFor } from "./listing.js";
+import { SIZES, blankLabel, buildListing, colorSlug, describe, presetColors, seoFor, variantsFor } from "./listing.js";
 
 const LISTABLE = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-const ALL_SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"];
 const fileUrl = (key) => `/api/images/${encodeURIComponent(key)}`;
 const ext = () => el("span", { class: "ext", "aria-hidden": "true" }, "↗");
 
@@ -24,7 +24,7 @@ export function listPanel({ onListed = () => {} } = {}) {
   const grid = el("div", { class: "ldesigns", role: "list", "aria-labelledby": "lib-title" });
   const section = el("section", { class: "panel brand-band brand-ed", id: "list-design", "aria-labelledby": "lib-title" },
     el("div", { class: "panel-head" }, el("h2", { id: "lib-title" }, `List a design on ${site}`), el("a", { class: "btn ghost", href: "#studio" }, "Open Design Studio")),
-    el("p", { class: "muted" }, "Pick a design from the image library. Add to Elevated Designs opens a ready-made T-shirt listing (sizes, price, description, SEO) to check, and List it puts it on the store, live straight away."),
+    el("p", { class: "muted" }, "Pick a design from the image library. Add to Elevated Designs opens a ready-made T-shirt listing (shirts, colors, sizes, prices, description, SEO) to check, and List it puts it on the store, live straight away."),
     el("div", { class: "toolbar" }, search, reload), count, grid);
 
   const sheet = theSheet();
@@ -102,7 +102,7 @@ function makeSheet() {
   dlg.addEventListener("close", () => { opener?.focus?.(); opener = null; });
 
   const field = (label, input, hint) => el("label", { class: "lfield" }, el("span", {}, label), input, hint ?? null);
-  const counter = (input, max) => {
+  const lengthCounter = (input, max) => {
     const c = el("span", { class: "muted small count", "aria-live": "off" });
     const paint = () => { c.textContent = `${input.value.length}/${max}`; c.classList.toggle("over", input.value.length > max); };
     input.addEventListener("input", paint);
@@ -139,68 +139,141 @@ function makeSheet() {
   }
 
   function form(item, tpl) {
+    const cat = tpl.catalog, L = tpl.limits;
     const l = buildListing(item, tpl);
     const dirty = { desc: false, seoTitle: false, seoDesc: false };
-    const title = el("input", { class: "field", id: "ls-title", required: true, maxlength: String(tpl.limits.title), value: l.title, autocomplete: "off" });
-    const price = el("input", { class: "field", id: "ls-price", type: "number", inputmode: "decimal", required: true, min: String(tpl.limits.priceMin), max: String(tpl.limits.priceMax), step: "0.01", value: String(tpl.price) });
-    const up = el("input", { class: "field", id: "ls-up", type: "number", inputmode: "decimal", min: "0", max: "100", step: "0.01", value: String(tpl.upcharges["2XL"] ?? 0) });
-    const sizes = el("fieldset", { class: "lsizes" }, el("legend", {}, "Sizes"),
-      ...ALL_SIZES.map((s) => el("label", {}, el("input", { type: "checkbox", value: s, id: `ls-size-${s}`, checked: tpl.sizes.includes(s) }), s)));
+    // What's offered: blank id -> chosen color names, in catalog order.
+    const chosenColors = new Map(l.blanks.map((b) => [b.id, new Set(b.colors)]));
+    const title = el("input", { class: "field", id: "ls-title", required: true, maxlength: String(L.title), value: l.title, autocomplete: "off" });
+    const markup = el("input", { class: "field", id: "ls-markup", type: "number", inputmode: "decimal", min: String(L.markupMin), max: String(L.markupMax), step: "0.01", value: "0" });
+    const counter = el("p", { class: "vcount", id: "ls-count", "aria-live": "polite" });
+    const summary = el("p", { class: "muted small", id: "ls-summary" });
+    const sizes = el("fieldset", { class: "lsizes" }, el("legend", {}, "Sizes (each shirt offers the ones it comes in)"),
+      ...SIZES.map((s) => el("label", {}, el("input", { type: "checkbox", value: s, id: `ls-size-${s}`, checked: l.sizes.includes(s) }), s)));
     const type = el("input", { class: "field", id: "ls-type", required: true, maxlength: "60", value: tpl.productType });
-    const fabric = el("input", { class: "field", id: "ls-fabric", required: true, maxlength: "120", value: tpl.fabric });
     const tags = el("input", { class: "field", id: "ls-tags", value: l.tags.join(", "), autocomplete: "off" });
-    const desc = el("textarea", { class: "field", id: "ls-desc", rows: "6", required: true, maxlength: String(tpl.limits.descriptionHtml) });
+    const desc = el("textarea", { class: "field", id: "ls-desc", rows: "8", required: true, maxlength: String(L.descriptionHtml) });
     desc.value = l.descriptionHtml;
-    const seoTitle = el("input", { class: "field", id: "ls-seo-title", required: true, maxlength: String(tpl.limits.seoTitle), value: l.seoTitle });
-    const seoDesc = el("textarea", { class: "field", id: "ls-seo-desc", rows: "3", required: true, maxlength: String(tpl.limits.seoDescription) });
+    const seoTitle = el("input", { class: "field", id: "ls-seo-title", required: true, maxlength: String(L.seoTitle), value: l.seoTitle });
+    const seoDesc = el("textarea", { class: "field", id: "ls-seo-desc", rows: "3", required: true, maxlength: String(L.seoDescription) });
     seoDesc.value = l.seoDescription;
-    const c1 = counter(seoTitle, tpl.limits.seoTitle), c2 = counter(seoDesc, tpl.limits.seoDescription);
+    const c1 = lengthCounter(seoTitle, L.seoTitle), c2 = lengthCounter(seoDesc, L.seoDescription);
     const err = el("div", { class: "state state-error", role: "alert", id: "ls-error", hidden: true });
     const submit = el("button", { class: "btn brand", type: "submit", id: "ls-submit" }, "List it");
     const cancel = el("button", { class: "btn", type: "button", id: "ls-cancel", onclick: () => dlg.close() }, "Cancel");
-    const summary = el("p", { class: "muted small", id: "ls-summary" });
 
-    const chosen = () => [...sizes.querySelectorAll("input:checked")].map((i) => i.value);
-    const upcharges = () => (Number(up.value) > 0 ? { "2XL": Number(up.value) } : {});
-    const base = () => ({ title: title.value.trim() || l.title, fabric: fabric.value.trim() || tpl.fabric, handlingDays: tpl.handlingDays, sizes: chosen(), upcharges: upcharges() });
-    const regen = () => {
+    // ----- shirts to offer, grouped by type -----
+    const from = (b) => Math.min(...Object.values(b.prices));
+    const blankRow = (b) => {
+      const on = chosenColors.has(b.id);
+      const box = el("input", { type: "checkbox", id: `ls-blank-${b.id}`, "data-blank": b.id, checked: on });
+      const colors = el("div", { class: "lcolors", id: `ls-colors-${b.id}`, role: "group", "aria-label": `Colors for ${blankLabel(b)}`, hidden: !on },
+        ...b.colors.map((c) => el("label", { class: "lcolor", title: c.name },
+          el("input", { type: "checkbox", id: `ls-color-${b.id}-${colorSlug(c.name)}`, "data-blank": b.id, value: c.name, checked: on && chosenColors.get(b.id).has(c.name) }),
+          el("span", { class: "sw", style: `background:${/^#[0-9a-f]{3,8}$/i.test(c.hex) ? c.hex : "#ccc"}`, "aria-hidden": "true" }), c.name)));
+      box.addEventListener("change", () => {
+        if (box.checked) chosenColors.set(b.id, new Set(presetColors(b)));
+        else chosenColors.delete(b.id);
+        colors.querySelectorAll("input").forEach((i) => (i.checked = box.checked && chosenColors.get(b.id).has(i.value)));
+        colors.hidden = !box.checked;
+        update();
+      });
+      colors.addEventListener("change", (e) => {
+        const set = chosenColors.get(b.id);
+        if (!set) return;
+        e.target.checked ? set.add(e.target.value) : set.delete(e.target.value);
+        update();
+      });
+      return el("div", { class: "lblank", "data-blank": b.id },
+        el("label", { class: "lblank-head" }, box,
+          el("span", { class: "stack", style: "gap:0" }, el("strong", {}, `${b.brand} ${b.style} ${b.name}`),
+            el("span", { class: "muted small" }, `${cat.tiers[b.tier] ?? b.tier} · ${b.fit} · ${b.fabric} · from $${from(b).toFixed(2)}`))),
+        colors);
+    };
+    const groups = Object.entries(cat.types).map(([t, label]) => {
+      const list = cat.blanks.filter((b) => b.type === t);
+      if (!list.length) return null;
+      const open = list.some((b) => chosenColors.has(b.id));
+      return el("details", { class: "lgroup", open, "data-type": t }, el("summary", {}, label, el("span", { class: "muted small", "data-picked": t })), ...list.map(blankRow));
+    });
+    const shirts = el("fieldset", { class: "lshirts", id: "ls-shirts" }, el("legend", {}, "Shirts to offer"),
+      cat.pricing?.placeholder || cat.costsAreEstimates ? el("p", { class: "muted small" }, `Prices come from the blank catalog (updated ${cat.updated}) and are still placeholders: check them, or add a markup.`) : null,
+      ...groups);
+
+    const chosenSizes = () => [...sizes.querySelectorAll("input:checked")].map((i) => i.value);
+    const offer = () => cat.blanks.filter((b) => chosenColors.get(b.id)?.size).map((b) => ({ id: b.id, colors: b.colors.map((c) => c.name).filter((n) => chosenColors.get(b.id).has(n)) }));
+    const markupVal = () => (markup.value.trim() === "" ? 0 : Number(markup.value));
+    const base = () => ({ title: title.value.trim() || l.title, handlingDays: tpl.handlingDays, catalog: cat, blanks: offer(), sizes: chosenSizes() });
+    let count = 0;
+    function update() {
       const b = base();
       if (!dirty.desc) desc.value = describe(b);
       const seo = seoFor(b);
       if (!dirty.seoTitle) seoTitle.value = seo.seoTitle;
       if (!dirty.seoDesc) seoDesc.value = seo.seoDescription;
       c1.paint(); c2.paint();
-      const p = Number(price.value), u = Number(up.value) || 0, s = chosen();
-      summary.textContent = Number.isFinite(p) && p > 0 && s.length
-        ? `${s.length} size${s.length === 1 ? "" : "s"} at $${p.toFixed(2)}${s.includes("2XL") && u > 0 ? `, 2XL $${(p + u).toFixed(2)}` : ""}. Printed to order, stock isn't tracked. Goes live on ${host(STORES.ed.site)} as soon as you press List it.`
-        : "Pick at least one size and a price.";
-    };
+      const m = markupVal();
+      const vs = Number.isFinite(m) ? variantsFor(cat, { blanks: b.blanks, sizes: b.sizes, markup: m }) : [];
+      count = vs.length;
+      const over = count > L.variants;
+      counter.className = `vcount${over ? " over" : count > L.standardVariants ? " warn" : ""}`;
+      counter.textContent = `${count.toLocaleString("en-US")} variant${count === 1 ? "" : "s"} of ${L.variants.toLocaleString("en-US")}`
+        + (over ? `: too many. Offer fewer shirts, colors or sizes.` : count > L.standardVariants ? `. Over ${L.standardVariants}: Shopify makes it in the background, and a store without extended variants stops at ${L.standardVariants}.` : "");
+      submit.disabled = over || busy;
+      const prices = vs.map((v) => v.price);
+      summary.textContent = count
+        ? `${b.blanks.length} shirt${b.blanks.length === 1 ? "" : "s"}, ${b.blanks.reduce((n, x) => n + x.colors.length, 0)} colors, $${Math.min(...prices).toFixed(2)} to $${Math.max(...prices).toFixed(2)}. Printed to order, stock isn't tracked. Goes live on ${host(STORES.ed.site)} as soon as you press List it.`
+        : "Pick at least one shirt, a color and a size.";
+      groups.forEach((g) => { if (!g) return; const n = cat.blanks.filter((x) => x.type === g.dataset.type && chosenColors.get(x.id)?.size).length; g.querySelector("[data-picked]").textContent = n ? ` · ${n} picked` : ""; });
+    }
     desc.addEventListener("input", () => (dirty.desc = true));
     seoTitle.addEventListener("input", () => (dirty.seoTitle = true));
     seoDesc.addEventListener("input", () => (dirty.seoDesc = true));
-    [title, fabric, price, up].forEach((i) => i.addEventListener("input", regen));
-    sizes.addEventListener("change", regen);
+    [title, markup].forEach((i) => i.addEventListener("input", update));
+    sizes.addEventListener("change", update);
 
     const f = el("form", { class: "stack lform", novalidate: true },
       head(item), err,
       field("Title", title),
-      el("div", { class: "lgrid" }, field("Price ($)", price), field("2XL upcharge ($)", up)),
-      summary,
+      el("div", { class: "lgrid" }, field("Markup on catalog prices ($)", markup, el("span", { class: "muted small" }, "Added to every size's price; 0 uses the catalog."))),
+      counter, summary,
+      shirts,
       el("details", { class: "lmore" }, el("summary", {}, "Sizes, tags, description and SEO"),
         el("div", { class: "stack" },
           sizes,
-          el("div", { class: "lgrid" }, field("Product type", type), field("Fabric line", fabric, el("span", { class: "muted small" }, "Edit to match the blank you print on."))),
+          field("Product type", type),
           field("Tags", tags, el("span", { class: "muted small" }, "Separate with commas.")),
           field("Description (HTML)", desc),
           field("SEO title", seoTitle, c1.node),
           field("SEO description", seoDesc, c2.node))),
       el("div", { class: "row sheet-actions" }, cancel, submit));
 
+    const send = async (body) => {
+      busy = true; submit.disabled = true; cancel.disabled = true; submit.textContent = "Listing…"; f.setAttribute("aria-busy", "true");
+      let out;
+      try {
+        out = await api("/api/listings", { method: "POST", key: true, body, reason: "Listing a design on the store needs the console key (the CONSOLE_KEY value set for this console)." });
+      } catch (e2) {
+        busy = false; cancel.disabled = false; submit.textContent = "List it"; f.removeAttribute("aria-busy"); update();
+        showErr(e2.message, e2.details?.product?.adminUrl);
+        if (e2.code === "partly_listed" && e2.details?.product) onDone(item.key, { url: e2.details.product.url, adminUrl: e2.details.product.adminUrl, product: e2.details.product });
+        return;
+      }
+      busy = false;
+      if (out.pending) return waiting(item, body, out);
+      result(item, out);
+      toast(out.message ?? "Listed");
+      onDone(item.key, out);
+    };
+
     f.addEventListener("submit", async (e) => {
       e.preventDefault();
       if (busy) return;
       err.hidden = true;
-      if (!chosen().length) { showErr("Pick at least one size."); f.querySelector(".lmore").open = true; sizes.querySelector("input").focus(); return; }
+      const blanks = offer();
+      if (!blanks.length) { showErr("Pick at least one shirt to offer, with at least one color."); shirts.querySelector("input").focus(); return; }
+      if (!chosenSizes().length) { showErr("Pick at least one size."); f.querySelector(".lmore").open = true; sizes.querySelector("input").focus(); return; }
+      if (count > L.variants) { showErr(counter.textContent); return; }
       if (!f.checkValidity()) {
         const bad = f.querySelector(":invalid:not(fieldset)");
         if (bad?.closest(".lmore")) f.querySelector(".lmore").open = true;
@@ -208,25 +281,11 @@ function makeSheet() {
         bad?.focus();
         return;
       }
-      const body = {
-        store: "ed", imageKey: item.key, title: title.value.trim(), price: Number(price.value), sizes: chosen(), upcharges: upcharges(),
+      await send({
+        store: "ed", imageKey: item.key, title: title.value.trim(), blanks, sizes: chosenSizes(), markup: markupVal(),
         productType: type.value.trim(), tags: tags.value.split(",").map((t) => t.trim()).filter(Boolean),
         descriptionHtml: desc.value.trim(), seoTitle: seoTitle.value.trim(), seoDescription: seoDesc.value.trim(),
-      };
-      busy = true; submit.disabled = true; cancel.disabled = true; submit.textContent = "Listing…"; f.setAttribute("aria-busy", "true");
-      let out;
-      try {
-        out = await api("/api/listings", { method: "POST", key: true, body, reason: "Listing a design on the store needs the console key (the CONSOLE_KEY value set for this console)." });
-      } catch (e2) {
-        busy = false; submit.disabled = false; cancel.disabled = false; submit.textContent = "List it"; f.removeAttribute("aria-busy");
-        showErr(e2.message, e2.details?.product?.adminUrl);
-        if (e2.code === "partly_listed" && e2.details?.product) onDone(item.key, { url: e2.details.product.url, adminUrl: e2.details.product.adminUrl, product: e2.details.product });
-        return;
-      }
-      busy = false;
-      result(item, out);
-      toast(out.message ?? "Listed");
-      onDone(item.key, out);
+      });
     });
     function showErr(msg, admin) {
       err.replaceChildren(el("strong", {}, "Not listed yet"), el("p", {}, msg),
@@ -234,8 +293,33 @@ function makeSheet() {
       err.hidden = false;
       err.scrollIntoView?.({ block: "nearest" });
     }
-    regen();
+    update();
     return f;
+  }
+
+  // A big listing Shopify is still making: ask again with its operation id (never a second product).
+  function waiting(item, body, out) {
+    const check = el("button", { class: "btn brand", type: "button", id: "ls-check" }, "Check again");
+    const msg = el("p", {}, out.message ?? "");
+    dlg.replaceChildren(head(item),
+      el("div", { class: "state state-setup", id: "ls-pending", role: "status" }, el("strong", {}, "Still being made in Shopify"), msg),
+      el("div", { class: "row sheet-actions" }, el("button", { class: "btn", type: "button", id: "ls-later", onclick: () => dlg.close() }, "Close"), check));
+    check.addEventListener("click", async () => {
+      if (busy) return;
+      busy = true; check.disabled = true; check.textContent = "Checking…";
+      try {
+        const next = await api("/api/listings", { method: "POST", key: true, body: { ...body, operationId: out.operationId } });
+        busy = false;
+        if (next.pending) { check.disabled = false; check.textContent = "Check again"; msg.textContent = next.message ?? ""; return; }
+        result(item, next);
+        toast(next.message ?? "Listed");
+        onDone(item.key, next);
+      } catch (e) {
+        busy = false; check.disabled = false; check.textContent = "Check again";
+        msg.textContent = e.message;
+      }
+    });
+    check.focus();
   }
 
   async function open(item, from, cb) {

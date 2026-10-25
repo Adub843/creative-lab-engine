@@ -314,3 +314,20 @@ code { font-family: var(--f-mono); font-size: 13px; background: var(--sunk); pad
   .sheet { width: 100%; max-width: 100%; max-height: 92dvh; margin: auto 0 0; border-radius: 14px 14px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px)); }
   .sheet-actions .btn { flex: 1 1 auto; justify-content: center; }
 }
+/* listing sheet: shirts to offer */
+.lshirts { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px 12px; margin: 0; display: grid; gap: 8px; min-width: 0; }
+.lshirts legend { font-size: 13.5px; font-weight: 500; padding: 0 4px; }
+.lgroup { border-top: 1px solid var(--line); padding-top: 6px; }
+.lgroup:first-of-type { border-top: 0; }
+.lgroup summary { cursor: pointer; font-weight: 600; font-size: 14px; padding: 4px 0; }
+.lblank { display: grid; gap: 6px; padding: 6px 0 6px 4px; min-width: 0; }
+.lblank-head { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; min-width: 0; }
+.lblank-head input, .lcolor input { width: 17px; height: 17px; accent-color: var(--brand); flex: none; margin-top: 2px; }
+.lblank-head strong { font-size: 14px; overflow-wrap: anywhere; }
+.lcolors { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 27px; min-width: 0; }
+.lcolor { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; background: var(--sunk); border-radius: 999px; padding: 3px 10px 3px 6px; cursor: pointer; }
+.lcolor input { margin: 0; }
+.lcolor .sw { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(127, 127, 127, .6); flex: none; }
+.vcount { font-family: var(--f-mono); font-size: 13px; padding: 6px 10px; border-radius: 8px; background: var(--ok-soft); color: var(--ok); }
+.vcount.warn { background: var(--warn-soft); color: var(--warn); }
+.vcount.over { background: var(--bad-soft); color: var(--bad); }

@@ -169,13 +169,15 @@ async function main() {
     listings.push(body);
     let input;
     try { input = L.parseListingInput(body, TPL); } catch (e) { listings.at(-1).refused = e.message; return json(e.status ?? 400, { error: e.message, code: e.code }); }
+    listings.at(-1).variants = input.variants.length;
     await new Promise((r) => setTimeout(r, 200));
     const handle = input.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     const product = { id: "gid://shopify/Product/555", handle, title: input.title, url: `https://theelevateddesignsllc.com/products/${handle}`, adminUrl: "https://admin.shopify.com/store/elevated-designs/products/555" };
     if (mode.listing === "error") return json(422, { error: "Shopify wouldn't create the product: Title has already been taken", code: "shopify_rejected" });
     if (mode.listing === "partly") return json(422, { error: "The product was made in Shopify but isn't on the Online Store yet: Publication not found Press List it again to retry, or publish it in Shopify.", code: "partly_listed", details: { product } });
+    if (mode.listing === "pending" && !body.operationId) return json(202, { store: "ed", pending: true, operationId: "gid://shopify/ProductSetOperation/42", message: "Shopify is still making this listing (it has a lot of variants). Press Check again in a moment to put it on theelevateddesignsllc.com." });
     if (mode.listing === "already") return json(200, { store: "ed", alreadyListed: true, republished: false, live: true, product, url: product.url, adminUrl: product.adminUrl, message: `This design is already listed as "${input.title}".` });
-    PRODUCTS.ed.push({ ...product, type: input.productType, status: "ACTIVE", live: true, image: null, price: input.price, currency: "USD", inventory: null, updatedAt: "2026-10-25T10:00:00Z" });
+    PRODUCTS.ed.push({ ...product, type: input.productType, status: "ACTIVE", live: true, image: null, price: Math.min(...input.variants.map((v) => v.price)), currency: "USD", inventory: null, updatedAt: "2026-10-25T10:00:00Z" });
     return json(201, { store: "ed", alreadyListed: false, live: true, product, url: product.url, adminUrl: product.adminUrl, indexNow: { sent: true }, message: `"${input.title}" is live on theelevateddesignsllc.com.` });
   });
 
@@ -791,44 +793,60 @@ async function main() {
     if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "ed-list-panel-1280.png"), fullPage: true }); }
   });
 
-  await step("list a design: sheet is prefilled from the template", async () => {
+  await step("list a design: sheet is prefilled: cheapest tee per tier, preset colors, catalog prices", async () => {
     await openSheet("lowcountry");
     assert.equal(listingGets, 1, "template fetched once");
     assert.equal(await page.evaluate(() => document.activeElement?.id), "ls-title", "focus starts on the title");
     assert.equal(await page.inputValue("#ls-title"), "Lowcountry Sunset Tee");
-    assert.equal(await page.inputValue("#ls-price"), "28");
-    assert.equal(await page.inputValue("#ls-up"), "3");
-    assert.match(await page.locator("#ls-summary").textContent(), /5 sizes at \$28\.00, 2XL \$31\.00/);
+    assert.equal(await page.inputValue("#ls-markup"), "0");
+    const picked = await page.locator(".lblank-head input:checked").evaluateAll((i) => i.map((x) => x.dataset.blank));
+    assert.deepEqual(picked, TPL.defaults.blanks.map((b) => b.id));
+    assert.equal(picked.length, 3);
+    assert.deepEqual(await page.locator("#ls-colors-gildan-64000 input:checked").evaluateAll((i) => i.map((x) => x.value)), ["White", "Black", "Sport Grey", "Navy"]);
+    assert.equal(await page.locator("#ls-colors-gildan-5000").isHidden(), true, "colors only for offered shirts");
+    assert.match(await page.locator('.lblank[data-blank="gildan-5000"]').textContent(), /Gildan 5000 Heavy Cotton Tee.*Best price.*Classic.*from \$13\.99/s);
+    assert.match(await page.locator("#ls-count").textContent(), /^80 variants of 2,048$/);
+    assert.match(await page.locator("#ls-summary").textContent(), /3 shirts, 12 colors, \$13\.99 to \$\d+\.\d\d/);
+    assert.match(await page.locator("#ls-shirts").textContent(), /still placeholders/);
+    assert.equal(await page.locator('details.lgroup[data-type="tee"]').evaluate((d) => d.open), true);
+    assert.equal(await page.locator('details.lgroup[data-type="hoodie"]').evaluate((d) => d.open), false);
     await page.click(".lmore summary");
-    const checked = await page.locator(".lsizes input:checked").evaluateAll((i) => i.map((x) => x.value));
-    assert.deepEqual(checked, ["S", "M", "L", "XL", "2XL"]);
-    assert.equal(await page.inputValue("#ls-type"), "T-Shirt");
-    assert.equal(await page.inputValue("#ls-fabric"), "Soft ring-spun cotton tee");
-    assert.match(await page.inputValue("#ls-tags"), /^elevated-designs, graphic-tee, t-shirt, printed-to-order, sunset, charleston$/);
     const desc = await page.inputValue("#ls-desc");
     assert.match(desc, /<strong>Lowcountry Sunset<\/strong>/);
-    assert.match(desc, /Soft ring-spun cotton tee/);
-    assert.match(desc, /S, M, L, XL, 2XL \(2XL \+\$3\)/);
-    assert.match(desc, /Printed to order for you; ships in 5-7 business days/);
+    assert.match(desc, /<h3>Choose your shirt<\/h3>/);
+    assert.match(desc, /Gildan 64000 – Softstyle Tee<\/strong>: /);
+    assert.match(desc, /ships in 5-7 business days/);
+    assert.match(await page.inputValue("#ls-tags"), /^elevated-designs, graphic-tee, t-shirt, printed-to-order, sunset, charleston$/);
     assert.equal(await page.inputValue("#ls-seo-title"), "Lowcountry Sunset Tee | Elevated Designs");
     assert.ok((await page.inputValue("#ls-seo-desc")).length <= 155);
-    assert.match(await page.locator(".lfield", { hasText: "SEO title" }).locator(".count").textContent(), /^\d+\/60$/);
-    if (SCREENS) await page.screenshot({ path: path.join(SCREENS, "ed-list-sheet-1280.png") });
+    await page.click(".lmore summary");
+    if (SCREENS) { await page.locator("#list-sheet").evaluate((d) => (d.scrollTop = 0)); await page.screenshot({ path: path.join(SCREENS, "ed-list-sheet-1280.png") }); }
   });
 
-  await step("list a design: edits flow into the copy; a hand-edited field is kept", async () => {
+  await step("list a design: picking shirts and colors updates the counter, prices and copy; hand edits are kept", async () => {
+    await page.check("#ls-blank-gildan-5000");
+    assert.equal(await page.locator("#ls-colors-gildan-5000").isVisible(), true);
+    assert.deepEqual(await page.locator("#ls-colors-gildan-5000 input:checked").evaluateAll((i) => i.map((x) => x.value)), ["White", "Black", "Sport Grey", "Navy"], "preset colors for a newly picked shirt");
+    assert.match(await page.locator("#ls-count").textContent(), /^112 variants of 2,048\. Over 100: Shopify makes it in the background/);
+    assert.equal(await page.locator("#ls-count").getAttribute("class"), "vcount warn");
+    await page.uncheck("#ls-blank-gildan-5000");
+    assert.match(await page.locator("#ls-count").textContent(), /^80 variants/);
+    await page.uncheck("#ls-blank-fruit-3930r");
+    await page.uncheck("#ls-color-gildan-h000-sport-grey");
+    await page.check("#ls-color-gildan-h000-sand");
+    assert.match(await page.locator("#ls-count").textContent(), /^48 variants/, "2 shirts x 4 colors x 6 sizes");
+    await page.fill("#ls-markup", "2");
+    assert.match(await page.locator("#ls-summary").textContent(), /2 shirts, 8 colors, \$16\.99 to \$27\.99/);
+    await page.click(".lmore summary");
+    assert.ok(!(await page.inputValue("#ls-desc")).includes("Fruit of the Loom"), "description follows the shirts offered");
     await page.fill("#ls-title", "Lowcountry Sunset Classic Tee");
     assert.match(await page.inputValue("#ls-desc"), /<strong>Lowcountry Sunset Classic<\/strong>/);
     assert.equal(await page.inputValue("#ls-seo-title"), "Lowcountry Sunset Classic Tee | Elevated Designs");
-    await page.fill("#ls-fabric", "Heavyweight cotton tee");
-    assert.match(await page.inputValue("#ls-desc"), /<li>Heavyweight cotton tee<\/li>/);
     await page.fill("#ls-seo-desc", "Hand-written SEO description for the Lowcountry Sunset tee.");
     await page.fill("#ls-title", "Lowcountry Sunset Tee");
     assert.equal(await page.inputValue("#ls-seo-desc"), "Hand-written SEO description for the Lowcountry Sunset tee.", "kept after a title change");
-    await page.fill("#ls-price", "30");
-    await page.check("#ls-size-3XL");
-    await page.uncheck("#ls-size-S");
-    assert.match(await page.locator("#ls-summary").textContent(), /5 sizes at \$30\.00, 2XL \$33\.00/);
+    await page.uncheck("#ls-size-3XL");
+    assert.match(await page.locator("#ls-count").textContent(), /^40 variants/);
     await page.fill("#ls-tags", "elevated-designs, sunset,  , lowcountry");
   });
 
@@ -845,9 +863,10 @@ async function main() {
     assert.equal(body.store, "ed");
     assert.equal(body.imageKey, "mh2k3x-0123abcd");
     assert.equal(body.title, "Lowcountry Sunset Tee");
-    assert.equal(body.price, 30);
-    assert.deepEqual(body.sizes, ["M", "L", "XL", "2XL", "3XL"]);
-    assert.deepEqual(body.upcharges, { "2XL": 3 });
+    assert.equal(body.markup, 2);
+    assert.deepEqual(body.blanks, [{ id: "gildan-64000", colors: ["White", "Black", "Sport Grey", "Navy"] }, { id: "gildan-h000", colors: ["White", "Black", "Navy", "Sand"] }]);
+    assert.deepEqual(body.sizes, ["XS", "S", "M", "L", "XL", "2XL", "4XL", "5XL"]);
+    assert.equal(body.variants, 40, "server counted the same variants as the sheet");
     assert.deepEqual(body.tags, ["elevated-designs", "sunset", "lowcountry"]);
     assert.equal(body.seoDescription, "Hand-written SEO description for the Lowcountry Sunset tee.");
     assert.match(await page.locator("#ls-result").textContent(), /Live on theelevateddesignsllc\.com.*is live/s);
@@ -876,6 +895,26 @@ async function main() {
     mode.listing = "ok";
   });
 
+  await step("list a design: a big listing still being made shows Check again, which finishes it with the operation id", async () => {
+    mode.listing = "pending";
+    await openSheet("lowcountry");
+    for (const id of ["gildan-5000", "bella-3001", "comfortcolors-1717"]) await page.check(`#ls-blank-${id}`);
+    assert.match(await page.locator("#ls-count").textContent(), /^1[0-9]{2} variants/);
+    const before = listings.length;
+    await page.click("#ls-submit");
+    await page.waitForSelector("#ls-pending");
+    assert.match(await page.locator("#ls-pending").textContent(), /Still being made in Shopify.*still making this listing/s);
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "ls-check");
+    await page.click("#ls-check");
+    await page.waitForSelector("#ls-result");
+    assert.equal(listings.length - before, 2);
+    assert.equal(listings.at(-1).operationId, "gid://shopify/ProductSetOperation/42");
+    assert.equal(listings.at(-1).refused, undefined);
+    await page.click("#ls-done");
+    PRODUCTS.ed.pop();
+    mode.listing = "ok";
+  });
+
   await step("list a design: errors stay in the sheet, the form is kept, and a retry works", async () => {
     PRODUCTS.ed.pop();
     mode.listing = "error";
@@ -898,16 +937,29 @@ async function main() {
     await page.click("#ls-done");
   });
 
-  await step("list a design: empty title or no sizes are caught before anything is sent", async () => {
+  await step("list a design: no title, no shirts, no sizes or over 2,048 variants are caught before anything is sent", async () => {
     await openSheet("palmetto");
     const before = listings.length;
     await page.fill("#ls-title", "");
     await page.click("#ls-submit");
     assert.equal(await page.evaluate(() => document.activeElement?.id), "ls-title");
     await page.fill("#ls-title", "Palmetto Moon Tee");
+    for (const b of TPL.defaults.blanks) await page.uncheck(`#ls-blank-${b.id}`);
+    assert.match(await page.locator("#ls-summary").textContent(), /Pick at least one shirt/);
+    await page.click("#ls-submit");
+    await page.waitForSelector("#ls-error:not([hidden]) >> text=Pick at least one shirt");
+    // every shirt in every color: far over Shopify's limit
+    await page.locator("details.lgroup").evaluateAll((ds) => ds.forEach((d) => (d.open = true)));
+    for (const box of await page.locator(".lblank-head input").all()) await box.check();
+    await page.locator(".lcolors input:not(:checked)").evaluateAll((is) => is.forEach((i) => i.click()));
+    assert.match(await page.locator("#ls-count").textContent(), /^\d,\d{3} variants of 2,048: too many/);
+    assert.equal(await page.locator("#ls-count").getAttribute("class"), "vcount over");
+    assert.equal(await page.locator("#ls-submit").isDisabled(), true, "List it is off over the limit");
+    await page.locator(".lblank-head input:checked").evaluateAll((is) => is.forEach((i) => i.click()));
+    assert.equal(await page.locator(".lblank-head input:checked").count(), 0);
+    await page.check("#ls-blank-gildan-5000");
     await page.click(".lmore summary");
-    for (const s of ["S", "M", "L", "XL", "2XL"]) await page.uncheck(`#ls-size-${s}`);
-    assert.match(await page.locator("#ls-summary").textContent(), /Pick at least one size/);
+    for (const s of ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"]) await page.uncheck(`#ls-size-${s}`);
     await page.click("#ls-submit");
     await page.waitForSelector("#ls-error:not([hidden]) >> text=Pick at least one size");
     await page.fill("#ls-seo-title", "x".repeat(70));
@@ -930,10 +982,18 @@ async function main() {
     await page.keyboard.press("Enter");
     await page.waitForSelector("#list-sheet[open] #ls-title");
     assert.equal(await page.evaluate(() => document.activeElement?.id), "ls-title");
-    const ids = [];
-    for (let i = 0; i < 6; i++) { await page.keyboard.press("Tab"); ids.push(await page.evaluate(() => document.activeElement?.id || document.activeElement?.tagName)); }
-    assert.deepEqual(ids.slice(0, 2), ["ls-price", "ls-up"]);
-    assert.ok(ids.includes("ls-submit"), `List it reachable by Tab: ${ids}`);
+    await page.keyboard.press("Tab");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "ls-markup");
+    // Tab to a shirt not yet offered and pick it with Space
+    let at = null;
+    for (let i = 0; i < 30 && at !== "ls-blank-gildan-5000"; i++) { await page.keyboard.press("Tab"); at = await page.evaluate(() => document.activeElement?.id); }
+    assert.equal(at, "ls-blank-gildan-5000", "Tab reaches each shirt");
+    await page.keyboard.press("Space");
+    assert.equal(await page.locator("#ls-blank-gildan-5000").isChecked(), true);
+    assert.match(await page.locator("#ls-count").textContent(), /^112 variants/);
+    let reached = false;
+    for (let i = 0; i < 300 && !reached; i++) { await page.keyboard.press("Tab"); reached = await page.evaluate(() => document.activeElement?.id === "ls-submit"); }
+    assert.ok(reached, "List it reachable by Tab");
     await page.keyboard.press("Escape");
     assert.equal(await page.locator("#list-sheet[open]").count(), 0);
     assert.equal(await page.evaluate(() => document.activeElement?.closest(".lcard")?.dataset.key), opener, "focus back on the button that opened it");
