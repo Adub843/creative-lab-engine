@@ -13,6 +13,7 @@ const s = (tag, attrs = {}, ...kids) => {
 };
 const shortDate = (key) => new Date(`${key}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 const num = (n) => (n ?? 0).toLocaleString("en-US");
+const orders = (n) => `${num(n)} ${(n ?? 0) === 1 ? "order" : "orders"}`;
 
 function delta(pct, label = "vs previous period") {
   if (pct == null) return el("span", { class: "delta flat" }, "New: nothing to compare yet");
@@ -160,7 +161,7 @@ export async function renderInsights() {
       el("span", { class: "eyebrow" }, `Last ${n} days`),
       el("b", { class: "num" }, m0(p[n].current.revenue)),
       delta(p[n].growth.revenue),
-      el("span", { class: "muted small" }, `${num(p[n].current.orders)} orders · ${money(p[n].current.aov, cur)} average`));
+      el("span", { class: "muted small" }, `${orders(p[n].current.orders)} · ${money(p[n].current.aov, cur)} average`));
     const rc = d.repeatCustomers;
     out.push(el("section", { class: `panel brand-band brand-${d.store}` },
       el("div", { class: "panel-head" }, el("h2", {}, `${st.name} sales`), el("span", { class: "muted small" }, `Updated ${new Date(d.generatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · ${d.timeZone}`)),
@@ -176,7 +177,7 @@ export async function renderInsights() {
     if (d.orders.available) {
       // Daily revenue
       out.push(el("section", { class: `panel brand-${d.store}` },
-        el("div", { class: "panel-head" }, el("h2", {}, "Revenue by day"), el("span", { class: "muted small" }, `${num(d.orders.count)} orders in ${d.days} days`)),
+        el("div", { class: "panel-head" }, el("h2", {}, "Revenue by day"), el("span", { class: "muted small" }, `${orders(d.orders.count)} in ${d.days} days`)),
         chart({ points: d.series.map((r) => ({ label: shortDate(r.date), value: r.revenue })), type: "bar", title: `Daily revenue for the last ${d.days} days`, format: (v, axis) => (axis ? m0(v) : money(v, cur)) }),
         numbersTable("Daily revenue", ["Day", "Revenue", "Orders"], d.series.slice().reverse().map((r) => [shortDate(r.date), money(r.revenue, cur), num(r.orders)]))));
 

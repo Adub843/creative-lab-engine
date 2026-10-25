@@ -485,7 +485,8 @@ async function main() {
     const t7 = await page.locator(".tile").first().textContent();
     assert.match(t7, /\$1,235/, "tile rounds to whole dollars");
     assert.match(t7, /New: nothing to compare yet/);
-    assert.match(t7, /1 orders · \$1,234\.50 average/);
+    assert.match(t7, /(^|[^0-9,])1 order · \$1,234\.50 average/);
+    assert.ok(!/(^|[^0-9,])1 orders\b/.test(await page.locator("#view").textContent()), "no \"1 orders\" anywhere");
     const charts = page.locator(".chart");
     assert.equal(await charts.count(), 3);
     assert.equal(await charts.nth(1).locator(".bar").count(), 1, "one week of history");
