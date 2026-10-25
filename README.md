@@ -2,11 +2,11 @@
 
 One place to run Charleston 3D and Elevated Designs: dashboard, brand pages, a map of every connected service, product publishing and insights for both Shopify stores, and a design studio with an image library and shirt designer.
 
-Static site (no build step) plus small serverless functions.
+Static site plus small serverless functions. The only build step copies `index.html` and `assets/` into `dist/`, which is all that gets published, so `lib/`, `scripts/` and the rest of the repo are never downloadable from the site.
 
 - `index.html`: app shell
 - `assets/`: styles, data and page scripts (`products.js`, `insights.js`, `studio.js`; `api.js` holds the shared store switcher, console key and API calls). `data.js` is the one list of brands, services, quick links' sites and the cleanup list.
-- `lib/shopify.mjs`, `lib/insights.mjs`: the API logic as plain functions with no hosting code. `lib/netlify.mjs` is the only Netlify glue.
+- `lib/shopify.mjs`, `lib/insights.mjs`, `lib/images.mjs`: the API logic as plain functions with no hosting code. `lib/netlify.mjs` is the only Netlify glue.
 - `netlify/functions/products.mjs` (`/api/products`), `insights.mjs` (`/api/insights`), `images.mjs` (`/api/images`, image library in Netlify Blobs)
 
 Run locally with `npm run dev` (`netlify dev`, needs the Netlify CLI), or serve the folder with any static server such as `python3 -m http.server` (the library then keeps images in the browser only, and Products and Insights say the API isn't running). Opening `index.html` straight from disk doesn't work: browsers block its module scripts on `file://`.
@@ -41,7 +41,7 @@ Set these in Netlify (Site configuration > Environment variables). Never put the
 | `ED_ADMIN_TOKEN` | Admin API access token for Elevated Designs, **or** `ED_CLIENT_ID` + `ED_CLIENT_SECRET` |
 | `C3D_SITE_URL` | Optional. Public site address, default `https://charleston3d.com` |
 | `ED_SITE_URL` | Optional. Public site address, default `https://theelevateddesignsllc.com` |
-| `CONSOLE_KEY` | **Required.** A long random password. Publishing, uploads and Insights are refused until it's set; enter the same value when the console asks for it (kept for that browser tab only). |
+| `CONSOLE_KEY` | **Required.** A long random password, at least 16 characters (there's no lockout on wrong guesses, so make it long). The product list, publishing, the image library list, uploads and Insights are refused until it's set; enter the same value when the console asks for it (kept for that browser tab only). |
 | `INDEXNOW_KEY` | Optional. An IndexNow key, used for both stores. In each store add a page with handle `indexnow-key` and template `page.indexnow`, and paste the same key in Theme settings > Search and AI, so it's served at `https://<site>/pages/indexnow-key`. |
 
 ### Admin API access scopes
@@ -71,4 +71,4 @@ After saving the variables, redeploy the console once so the functions pick them
 
 ## Moving off Netlify later
 
-`lib/` has no Netlify code. A new host needs a small adapter like `lib/netlify.mjs` that passes `{ method, query, header(name), text() }` and `{ env(name), fetch }` to `handleProducts` / `handleInsights` and sends back `{ status, body }` as JSON. The image library (`images.mjs`) still uses Netlify Blobs and would need a new store.
+`lib/` has no Netlify code. A new host needs a small adapter like `lib/netlify.mjs` that passes `{ method, query, header(name), text() }` and `{ env(name), fetch }` to `handleProducts` / `handleInsights` and sends back `{ status, body }` as JSON. The image library (`lib/images.mjs`) takes any blob store with the same few methods; `netlify/functions/images.mjs` passes it Netlify Blobs.

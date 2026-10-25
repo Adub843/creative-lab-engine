@@ -43,10 +43,13 @@ async function listLocal() {
   } catch { return []; }
 }
 
+let cloudLocked = false; // the online library answered 401/403: no (or a wrong) console key
 export async function listImages() {
   let cloud = [];
+  cloudLocked = false;
   try {
-    const res = await fetch(API, { headers: { accept: "application/json" } });
+    const res = await fetch(API, { headers: { accept: "application/json", ...keyHeader() } });
+    cloudLocked = res.status === 401 || res.status === 403;
     if (res.ok && res.headers.get("content-type")?.includes("json")) cloud = (await res.json()).items ?? [];
   } catch { /* offline or not deployed */ }
   const local = await listLocal();
@@ -131,7 +134,8 @@ export async function renderStudio() {
     const shown = state.items.filter((i) => !q || `${i.name} ${i.tags ?? ""}`.toLowerCase().includes(q));
     const localCount = state.items.filter((i) => i.local).length;
     countLine.textContent = `${shown.length} of ${state.items.length} images` +
-      (localCount ? `. ${localCount} saved only in this browser.` : ".");
+      (localCount ? `. ${localCount} saved only in this browser.` : ".") +
+      (cloudLocked ? " Enter the console key under Settings to see the online library." : "");
     lib.replaceChildren(...shown.map((i) => {
       const b = el("button", { type: "button", draggable: "true", title: `${i.name}${i.tags ? ` · ${i.tags}` : ""}\nClick to add, or drag onto the shirt`,
         onclick: () => addLayer(i), role: "listitem" },
@@ -275,7 +279,7 @@ export async function renderStudio() {
   COLORS.forEach(([name, c]) => swatches.append(el("button", { type: "button", title: name, "aria-label": name, "data-c": c,
     style: `background:${c}`, onclick: () => { state.color = c; drawStage(); save(); } })));
   guide.addEventListener("change", drawStage);
-  keyIn.addEventListener("change", () => { consoleKey.set(keyIn.value.trim()); toast("Console key kept for this browser tab"); });
+  keyIn.addEventListener("change", () => { consoleKey.set(keyIn.value.trim()); toast("Console key kept for this browser tab"); refresh(); });
 
   // ----- export -----
   async function exportPng() {

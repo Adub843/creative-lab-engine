@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "netlify dev",
-    "check": "node --check assets/app.js && node --check assets/api.js && node --check assets/data.js && node --check assets/products.js && node --check assets/insights.js && node --check assets/studio.js && node --check lib/shopify.mjs && node --check lib/insights.mjs && node --check lib/netlify.mjs && node --check netlify/functions/images.mjs && node --check netlify/functions/products.mjs && node --check netlify/functions/insights.mjs && node --check scripts/test-api.mjs && node --check scripts/test-ui.cjs",
+    "check": "node --check assets/app.js && node --check assets/api.js && node --check assets/data.js && node --check assets/products.js && node --check assets/insights.js && node --check assets/studio.js && node --check lib/shopify.mjs && node --check lib/insights.mjs && node --check lib/netlify.mjs && node --check lib/images.mjs && node --check netlify/functions/images.mjs && node --check netlify/functions/products.mjs && node --check netlify/functions/insights.mjs && node --check scripts/test-api.mjs && node --check scripts/test-ui.cjs",
     "test": "node scripts/test-api.mjs",
     "test:ui": "NODE_PATH=$(npm root -g) node scripts/test-ui.cjs"
   },

@@ -9,7 +9,7 @@ const TOKEN = "shpat_TEST_SECRET_TOKEN_123456";
 const ENV = {
   C3D_SHOPIFY_DOMAIN: "charleston3d.myshopify.com", C3D_ADMIN_TOKEN: TOKEN,
   ED_SHOPIFY_DOMAIN: "elevated-designs.myshopify.com", ED_ADMIN_TOKEN: "shpat_ED_SECRET_987654",
-  CONSOLE_KEY: "open-sesame", INDEXNOW_KEY: "abc123indexnow",
+  CONSOLE_KEY: "open-sesame-test-key-0001", INDEXNOW_KEY: "abc123indexnow",
 };
 const envOf = (over = {}) => (k) => (k in over ? over[k] : ENV[k]);
 const PUB = "gid://shopify/Publication/1";
@@ -66,14 +66,15 @@ function fakeShopify(opts = {}) {
 }
 
 const get = (q, headers = {}) => ({ method: "GET", query: new URLSearchParams(q), header: (k) => headers[k.toLowerCase()] ?? null, text: async () => "" });
-const post = (body, headers = { "content-type": "application/json", "x-console-key": "open-sesame" }) =>
+const keyed = (q) => get(q, { "x-console-key": "open-sesame-test-key-0001" });
+const post = (body, headers = { "content-type": "application/json", "x-console-key": "open-sesame-test-key-0001" }) =>
   ({ method: "POST", query: new URLSearchParams(), header: (k) => headers[k.toLowerCase()] ?? null, text: async () => (typeof body === "string" ? body : JSON.stringify(body)) });
 const noLeak = (res) => { const s = JSON.stringify(res); assert.ok(!s.includes(TOKEN) && !s.includes("shpat_"), `token leaked: ${s}`); };
 
 // ---------- products ----------
 test("list: products with live flag, public URL, admin URL", async () => {
   const sh = fakeShopify();
-  const res = await handleProducts(get({ store: "c3d" }), { env: envOf(), fetch: sh.fetch });
+  const res = await handleProducts(keyed({ store: "c3d" }), { env: envOf(), fetch: sh.fetch });
   assert.equal(res.status, 200);
   const [live, draft] = res.body.products;
   assert.equal(live.live, true);
@@ -90,7 +91,7 @@ test("list: products with live flag, public URL, admin URL", async () => {
 
 test("list: ED uses its own domain, token and site URL override", async () => {
   const sh = fakeShopify();
-  const res = await handleProducts(get({ store: "ed" }), { env: envOf({ ED_SITE_URL: "https://shop.example.com/" }), fetch: sh.fetch });
+  const res = await handleProducts(keyed({ store: "ed" }), { env: envOf({ ED_SITE_URL: "https://shop.example.com/" }), fetch: sh.fetch });
   assert.equal(res.status, 200);
   assert.equal(res.body.products[0].url, "https://shop.example.com/products/keychain");
   assert.ok(sh.calls.every((c) => !c.op || (c.domain === "elevated-designs.myshopify.com" && c.token === "shpat_ED_SECRET_987654")));
@@ -166,9 +167,9 @@ for (const [name, body] of BAD)
 test("bad JSON is 400, wrong content type is 415, huge body is 413", async () => {
   const sh = fakeShopify();
   assert.equal((await handleProducts(post("{nope"), { env: envOf(), fetch: sh.fetch })).status, 400);
-  assert.equal((await handleProducts(post("{}", { "content-type": "text/plain", "x-console-key": "open-sesame" }), { env: envOf(), fetch: sh.fetch })).status, 415);
+  assert.equal((await handleProducts(post("{}", { "content-type": "text/plain", "x-console-key": "open-sesame-test-key-0001" }), { env: envOf(), fetch: sh.fetch })).status, 415);
   assert.equal((await handleProducts(post(JSON.stringify({ store: "c3d", pad: "x".repeat(5000) })), { env: envOf(), fetch: sh.fetch })).status, 413);
-  assert.equal((await handleProducts(get({ store: "nope" }), { env: envOf(), fetch: sh.fetch })).status, 400);
+  assert.equal((await handleProducts(keyed({ store: "nope" }), { env: envOf(), fetch: sh.fetch })).status, 400);
   assert.equal(sh.calls.length, 0);
 });
 
@@ -192,11 +193,11 @@ test("CONSOLE_KEY unset: writes are refused (403), not allowed", async () => {
 
 test("missing env is 503 naming the variables, and a non-myshopify domain is refused", async () => {
   const sh = fakeShopify();
-  const res = await handleProducts(get({ store: "ed" }), { env: envOf({ ED_ADMIN_TOKEN: "" }), fetch: sh.fetch });
+  const res = await handleProducts(keyed({ store: "ed" }), { env: envOf({ ED_ADMIN_TOKEN: "" }), fetch: sh.fetch });
   assert.equal(res.status, 503);
   assert.equal(res.body.code, "not_connected");
   assert.match(res.body.error, /ED_ADMIN_TOKEN/);
-  const evil = await handleProducts(get({ store: "c3d" }), { env: envOf({ C3D_SHOPIFY_DOMAIN: "evil.example.com" }), fetch: sh.fetch });
+  const evil = await handleProducts(keyed({ store: "c3d" }), { env: envOf({ C3D_SHOPIFY_DOMAIN: "evil.example.com" }), fetch: sh.fetch });
   assert.equal(evil.status, 503);
   assert.equal(sh.calls.length, 0, "token is never sent to a non-Shopify host");
 });
@@ -205,8 +206,8 @@ test("Dev Dashboard app: client credentials swapped for a token once, then cache
   clearTokenCache();
   const sh = fakeShopify();
   const env = envOf({ ED_ADMIN_TOKEN: undefined, ED_CLIENT_ID: "dev-client-id", ED_CLIENT_SECRET: "dev-secret-value" });
-  const one = await handleProducts(get({ store: "ed" }), { env, fetch: sh.fetch });
-  const two = await handleProducts(get({ store: "ed" }), { env, fetch: sh.fetch });
+  const one = await handleProducts(keyed({ store: "ed" }), { env, fetch: sh.fetch });
+  const two = await handleProducts(keyed({ store: "ed" }), { env, fetch: sh.fetch });
   assert.equal(one.status, 200);
   assert.equal(two.status, 200);
   assert.equal(sh.calls.filter((c) => c.oauth).length, 1, "token reused while valid");
@@ -217,11 +218,11 @@ test("Dev Dashboard app: client credentials swapped for a token once, then cache
 test("Dev Dashboard app: wrong secret is a clear 502 without leaking it; half-set is 503", async () => {
   clearTokenCache();
   const sh = fakeShopify();
-  const res = await handleProducts(get({ store: "ed" }), { env: envOf({ ED_ADMIN_TOKEN: undefined, ED_CLIENT_ID: "dev-client-id", ED_CLIENT_SECRET: "wrong-secret-xyz" }), fetch: sh.fetch });
+  const res = await handleProducts(keyed({ store: "ed" }), { env: envOf({ ED_ADMIN_TOKEN: undefined, ED_CLIENT_ID: "dev-client-id", ED_CLIENT_SECRET: "wrong-secret-xyz" }), fetch: sh.fetch });
   assert.equal(res.status, 502);
   assert.equal(res.body.code, "shopify_auth");
   assert.ok(!JSON.stringify(res.body).includes("wrong-secret-xyz"));
-  const half = await handleProducts(get({ store: "ed" }), { env: envOf({ ED_ADMIN_TOKEN: undefined, ED_CLIENT_ID: "dev-client-id" }), fetch: sh.fetch });
+  const half = await handleProducts(keyed({ store: "ed" }), { env: envOf({ ED_ADMIN_TOKEN: undefined, ED_CLIENT_ID: "dev-client-id" }), fetch: sh.fetch });
   assert.equal(half.status, 503);
   assert.match(half.body.error, /ED_CLIENT_ID and ED_CLIENT_SECRET/);
 });
@@ -243,10 +244,10 @@ test("unknown product is 404", async () => {
 
 test("Shopify errors never leak the token", async () => {
   const sh = fakeShopify({ override: { OnlineStorePublication: () => new Response(JSON.stringify({ errors: [{ message: `Invalid token ${TOKEN}` }] }), { status: 200 }) } });
-  const res = await handleProducts(get({ store: "c3d" }), { env: envOf(), fetch: sh.fetch });
+  const res = await handleProducts(keyed({ store: "c3d" }), { env: envOf(), fetch: sh.fetch });
   assert.equal(res.status, 502);
   noLeak(res);
-  const auth = await handleProducts(get({ store: "c3d" }), { env: envOf(), fetch: fakeShopify({ override: { OnlineStorePublication: () => new Response("{}", { status: 401 }) } }).fetch });
+  const auth = await handleProducts(keyed({ store: "c3d" }), { env: envOf(), fetch: fakeShopify({ override: { OnlineStorePublication: () => new Response("{}", { status: 401 }) } }).fetch });
   assert.equal(auth.status, 502);
   assert.equal(auth.body.code, "shopify_auth");
   noLeak(auth);
@@ -261,7 +262,7 @@ test("no Online Store publication is a clear 502", async () => {
 
 test("missing read_publications scope says which scope to add", async () => {
   const sh = fakeShopify({ override: { OnlineStorePublication: () => new Response(JSON.stringify({ errors: [{ message: "Access denied for publications field. Required access: `read_publications` access scope.", extensions: { code: "ACCESS_DENIED" } }] }), { status: 200 }) } });
-  const res = await handleProducts(get({ store: "c3d" }), { env: envOf(), fetch: sh.fetch });
+  const res = await handleProducts(keyed({ store: "c3d" }), { env: envOf(), fetch: sh.fetch });
   assert.equal(res.status, 502);
   assert.match(res.body.error, /read_publications/);
 });
@@ -461,7 +462,6 @@ function fakeInsightsShopify({ denyOrders = false, denyCustomers = false, denyRe
   };
   return { fetch, calls };
 }
-const keyed = (q) => get(q, { "x-console-key": "open-sesame" });
 
 test("insights: full response with sessions", async () => {
   const sh = fakeInsightsShopify();
@@ -550,4 +550,127 @@ test("insights: needs the key, valid store and days, and env", async () => {
   assert.equal((await handleInsights(keyed({ store: "x" }), ctx)).status, 400);
   assert.equal((await handleInsights(keyed({ store: "c3d" }), { ...ctx, env: envOf({ C3D_SHOPIFY_DOMAIN: undefined }) })).status, 503);
   assert.equal((await handleInsights(get({ store: "c3d" }), { ...ctx, env: envOf({ CONSOLE_KEY: undefined }) })).status, 403);
+});
+
+// ---------- security regressions ----------
+const KEYH = { "x-console-key": "open-sesame-test-key-0001" };
+
+test("product list needs the console key, before any Shopify call", async () => {
+  const sh = fakeShopify();
+  const none = await handleProducts(get({ store: "c3d" }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(none.status, 401);
+  const wrong = await handleProducts(get({ store: "c3d" }, { "x-console-key": "open-sesame-test-key-0002" }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(wrong.status, 401);
+  assert.equal((await handleProducts(get({ store: "c3d" }), { env: envOf({ CONSOLE_KEY: undefined }), fetch: sh.fetch })).status, 403);
+  assert.equal(sh.calls.length, 0, "no Shopify call without the key");
+  assert.ok(!JSON.stringify(none).includes("open-sesame"), "key never echoed");
+});
+
+test("a CONSOLE_KEY shorter than 16 characters is refused everywhere", async () => {
+  const sh = fakeShopify();
+  const env = envOf({ CONSOLE_KEY: "short-key" });
+  const h = { "x-console-key": "short-key" };
+  const list = await handleProducts(get({ store: "c3d" }, h), { env, fetch: sh.fetch });
+  assert.equal(list.status, 403);
+  assert.equal(list.body.code, "key_too_short");
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, live: true }, { "content-type": "application/json", ...h }), { env, fetch: sh.fetch })).status, 403);
+  assert.equal((await handleInsights(get({ store: "c3d" }, h), { env, fetch: sh.fetch, now: () => NOW })).status, 403);
+  assert.equal(sh.calls.length, 0);
+});
+
+test("Netlify adapter: JSON responses are nosniff, unframeable and sandboxed", async () => {
+  const { netlifyHandler } = await import("../lib/netlify.mjs");
+  const res = await netlifyHandler(async () => ({ status: 200, body: { a: 1 } }))(new Request("https://console.example/api/x"));
+  assert.equal(res.headers.get("x-content-type-options"), "nosniff");
+  assert.match(res.headers.get("content-security-policy"), /frame-ancestors 'none'.*sandbox/);
+  assert.equal(res.headers.get("cache-control"), "no-store");
+});
+
+// ---------- image library ----------
+const { handleImages } = await import("../lib/images.mjs");
+function fakeBlobs() {
+  const m = new Map();
+  return { m,
+    list: async () => ({ blobs: [...m.keys()].map((key) => ({ key })) }),
+    getMetadata: async (k) => (m.has(k) ? { metadata: m.get(k).metadata } : null),
+    getWithMetadata: async (k) => (m.has(k) ? { data: m.get(k).data, metadata: m.get(k).metadata } : null),
+    set: async (k, data, { metadata }) => { m.set(k, { data, metadata }); },
+    delete: async (k) => { m.delete(k); },
+  };
+}
+const imgReq = (path, { method = "GET", headers = {}, body } = {}) => new Request(`https://console.example${path}`, { method, headers, body });
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
+const EVIL_SVG = `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" onload="alert(document.domain)"><script>alert(1)</script></svg>`;
+
+test("images: list and writes need the key; files are public by unguessable key", async () => {
+  const blobs = fakeBlobs(), ctx = { blobs, env: envOf() };
+  assert.equal((await handleImages(imgReq("/api/images"), ctx)).status, 401, "list needs the key");
+  assert.equal((await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png" }, body: PNG }), ctx)).status, 401);
+  const up = await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", "x-filename": "a.png", ...KEYH }, body: PNG }), ctx);
+  assert.equal(up.status, 201);
+  const { item } = await up.json();
+  assert.match(item.key, /^[a-z0-9]+-[0-9a-f]{8}$/);
+  const list = await handleImages(imgReq("/api/images", { headers: KEYH }), ctx);
+  assert.equal(list.status, 200);
+  assert.equal((await list.json()).items[0].name, "a.png");
+  const file = await handleImages(imgReq(`/api/images/${item.key}`), ctx);
+  assert.equal(file.status, 200);
+  assert.equal(file.headers.get("content-type"), "image/png");
+  assert.equal(file.headers.get("x-content-type-options"), "nosniff");
+  assert.equal((await handleImages(imgReq(`/api/images/${item.key}`, { method: "DELETE" }), ctx)).status, 401);
+  assert.equal((await handleImages(imgReq(`/api/images/${item.key}`, { method: "DELETE", headers: KEYH }), ctx)).status, 200);
+  assert.equal(blobs.m.size, 0);
+});
+
+test("images: content must match the declared type, and only image types are taken", async () => {
+  const ctx = { blobs: fakeBlobs(), env: envOf() };
+  const html = new TextEncoder().encode("<html><script>alert(1)</script></html>");
+  const asPng = await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", ...KEYH }, body: html }), ctx);
+  assert.equal(asPng.status, 415, "HTML bytes claiming to be PNG are refused");
+  const asSvg = await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/svg+xml", ...KEYH }, body: html }), ctx);
+  assert.equal(asSvg.status, 415, "HTML claiming to be SVG is refused");
+  assert.equal((await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "text/html", ...KEYH }, body: html }), ctx)).status, 415);
+  const big = await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", "content-length": String(7 * 1024 * 1024), ...KEYH }, body: PNG }), ctx);
+  assert.equal(big.status, 413);
+  assert.equal(ctx.blobs.m.size, 0);
+});
+
+test("images: an SVG with script is never rendered on the console's origin", async () => {
+  const ctx = { blobs: fakeBlobs(), env: envOf() };
+  const up = await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/svg+xml", ...KEYH }, body: EVIL_SVG }), ctx);
+  assert.equal(up.status, 201);
+  const file = await handleImages(imgReq(`/api/images/${(await up.json()).item.key}`), ctx);
+  assert.equal(file.headers.get("content-type"), "image/svg+xml");
+  assert.equal(file.headers.get("content-disposition"), "attachment");
+  assert.match(file.headers.get("content-security-policy"), /default-src 'none'.*sandbox/);
+  assert.equal(file.headers.get("x-content-type-options"), "nosniff");
+});
+
+test("images: odd keys are 404, not a crash", async () => {
+  const ctx = { blobs: fakeBlobs(), env: envOf() };
+  for (const p of ["/api/images/%E0%A4%A", "/api/images/..%2Fx", "/api/images/not-a-key"])
+    assert.equal((await handleImages(imgReq(p), ctx)).status, 404, p);
+});
+
+// ---------- what gets published ----------
+test("netlify.toml publishes only index.html and assets/, with CSP and frame-ancestors", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const os = await import("node:os");
+  const { execSync } = await import("node:child_process");
+  const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+  const toml = fs.readFileSync(path.join(root, "netlify.toml"), "utf8");
+  const build = toml.split("[dev]")[0];
+  assert.match(build, /publish = "dist"/);
+  const cmd = /command = "([^"]+)"/.exec(build)[1];
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bc-build-"));
+  for (const f of ["index.html", "assets", "lib", "scripts", "netlify", "package.json", "README.md", "netlify.toml"])
+    fs.cpSync(path.join(root, f), path.join(tmp, f), { recursive: true });
+  execSync(cmd, { cwd: tmp, shell: "/bin/sh" });
+  assert.deepEqual(fs.readdirSync(path.join(tmp, "dist")).sort(), ["assets", "index.html"]);
+  fs.rmSync(tmp, { recursive: true, force: true });
+  const csp = /Content-Security-Policy = "([^"]+)"/.exec(toml)[1];
+  for (const d of ["default-src 'self'", "script-src 'self'", "frame-ancestors 'none'", "object-src 'none'", "base-uri 'none'"]) assert.ok(csp.includes(d), d);
+  assert.match(toml, /X-Content-Type-Options = "nosniff"/);
+  assert.match(toml, /Referrer-Policy = /);
 });

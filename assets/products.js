@@ -129,7 +129,7 @@ export async function renderProducts() {
     const id = ++state.req;
     state.loading = true; state.error = null; draw();
     try {
-      const out = await api(`${API}?store=${encodeURIComponent(state.store)}`);
+      const out = await api(`${API}?store=${encodeURIComponent(state.store)}`, { key: true, reason: "The product list includes drafts and stock levels, so it needs the console key (the CONSOLE_KEY value set for this console)." });
       if (id !== state.req) return;
       state.products = out.products ?? [];
     } catch (e) {

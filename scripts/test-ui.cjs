@@ -82,6 +82,7 @@ async function main() {
     const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
     if (req.method() === "GET") {
       const store = new URL(req.url()).searchParams.get("store");
+      if (req.headers()["x-console-key"] !== KEY) return json(401, { error: "Wrong or missing console key.", code: "bad_key" });
       await new Promise((r) => setTimeout(r, 60));
       if (mode[store] === "not_connected") return json(503, { error: `Set ${store.toUpperCase()}_SHOPIFY_DOMAIN and ${store.toUpperCase()}_ADMIN_TOKEN in the console's environment variables.`, code: "not_connected" });
       if (mode[store] === "empty") return json(200, { store, products: [] });
@@ -113,7 +114,13 @@ async function main() {
   };
 
   await page.goto(`${BASE}#products`);
-  await page.waitForSelector(".prow");
+  await step("products: the list itself asks for the key first", async () => {
+    await page.waitForSelector("dialog.keydlg[open]");
+    assert.equal(await rows().count(), 0, "nothing listed before the key");
+    await page.fill("#key-in", KEY);
+    await page.click("#key-save");
+    await page.waitForSelector(".prow");
+  });
 
   await step("products: lists Charleston 3D by default with summary", async () => {
     assert.equal(await rows().count(), 4);
@@ -146,12 +153,9 @@ async function main() {
     }
   });
 
-  await step("products: first toggle asks for the key, then goes live (optimistic)", async () => {
+  await step("products: toggle uses the session key and goes live (optimistic)", async () => {
     await sw("Rainbow Row").click();
-    await page.waitForSelector("dialog.keydlg[open]");
     assert.equal(await sw("Rainbow Row").getAttribute("aria-checked"), "true", "optimistic flip before the server answers");
-    await page.fill("#key-in", KEY);
-    await page.click("#key-save");
     await page.waitForFunction(() => document.querySelector('.prow[data-id="gid://shopify/Product/102"] .plive > span')?.textContent === "Live");
     assert.equal(await sw("Rainbow Row").getAttribute("aria-checked"), "true");
     assert.equal(posts.at(-1).key, KEY);
