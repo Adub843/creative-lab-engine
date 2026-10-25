@@ -4,6 +4,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { handleProducts, clearTokenCache } from "../lib/shopify.mjs";
 import { handleInsights, buildInsights, growthPct, forecast30, linearFit, addDays } from "../lib/insights.mjs";
+import { schemaErrors, variableErrors, checked } from "./schema/validate.mjs";
+
+// Every GraphQL string a fake Shopify receives is checked against the real Admin API 2025-10
+// schema (query fields and arguments, and the variables' input types). Problems are collected
+// here, not thrown inside fetch, where the client would report them as a network error.
+const schemaProblems = [];
+function checkGraphql(query, variables) {
+  const op = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? "(anonymous)";
+  for (const m of [...schemaErrors(query), ...variableErrors(query, variables)]) schemaProblems.push(`${op}: ${m}`);
+}
 
 const TOKEN = "shpat_TEST_SECRET_TOKEN_123456";
 const ENV = {
@@ -14,6 +24,7 @@ const ENV = {
 const envOf = (over = {}) => (k) => (k in over ? over[k] : ENV[k]);
 const PUB = "gid://shopify/Publication/1";
 const PID = "gid://shopify/Product/101";
+const STAGED_URL = "https://shopify-staged-uploads.storage.googleapis.com/";
 
 // ---------- fake Shopify ----------
 function fakeShopify(opts = {}) {
@@ -21,7 +32,7 @@ function fakeShopify(opts = {}) {
   const product = (o = {}) => ({ id: PID, handle: "name-ornament", title: "Name Ornament", status: "DRAFT", productType: "Ornament",
     updatedAt: "2026-10-20T10:00:00Z", totalInventory: 0, tracksInventory: false,
     featuredMedia: { preview: { image: { url: "https://cdn.shopify.com/x.jpg?v=1", altText: null } } },
-    priceRangeV2: { minVariantPrice: { amount: "24.0", currencyCode: "USD" } }, publishedOnPublication: false, ...o });
+    priceRangeV2: { minVariantPrice: { amount: "24.0", currencyCode: "USD" } }, publishedOnPublication: false, tags: [], ...o });
   const fetch = async (url, init = {}) => {
     const u = String(url);
     if (u.startsWith("https://api.indexnow.org")) {
@@ -36,11 +47,19 @@ function fakeShopify(opts = {}) {
       if (form.get("client_secret") !== "dev-secret-value") return new Response(JSON.stringify({ error: "invalid_client", error_description: "bad dev-secret" }), { status: 400 });
       return new Response(JSON.stringify({ access_token: "shpat_FROM_CLIENT_CREDENTIALS", scope: "read_products", expires_in: 86399 }), { status: 200 });
     }
+    if (u.startsWith(STAGED_URL)) {
+      const form = init.body;
+      const file = form.get("file");
+      calls.push({ upload: { fields: Object.fromEntries([...form.entries()].filter(([k]) => k !== "file")), size: file.size, type: file.type, name: file.name } });
+      if (opts.upload === "throw") throw new Error("socket hang up");
+      return new Response("", { status: opts.upload === "403" ? 403 : 201 });
+    }
     assert.match(u, /^https:\/\/[a-z0-9-]+\.myshopify\.com\/admin\/api\/2025-10\/graphql\.json$/);
     assert.ok(init.signal, "every Shopify call has a timeout signal");
     const { query, variables } = JSON.parse(init.body);
     const op = /(?:query|mutation)\s+(\w+)/.exec(query)[1];
     calls.push({ op, variables, token: init.headers["X-Shopify-Access-Token"], domain: new URL(u).host });
+    checkGraphql(query, variables);
     const data = (d) => new Response(JSON.stringify({ data: d }), { status: 200, headers: { "content-type": "application/json" } });
     if (opts.override?.[op]) return opts.override[op](variables, data);
     switch (op) {
@@ -59,6 +78,17 @@ function fakeShopify(opts = {}) {
       case "ConsoleActivate": return data({ productUpdate: { product: { id: PID, status: "ACTIVE" }, userErrors: opts.activateErrors ?? [] } });
       case "ConsolePublish": return data({ publishablePublish: { userErrors: opts.publishErrors ?? [] } });
       case "ConsoleUnpublish": return data({ publishableUnpublish: { userErrors: [] } });
+      case "ConsoleProductTags": return data({ product: opts.missing ? null : { id: variables.id, tags: opts.product?.tags ?? [] } });
+      case "ConsoleTagsAdd": return data({ tagsAdd: { node: { id: variables.id }, userErrors: opts.tagErrors ?? [] } });
+      case "ConsoleTagsRemove": return data({ tagsRemove: { node: { id: variables.id }, userErrors: opts.tagErrors ?? [] } });
+      case "ConsoleListingLookup": return data({ products: { nodes: opts.listed ?? [] } });
+      case "ConsoleStagedUpload": return data({ stagedUploadsCreate: opts.stageErrors
+        ? { stagedTargets: [], userErrors: opts.stageErrors }
+        : { stagedTargets: [{ url: STAGED_URL, resourceUrl: `${STAGED_URL}tmp/123/${variables.input[0].filename}`,
+          parameters: [{ name: "Content-Type", value: variables.input[0].mimeType }, { name: "key", value: "tmp/123/x" }, { name: "policy", value: "abc" }] }], userErrors: [] } });
+      case "ConsoleListingCreate": return data({ productSet: opts.createErrors
+        ? { product: null, userErrors: opts.createErrors }
+        : { product: { id: "gid://shopify/Product/555", handle: "lowcountry-sunset-tee", title: variables.input.title, status: "ACTIVE" }, userErrors: [] } });
       default: throw new Error(`unexpected op ${op}`);
     }
   };
@@ -448,6 +478,7 @@ function fakeInsightsShopify({ denyOrders = false, denyCustomers = false, denyRe
     const { query, variables } = JSON.parse(init.body);
     const op = /query\s+(\w+)/.exec(query)[1];
     calls.push({ op, variables, query });
+    checkGraphql(query, variables);
     if (op === "ConsoleShop") return ok({ shop: { currencyCode: "USD", ianaTimezone: "America/New_York" } });
     if (op === "ConsoleOrders") {
       if (denyOrders) return denied("read_orders", "orders");
@@ -673,4 +704,92 @@ test("netlify.toml publishes only index.html and assets/, with CSP and frame-anc
   for (const d of ["default-src 'self'", "script-src 'self'", "frame-ancestors 'none'", "object-src 'none'", "base-uri 'none'"]) assert.ok(csp.includes(d), d);
   assert.match(toml, /X-Content-Type-Options = "nosniff"/);
   assert.match(toml, /Referrer-Policy = /);
+});
+
+// ---------- customizable (Charleston 3D only) ----------
+
+test("list: Charleston 3D products say whether they're customizable (any case); ED products don't carry it", async () => {
+  const sh = fakeShopify({ override: { ConsoleProducts: (v, data) => data({ products: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [
+    { id: "gid://shopify/Product/1", handle: "a", title: "A", status: "ACTIVE", productType: "", tags: ["Customizable", "gift"], updatedAt: "2026-10-20T10:00:00Z", totalInventory: 0, tracksInventory: false, featuredMedia: null, priceRangeV2: null, publishedOnPublication: true },
+    { id: "gid://shopify/Product/2", handle: "b", title: "B", status: "ACTIVE", productType: "", tags: ["customizable-ish"], updatedAt: "2026-10-20T10:00:00Z", totalInventory: 0, tracksInventory: false, featuredMedia: null, priceRangeV2: null, publishedOnPublication: true }] } }) } });
+  const c3d = await handleProducts(keyed({ store: "c3d" }), { env: envOf(), fetch: sh.fetch });
+  assert.deepEqual(c3d.body.products.map((p) => p.customizable), [true, false]);
+  const ed = await handleProducts(keyed({ store: "ed" }), { env: envOf(), fetch: sh.fetch });
+  assert.ok(ed.body.products.every((p) => !("customizable" in p)));
+});
+
+test("customizable on: adds the tag with tagsAdd and returns the product", async () => {
+  const sh = fakeShopify({ product: { tags: ["gift"] } });
+  const res = await handleProducts(post({ store: "c3d", id: PID, customizable: true }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.customizable, true);
+  assert.equal(res.body.product.customizable, true);
+  const add = sh.calls.find((c) => c.op === "ConsoleTagsAdd");
+  assert.deepEqual(add.variables, { id: PID, tags: ["customizable"] });
+  assert.ok(!sh.calls.some((c) => c.op === "ConsoleTagsRemove" || c.op === "ConsolePublish" || c.op === "ConsoleActivate"), "only the tag changes");
+});
+
+test("customizable on when already tagged sends no mutation", async () => {
+  const sh = fakeShopify({ product: { tags: ["CUSTOMIZABLE"] } });
+  const res = await handleProducts(post({ store: "c3d", id: PID, customizable: true }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 200);
+  assert.ok(!sh.calls.some((c) => /Tags(Add|Remove)/.test(c.op ?? "")));
+});
+
+test("customizable off: removes every spelling of the tag with tagsRemove", async () => {
+  const sh = fakeShopify({ product: { tags: ["customizable", "Customizable", "gift"] } });
+  const res = await handleProducts(post({ store: "c3d", id: PID, customizable: false }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.customizable, false);
+  assert.deepEqual(sh.calls.find((c) => c.op === "ConsoleTagsRemove").variables, { id: PID, tags: ["customizable", "Customizable"] });
+});
+
+test("customizable is refused for Elevated Designs before any Shopify call", async () => {
+  const sh = fakeShopify();
+  for (const v of [true, false]) {
+    const res = await handleProducts(post({ store: "ed", id: PID, customizable: v }), { env: envOf(), fetch: sh.fetch });
+    assert.equal(res.status, 400);
+    assert.equal(res.body.code, "wrong_store");
+  }
+  assert.equal(sh.calls.length, 0);
+});
+
+test("customizable: bad input, both fields, key, 404 and userErrors", async () => {
+  const sh = fakeShopify();
+  for (const body of [{ store: "c3d", id: PID, customizable: "yes" }, { store: "c3d", id: PID, customizable: true, live: true }, { store: "c3d", id: PID }])
+    assert.equal((await handleProducts(post(body), { env: envOf(), fetch: sh.fetch })).status, 400, JSON.stringify(body));
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, customizable: true }, { "content-type": "application/json" }), { env: envOf(), fetch: sh.fetch })).status, 401);
+  assert.equal(sh.calls.length, 0);
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, customizable: true }), { env: envOf(), fetch: fakeShopify({ missing: true }).fetch })).status, 404);
+  const rej = await handleProducts(post({ store: "c3d", id: PID, customizable: true }), { env: envOf(), fetch: fakeShopify({ tagErrors: [{ field: ["tags"], message: "Tags is too long" }] }).fetch });
+  assert.equal(rej.status, 422);
+  assert.match(rej.body.error, /customizable tag: Tags is too long/);
+});
+
+// ---------- make-active worked, publish didn't ----------
+test("publish fails after making it active: 422 with Shopify's current state, not a rollback", async () => {
+  let reads = 0;
+  const sh = fakeShopify({ publishErrors: [{ field: ["id"], message: "Online Store isn't available" }],
+    override: { ConsoleProduct: (v, data) => data({ product: { id: PID, handle: "name-ornament", title: "Name Ornament", status: reads++ ? "ACTIVE" : "DRAFT", productType: "", tags: [],
+      updatedAt: "2026-10-20T10:00:00Z", totalInventory: 0, tracksInventory: false, featuredMedia: null, priceRangeV2: null, publishedOnPublication: false } }) } });
+  const res = await handleProducts(post({ store: "c3d", id: PID, live: true }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 422);
+  assert.equal(res.body.code, "partly_published");
+  assert.match(res.body.error, /now Active in Shopify, but it isn't on the Online Store yet: Online Store isn't available/);
+  assert.equal(res.body.details.product.status, "ACTIVE", "refreshed from Shopify");
+  assert.equal(res.body.details.product.live, false);
+  assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["OnlineStorePublication", "ConsoleProduct", "ConsoleActivate", "ConsolePublish", "ConsoleProduct"]);
+});
+
+// ---------- last: the schema check over everything sent above ----------
+test("every GraphQL string sent matches the Admin API 2025-10 schema, variables included", async () => {
+  const S = await import("../lib/shopify.mjs");
+  const I = await import("../lib/insights.mjs");
+  const ops = [...[S].flatMap((m) => Object.entries(m).filter(([k, v]) => /_(QUERY|MUTATION)$/.test(k) && typeof v === "string").map(([, v]) => v)),
+    I.ordersQuery(true), I.ordersQuery(false), I.SHOP_QUERY, I.SESSIONS_QUERY];
+  const sent = new Set(checked()); // before the loop below adds the rest
+  for (const q of ops) assert.deepEqual(schemaErrors(q), [], q.slice(0, 80));
+  const unsent = ops.filter((q) => !sent.has(q)).map((q) => q.slice(0, 60));
+  assert.deepEqual(unsent, [], "every exported operation was exercised by a test");
+  assert.deepEqual(schemaProblems, []);
 });
