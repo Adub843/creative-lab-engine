@@ -156,14 +156,15 @@ export async function renderStudio() {
   const uploadFiles = async (files) => {
     const list = [...files].filter((f) => f.type.startsWith("image/"));
     if (!list.length) return;
-    let cloud = 0, local = 0, failed = 0;
+    let cloud = 0, local = 0, failed = 0, reason = "";
     for (const [n, f] of list.entries()) {
       countLine.textContent = `Uploading ${n + 1} of ${list.length}…`;
       try { (await upload(f, tagsIn.value.trim())).saved === "cloud" ? cloud++ : local++; }
-      catch (e) { failed++; toast(e.message); if (e.message.includes("key")) break; }
+      catch (e) { failed++; reason ||= e.message; if (e.message.includes("key")) break; }
     }
     await refresh();
-    toast([cloud && `${cloud} saved online`, local && `${local} saved in this browser only`, failed && `${failed} failed`].filter(Boolean).join(", "));
+    // One toast with the reason: a second toast would replace the first before it could be read.
+    toast([cloud && `${cloud} saved online`, local && `${local} saved in this browser only`, failed && `${failed} failed`].filter(Boolean).join(", ") + (reason ? `. ${reason}` : ""));
   };
   fileIn.addEventListener("change", () => { uploadFiles(fileIn.files); fileIn.value = ""; });
   drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });

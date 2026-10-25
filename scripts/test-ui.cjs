@@ -16,7 +16,7 @@ const KEY = "open-sesame";
 let failures = 0;
 const step = async (name, fn) => {
   try { await fn(); console.log(`ok - ${name}`); }
-  catch (e) { failures++; console.log(`not ok - ${name}\n  ${String(e.stack || e).split("\n").slice(0, 4).join("\n  ")}`); }
+  catch (e) { failures++; console.log(`not ok - ${name}\n  ${String(e.stack || e).split("\n").slice(0, process.env.DEBUG ? 60 : 4).join("\n  ")}`); }
 };
 
 const product = (store, n, o = {}) => {
@@ -36,6 +36,21 @@ const PRODUCTS = {
   ed: [product("ed", 1, { title: "Lowcountry Tee", type: "Shirt", live: true, handle: "lowcountry-tee" }),
     product("ed", 2, { title: "Pluff Mud Hoodie", type: "Hoodie" })],
 };
+
+// Edge-case fixtures: no orders at all, a single order, no read_orders scope, more orders than one read.
+async function edgeFixture(kind, store, days) {
+  const { buildInsights } = await import(path.join(ROOT, "lib/insights.mjs"));
+  const now = new Date("2026-10-25T15:00:00Z");
+  const one = [{ id: "o1", createdAt: "2026-10-25T16:00:00Z", cancelledAt: null, test: false, currentTotalPriceSet: { shopMoney: { amount: "1234.5", currencyCode: "USD" } },
+    customer: null, lineItems: { nodes: [{ title: "Big Sign", quantity: 1, product: { id: "gid://shopify/Product/9", title: "Big Sign", handle: "big-sign" }, discountedTotalSet: { shopMoney: { amount: "1234.5" } } }] } }];
+  const base = { store, now, days: Number(days), timeZone: "America/New_York" };
+  if (kind === "empty") return buildInsights({ ...base, orderNodes: [], sessionRows: [] });
+  if (kind === "one") return buildInsights({ ...base, orderNodes: one, sessionRows: [{ day: "2026-10-25", sessions: "12", conversion_rate: "0.0833" }] });
+  if (kind === "noorders") return buildInsights({ ...base, orderNodes: [], ordersAvailable: false, sessionRows: null, sessionsNote: "Add the read_reports scope to see sessions and conversion.",
+    missingScopes: [{ scope: "read_orders", for: "sales, best sellers and the forecast" }, { scope: "read_reports", for: "online store sessions and conversion rate" }] });
+  if (kind === "truncated") return buildInsights({ ...base, orderNodes: one, ordersTruncated: true, notes: ["This store has more orders than the console reads in one go; totals cover the most recent ones it could load."] });
+  throw new Error(kind);
+}
 
 async function insightsFixture(store, days) {
   const { buildInsights, addDays } = await import(path.join(ROOT, "lib/insights.mjs"));
@@ -73,10 +88,29 @@ async function main() {
   page.on("console", (m) => { if (m.type() === "error" && !expected.test(m.text())) errors.push(m.text()); });
   page.on("pageerror", (e) => errors.push(String(e)));
 
-  const mode = { c3d: "ok", ed: "ok", insightsC3d: "ok" };
+  const mode = { c3d: "ok", ed: "ok", insights: "ok", postDelay: 150 };
   const posts = [];
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.fulfill({ status: 200, contentType: "text/css", body: "" }));
-  await page.route("**/api/images**", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [] }) }));
+  // Image library: kept in memory, list/upload/delete need the key, files are served without it.
+  const images = new Map();
+  const imageCalls = [];
+  const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  await page.route("**/api/images**", async (route) => {
+    const req = route.request();
+    const key = decodeURIComponent(new URL(req.url()).pathname.replace(/^\/api\/images\/?/, ""));
+    const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    imageCalls.push({ method: req.method(), key, auth: req.headers()["x-console-key"] ?? null });
+    if (req.method() === "GET" && key) return images.has(key) ? route.fulfill({ status: 200, contentType: "image/png", body: PNG }) : json(404, { error: "Image not found" });
+    if (req.headers()["x-console-key"] !== KEY) return json(401, { error: "Wrong or missing console key.", code: "bad_key" });
+    if (req.method() === "GET") return json(200, { items: [...images.values()].sort((a, b) => b.added - a.added) });
+    if (req.method() === "POST") {
+      const item = { key: `k${images.size + 1}-0123abcd`, name: req.headers()["x-filename"], type: req.headers()["content-type"], size: req.postDataBuffer()?.length ?? 0, tags: req.headers()["x-tags"] ?? "", added: Date.now() };
+      images.set(item.key, item);
+      return json(201, { item });
+    }
+    if (req.method() === "DELETE") { images.delete(key); return json(200, { deleted: key }); }
+    return json(405, { error: "Not supported" });
+  });
   await page.route("**/api/products**", async (route) => {
     const req = route.request();
     const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
@@ -92,17 +126,19 @@ async function main() {
     const body = JSON.parse(req.postData());
     posts.push({ body, key: req.headers()["x-console-key"] });
     if (req.headers()["x-console-key"] !== KEY) return json(401, { error: "Wrong or missing console key.", code: "bad_key" });
-    await new Promise((r) => setTimeout(r, 150));
+    await new Promise((r) => setTimeout(r, mode.postDelay));
     const p = PRODUCTS[body.store].find((x) => x.id === body.id);
     if (p.title.startsWith("Broken")) return json(422, { error: "Couldn't publish to the Online Store: Product needs a price", code: "shopify_rejected" });
     const out = { ...p, live: body.live, status: body.live ? "ACTIVE" : p.status };
+    Object.assign(p, out); // the store remembers it, like Shopify would
     return json(200, { store: body.store, id: p.id, live: body.live, url: p.url, product: out, indexNow: { sent: true } });
   });
   await page.route("**/api/insights**", async (route) => {
     const u = new URL(route.request().url());
     const store = u.searchParams.get("store");
     if (route.request().headers()["x-console-key"] !== KEY) return route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: "Wrong or missing console key.", code: "bad_key" }) });
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(await insightsFixture(store, u.searchParams.get("days"))) });
+    const days = u.searchParams.get("days");
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(mode.insights === "ok" ? await insightsFixture(store, days) : await edgeFixture(mode.insights, store, days)) });
   });
 
   const rows = () => page.locator(".prow");
@@ -331,6 +367,273 @@ async function main() {
     await page.click(".quick a:has-text('Products')");
     await page.waitForSelector('.prow:has-text("Lowcountry Tee")');
     assert.equal(await page.locator('.seg-btn[data-store="ed"]').getAttribute("aria-pressed"), "true");
+  });
+
+  // ---------- QA: edge cases and every remaining button ----------
+  const toastText = () => page.locator(".toast").last().textContent();
+  const liveLabel = (id) => page.evaluate((i) => document.querySelector(`.prow[data-id="${i}"] .plive > span`)?.textContent, id);
+
+  await step("products: double click sends one change, not two", async () => {
+    await page.click('a.nav[data-route="products"]');
+    await page.click('.seg-btn[data-store="c3d"]').catch(() => {});
+    await page.waitForSelector('.prow:has-text("Pineapple")');
+    const before = posts.length;
+    mode.postDelay = 400;
+    await sw("Pineapple").dblclick();
+    await page.waitForFunction(() => document.querySelector('.prow[data-id="gid://shopify/Product/103"] .plive > span')?.textContent === "Live");
+    mode.postDelay = 150;
+    assert.equal(posts.length - before, 1, "one POST for a double click");
+    assert.equal(posts.at(-1).body.live, true);
+  });
+
+  await step("products: wrong key on a change re-prompts, right key saves", async () => {
+    await clearToasts();
+    await page.evaluate(() => sessionStorage.setItem("bc-console-key", "wrong-key"));
+    await sw("Pineapple").click();
+    await page.waitForSelector("dialog.keydlg[open] >> text=didn't work");
+    assert.equal(await page.evaluate(() => sessionStorage.getItem("bc-console-key")), null, "refused key is dropped");
+    await page.fill("#key-in", KEY);
+    await page.click("#key-save");
+    await page.waitForFunction(() => document.querySelector('.prow[data-id="gid://shopify/Product/103"] .plive > span')?.textContent === "Off");
+    assert.equal(posts.at(-1).key, KEY);
+    assert.match(await toastText(), /off the site/);
+  });
+
+  await step("products: cancelling the key prompt rolls the switch back", async () => {
+    await clearToasts();
+    await page.evaluate(() => sessionStorage.removeItem("bc-console-key"));
+    const before = posts.length;
+    await sw("Pineapple").click();
+    await page.waitForSelector("dialog.keydlg[open]");
+    assert.equal(await sw("Pineapple").getAttribute("aria-checked"), "true", "optimistic while asking");
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.querySelector('.prow[data-id="gid://shopify/Product/103"] .switch').getAttribute("aria-checked") === "false");
+    assert.equal(posts.length, before, "nothing sent without a key");
+    assert.match(await toastText(), /No console key entered/);
+    // wrong key, then cancel the re-prompt: also rolled back
+    await page.evaluate(() => sessionStorage.setItem("bc-console-key", "wrong-key"));
+    await sw("Pineapple").click();
+    await page.waitForSelector("dialog.keydlg[open] >> text=didn't work");
+    await page.click("#key-cancel");
+    await page.waitForFunction(() => document.querySelector('.prow[data-id="gid://shopify/Product/103"] .switch').getAttribute("aria-checked") === "false");
+    assert.equal(await page.locator("dialog.keydlg[open]").count(), 0);
+    await page.evaluate((k) => sessionStorage.setItem("bc-console-key", k), KEY);
+  });
+
+  await step("products: switching store mid-change keeps each store's list right", async () => {
+    mode.postDelay = 500;
+    await page.fill("#prod-q", "");
+    await sw("Pineapple").click();
+    await page.click('.seg-btn[data-store="ed"]');
+    await page.waitForSelector('.prow:has-text("Lowcountry Tee")');
+    await page.waitForTimeout(700); // the c3d change finishes while ED is showing
+    mode.postDelay = 150;
+    assert.equal(await rows().count(), 2, "ED list not redrawn with C3D rows");
+    assert.match(await page.locator("#prod-title").textContent(), /theelevateddesignsllc\.com/);
+    await page.click('.seg-btn[data-store="c3d"]');
+    await page.waitForSelector('.prow:has-text("Pineapple")');
+    assert.equal(await liveLabel("gid://shopify/Product/103"), "Live", "C3D shows the saved change");
+    assert.equal(await page.evaluate(() => localStorage.getItem("bc-store")), '"c3d"');
+    // search and filter
+    await page.fill("#prod-q", "ornament");
+    assert.equal(await rows().count(), 1);
+    await page.fill("#prod-q", "");
+    await page.selectOption("#prod-filter", "all");
+  });
+
+  await step("products: links open the live site and Shopify admin in a new tab", async () => {
+    for (const r of await rows().all()) {
+      const edit = r.locator('a[data-act="edit"]');
+      assert.match(await edit.getAttribute("href"), /^https:\/\/admin\.shopify\.com\/store\/charleston3d\/products\/\d+$/);
+      assert.equal(await edit.getAttribute("rel"), "noopener");
+      const view = r.locator('a[data-act="view"]');
+      if (await view.count()) assert.match(await view.getAttribute("href"), /^https:\/\/charleston3d\.com\/products\/[a-z0-9-]+$/);
+    }
+  });
+
+  await step("products: keyboard reaches the switch with a visible focus ring", async () => {
+    await page.locator("#prod-refresh").focus();
+    await page.waitForSelector(".prow");
+    let found = false;
+    for (let i = 0; i < 12 && !found; i++) {
+      await page.keyboard.press("Tab");
+      found = await page.evaluate(() => document.activeElement?.classList.contains("switch"));
+    }
+    assert.ok(found, "Tab reaches a switch");
+    const ring = await page.evaluate(() => { const cs = getComputedStyle(document.activeElement); return { style: cs.outlineStyle, width: parseFloat(cs.outlineWidth), shadow: cs.boxShadow }; });
+    assert.ok((ring.style !== "none" && ring.width >= 2) || ring.shadow !== "none", `focus visible: ${JSON.stringify(ring)}`);
+  });
+
+  await step("insights: no orders at all shows $0, Flat, a zero chart and next steps", async () => {
+    mode.insights = "empty";
+    await page.click('a.nav[data-route="insights"]');
+    await page.waitForSelector(".tiles");
+    assert.match(await page.locator(".tile").first().textContent(), /\$0.*Flat 0%.*0 orders · \$0\.00 average/s);
+    assert.equal(await page.locator(".chart").first().locator(".bar").count(), 90, "zero bars still drawn");
+    assert.match(await page.locator("p.big").textContent(), /About \$0/);
+    assert.equal(await page.locator(".legend .key.fc").count(), 0, "no forecast key without a forecast");
+    assert.match(await page.locator("text=No sales in the last").textContent(), /90 days/);
+    assert.match(await page.locator("ol.next").textContent(), /No orders in the last 30 days/);
+    assert.equal(await page.locator("text=Online store visits").count(), 0, "no visits chart with no sessions");
+    assert.match(await page.locator(".tile", { hasText: "Sessions" }).textContent(), /^Sessions0/);
+  });
+
+  await step("insights: a single order: USD with cents, New badge, one-bar forecast, one-point visits chart", async () => {
+    mode.insights = "one";
+    await page.click("#ins-refresh");
+    await page.waitForSelector(".tiles .num");
+    const t7 = await page.locator(".tile").first().textContent();
+    assert.match(t7, /\$1,235/, "tile rounds to whole dollars");
+    assert.match(t7, /New: nothing to compare yet/);
+    assert.match(t7, /1 orders · \$1,234\.50 average/);
+    const charts = page.locator(".chart");
+    assert.equal(await charts.count(), 3);
+    assert.equal(await charts.nth(1).locator(".bar").count(), 1, "one week of history");
+    assert.equal(await charts.nth(2).locator(".line").count(), 1, "one-point line drawn");
+    await charts.nth(2).focus();
+    await page.keyboard.press("End");
+    assert.match(await charts.nth(2).locator(".tip").textContent(), /Oct 25: 12/);
+    await charts.nth(1).focus();
+    await page.keyboard.press("Home");
+    assert.match(await charts.nth(1).locator(".tip").textContent(), /: \$1,234\.50$/);
+    assert.match(await page.locator("p.big").textContent(), /About \$37,035/, "1 day of sales x 30");
+    const visits = page.locator("section", { hasText: "Online store visits" }).locator("details.nums");
+    await visits.locator("summary").click();
+    assert.equal(await visits.locator("tbody td").nth(2).textContent(), "8.33", "per-day conversion shown as %");
+    assert.match(await page.locator(".tile", { hasText: "Sessions" }).textContent(), /8\.33% of visits ordered/);
+    const svgText = await charts.first().locator("text.axis").allTextContents();
+    assert.ok(svgText.some((x) => /^\$[\d,]+$/.test(x)), `axis in USD: ${svgText}`);
+  });
+
+  await step("insights: missing read_orders explains the scope and hides sales", async () => {
+    mode.insights = "noorders";
+    await page.click("#ins-refresh");
+    await page.waitForSelector(".notice");
+    assert.match(await page.locator(".notice").textContent(), /read_orders.*read_reports/s);
+    assert.equal(await page.locator(".tiles").count(), 0);
+    assert.match(await page.locator("text=Sales aren't visible yet").textContent(), /read_orders/);
+    assert.equal(await page.locator(".chart").count(), 0);
+    assert.match(await page.locator("ol.next").textContent(), /read_orders/);
+  });
+
+  await step("insights: truncated orders show the note", async () => {
+    mode.insights = "truncated";
+    await page.click("#ins-refresh");
+    await page.waitForSelector(".tiles");
+    assert.equal(await page.locator("#view p", { hasText: "more orders than the console reads" }).count(), 1);
+    mode.insights = "ok";
+    await page.click("#ins-refresh");
+    await page.waitForSelector(".chart .line", { state: "attached" });
+  });
+
+  await step("insights: each store and each period loads", async () => {
+    for (const st of ["c3d", "ed"]) {
+      await page.click(`.seg-btn[data-store="${st}"]`);
+      for (const d of ["30", "90", "180"]) {
+        await page.selectOption("#ins-days", d);
+        await page.waitForFunction((n) => document.querySelectorAll(".chart")[0]?.querySelectorAll(".bar").length === Number(n), d);
+        assert.match(await page.locator(".panel-head h2").first().textContent(), st === "c3d" ? /Charleston 3D sales/ : /Elevated Designs sales/);
+      }
+    }
+    assert.ok(page.url().endsWith("#insights/ed"));
+    await page.click('.seg-btn[data-store="c3d"]');
+    await page.selectOption("#ins-days", "90");
+    await page.waitForFunction(() => document.querySelectorAll(".chart")[0]?.querySelectorAll(".bar").length === 90);
+  });
+
+  await step("studio: upload needs the key, then list, add to shirt, delete", async () => {
+    await page.click('a.nav[data-route="studio"]');
+    await page.waitForSelector(".lib");
+    await page.evaluate(() => sessionStorage.removeItem("bc-console-key"));
+    await page.locator(".controls details summary").click();
+    await page.locator(".controls details input").fill("");
+    await page.locator(".controls details input").dispatchEvent("change");
+    await clearToasts();
+    await page.setInputFiles('.studio input[type="file"]', { name: "logo.png", mimeType: "image/png", buffer: PNG });
+    await page.waitForSelector(".toast >> text=1 failed. Wrong or missing console key"); // the reason stays on screen
+    assert.equal(images.size, 0, "nothing stored without the key");
+    await page.waitForFunction(() => /Enter the console key/.test(document.querySelector(".studio").textContent));
+    await page.locator(".controls details input").fill(KEY);
+    await page.locator(".controls details input").dispatchEvent("change");
+    await page.fill('.studio input[placeholder^="Tags"]', "logo, test");
+    await page.setInputFiles('.studio input[type="file"]', { name: "logo.png", mimeType: "image/png", buffer: PNG });
+    await page.waitForSelector('.lib button:has-text("logo.png")');
+    const up = imageCalls.filter((c) => c.method === "POST").at(-1);
+    assert.equal(up.auth, KEY);
+    assert.equal([...images.values()][0].tags, "logo, test");
+    assert.match(await page.locator(".studio").textContent(), /1 of 1 images\./);
+    await page.click('.lib button:has-text("logo.png")');
+    await page.waitForSelector(".print-area .layer img");
+    page.once("dialog", (d) => d.accept());
+    await page.locator('.lib button:has-text("logo.png")').click({ button: "right" });
+    await page.waitForSelector(".toast >> text=Image deleted");
+    assert.equal(images.size, 0);
+    assert.equal(imageCalls.filter((c) => c.method === "DELETE").at(-1).auth, KEY);
+    page.once("dialog", (d) => d.dismiss());
+    await page.getByRole("button", { name: "Clear shirt" }).click();
+    assert.equal(await page.locator(".print-area .layer").count(), 1, "cancel keeps the shirt");
+    page.once("dialog", (d) => d.accept());
+    await page.getByRole("button", { name: "Clear shirt" }).click();
+    assert.equal(await page.locator(".print-area .layer").count(), 0);
+  });
+
+  await step("dashboard and brand pages: store links go to the Shopify sites, not Netlify", async () => {
+    for (const [route, site] of [["dashboard", null], ["c3d", "https://charleston3d.com"], ["ed", "https://theelevateddesignsllc.com"]]) {
+      await page.click(`a.nav[data-route="${route}"]`);
+      await page.waitForFunction((r) => document.querySelector(`a.nav[data-route="${r}"]`)?.getAttribute("aria-current") === "page", route);
+      const hrefs = await page.locator("#view a[href]").evaluateAll((as) => as.map((a) => ({ t: a.textContent.trim(), h: a.getAttribute("href"), target: a.getAttribute("target") })));
+      for (const a of hrefs) {
+        if (/^(Website|View live site|Open live site)/.test(a.t)) assert.ok(!/netlify/.test(a.h), `${route}: ${a.t} -> ${a.h}`);
+        if (/netlify\.app/.test(a.h)) assert.ok(!/charleston3d-site|elevated-designs-site/.test(a.h), `stale store site link ${a.h}`);
+        if (/^https?:/.test(a.h)) assert.equal(a.target, "_blank", `${a.t} opens in a new tab`);
+      }
+      if (site) {
+        assert.equal(await page.locator(".quick a", { hasText: "Website" }).getAttribute("href"), site);
+        assert.equal(await page.locator("a", { hasText: "View live site" }).getAttribute("href"), site);
+      }
+    }
+    await page.click('a.nav[data-route="dashboard"]');
+    await page.waitForSelector("h1:has-text('Dashboard')");
+    const quick = await page.locator(".quick a").evaluateAll((as) => as.map((a) => a.getAttribute("href")));
+    assert.deepEqual(quick, ["https://charleston3d.com", "#products/c3d", "#insights/c3d", "https://charleston3d.com/admin",
+      "https://theelevateddesignsllc.com", "#products/ed", "#insights/ed", "https://theelevateddesignsllc.com/admin/orders"]);
+  });
+
+  await step("dashboard: jump palette, service drawer and theme switch", async () => {
+    await page.click("#view");
+    await page.keyboard.press("/");
+    await page.waitForSelector("#palette[open]");
+    await page.keyboard.type("insights");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => location.hash.startsWith("#insights"));
+    assert.equal(await page.locator("#palette[open]").count(), 0);
+    await page.click('a.nav[data-route="map"]');
+    await page.locator(".card", { hasText: "charleston3d.com" }).first().click();
+    await page.waitForSelector("#drawer:not([hidden])");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "d-close");
+    assert.equal(await page.locator("#d-body a", { hasText: "Open live site" }).getAttribute("href"), "https://charleston3d.com");
+    await page.keyboard.press("Escape");
+    assert.equal(await page.locator("#drawer").isHidden(), true);
+    const t0 = await page.evaluate(() => document.documentElement.dataset.theme ?? "");
+    await page.click("#theme");
+    const t1 = await page.evaluate(() => document.documentElement.dataset.theme);
+    assert.notEqual(t1, t0);
+    await page.click("#theme");
+  });
+
+  await step("mobile 390px: nav fits, every link is reachable and works", async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    for (const r of ["dashboard", "c3d", "ed", "products", "insights", "studio", "map"]) {
+      const link = page.locator(`a.nav[data-route="${r}"]`);
+      await link.scrollIntoViewIfNeeded();
+      const box = await link.boundingBox();
+      assert.ok(box && box.width >= 32 && box.height >= 32, `${r} tap target ${JSON.stringify(box)}`);
+      await link.click();
+      await page.waitForFunction((rt) => document.querySelector(`a.nav[data-route="${rt}"]`)?.getAttribute("aria-current") === "page", r);
+      await page.waitForTimeout(150);
+      await noOverflow(`${r} 390`);
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
   });
 
   await step("no console errors", async () => {
