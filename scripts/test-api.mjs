@@ -255,7 +255,7 @@ test("Shopify errors never leak the token", async () => {
 
 test("no Online Store publication is a clear 502", async () => {
   const sh = fakeShopify({ publications: [{ id: "gid://shopify/Publication/9", catalog: { title: "Point of Sale" } }] });
-  const res = await handleProducts(get({ store: "c3d" }), { env: envOf(), fetch: sh.fetch });
+  const res = await handleProducts(keyed({ store: "c3d" }), { env: envOf(), fetch: sh.fetch });
   assert.equal(res.status, 502);
   assert.equal(res.body.code, "no_online_store");
 });
