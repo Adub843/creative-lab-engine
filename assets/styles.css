@@ -221,6 +221,9 @@ th { font-family: var(--f-mono); font-size: 11.5px; text-transform: uppercase; l
 .pinfo { display: grid; gap: 2px; min-width: 0; }
 .pinfo strong { overflow-wrap: anywhere; }
 .plive { display: flex; gap: 8px; align-items: center; font-size: 13.5px; min-width: 92px; cursor: pointer; }
+.pswitches { display: grid; gap: 6px; }
+.pswitches:has(.pcust) { min-width: 140px; }
+.pcust .switch[aria-checked="true"] { background: var(--c3d); border-color: var(--c3d); }
 .pacts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .pacts .btn { padding: 6px 10px; font-size: 13px; }
 .btn.is-off { color: var(--muted); cursor: default; border-style: dashed; }
@@ -277,3 +280,37 @@ code { font-family: var(--f-mono); font-size: 13px; background: var(--sunk); pad
 .toolbar input[type="search"].field { flex: 1 1 220px; }
 .toolbar select.field { flex: 0 1 200px; }
 @media (max-width: 760px) { .toolbar select.field { flex: 1 1 140px; } }
+
+/* list a design (Elevated Designs) */
+.ldesigns { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.lcard { display: grid; gap: 8px; align-content: start; background: var(--sunk); border-radius: var(--r); padding: 10px; min-width: 0; }
+.lcard img { width: 100%; aspect-ratio: 1; height: auto; object-fit: contain; border-radius: 8px; background: var(--surface); }
+.lmeta { display: grid; gap: 2px; min-width: 0; }
+.lmeta strong { overflow-wrap: anywhere; font-size: 14px; }
+.lcard .btn { justify-content: center; text-align: center; line-height: 1.25; }
+.sheet { width: min(640px, calc(100% - 32px)); max-height: calc(100dvh - 48px); overflow-y: auto; border: 1px solid var(--line); border-top: 4px solid var(--brand); border-radius: 12px; background: var(--surface); color: var(--fg); padding: 18px; display: none; gap: 14px; }
+.sheet[open] { display: grid; }
+.sheet::backdrop { background: rgba(8, 10, 15, .45); }
+.sheet-head { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.sheet-head img { width: 64px; height: 64px; object-fit: contain; border-radius: 8px; background: var(--sunk); flex: none; }
+.sheet-head .muted { overflow-wrap: anywhere; }
+.sheet-actions { justify-content: flex-end; position: sticky; bottom: -18px; background: var(--surface); padding: 10px 0; margin-bottom: -10px; border-top: 1px solid var(--line); z-index: 1; }
+.lform { gap: 14px; }
+.lfield { display: grid; gap: 4px; font-size: 13.5px; font-weight: 500; min-width: 0; align-content: start; }
+.lfield .field { width: 100%; font-weight: 400; }
+.lfield textarea.field { resize: vertical; font-family: var(--f-mono); font-size: 13px; }
+.lgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.lsizes { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px 10px; margin: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; min-width: 0; }
+.lsizes legend { font-size: 13.5px; font-weight: 500; padding: 0 4px; }
+.lsizes label { display: flex; gap: 6px; align-items: center; font-size: 14px; cursor: pointer; }
+.lsizes input { width: 17px; height: 17px; accent-color: var(--brand); }
+.lmore summary { cursor: pointer; color: var(--accent); font-size: 14px; padding: 4px 0; }
+.lmore[open] summary { margin-bottom: 10px; }
+.count.over { color: var(--bad); }
+.state-ok { border-left-color: var(--ok); background: var(--ok-soft); }
+@media (max-width: 760px) {
+  .ldesigns { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .lcard .btn { font-size: 13px; padding: 8px 10px; }
+  .sheet { width: 100%; max-width: 100%; max-height: 92dvh; margin: auto 0 0; border-radius: 14px 14px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px)); }
+  .sheet-actions .btn { flex: 1 1 auto; justify-content: center; }
+}

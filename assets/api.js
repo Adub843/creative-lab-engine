@@ -17,8 +17,10 @@ export const consoleKey = {
 };
 try { localStorage.removeItem("bc-key"); } catch { /* older versions kept the key here */ }
 
-let dlg = null;
+let dlg = null, asking = null;
 export function askForKey(reason = "Changes to the stores need the console key (the CONSOLE_KEY value set for this console).") {
+  // Two calls at once (say the product list and the image library) share one prompt.
+  if (asking) return asking;
   if (!dlg) {
     const input = el("input", { class: "field", id: "key-in", type: "password", autocomplete: "off", required: true });
     const msg = el("p", { class: "muted small", id: "key-msg" });
@@ -36,16 +38,18 @@ export function askForKey(reason = "Changes to the stores need the console key (
   dlg.querySelector("#key-msg").textContent = reason;
   const input = dlg.querySelector("#key-in");
   input.value = "";
-  return new Promise((resolve) => {
+  asking = new Promise((resolve) => {
     dlg.addEventListener("close", () => {
       const v = dlg.returnValue;
       dlg.returnValue = "";
       if (v) consoleKey.set(v);
+      asking = null;
       resolve(v || null);
     }, { once: true });
     dlg.showModal();
     input.focus();
   });
+  return asking;
 }
 
 // ---------- API calls ----------

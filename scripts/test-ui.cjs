@@ -26,10 +26,11 @@ const product = (store, n, o = {}) => {
   return { id: `gid://shopify/Product/${store === "c3d" ? 100 + n : 200 + n}`, handle, title: o.title ?? `Item ${n}`, type: o.type ?? "Gift",
     status: o.status ?? "ACTIVE", live: o.live ?? false, url: `${site}/products/${handle}`,
     adminUrl: `https://admin.shopify.com/store/${shop}/products/${store === "c3d" ? 100 + n : 200 + n}`,
-    image: null, price: 24 + n, currency: "USD", inventory: o.inventory ?? null, updatedAt: "2026-10-20T10:00:00Z" };
+    image: null, price: 24 + n, currency: "USD", inventory: o.inventory ?? null, updatedAt: "2026-10-20T10:00:00Z",
+    ...(store === "c3d" ? { customizable: o.customizable ?? false } : {}) };
 };
 const PRODUCTS = {
-  c3d: [product("c3d", 1, { title: "Personalized Name Ornament", type: "Ornament", live: true, handle: "name-ornament" }),
+  c3d: [product("c3d", 1, { title: "Personalized Name Ornament", type: "Ornament", live: true, handle: "name-ornament", customizable: true }),
     product("c3d", 2, { title: "Rainbow Row Keychain", type: "Keychain", status: "DRAFT", inventory: 12 }),
     product("c3d", 3, { title: "Pineapple Desk Sign With A Very Long Name That Should Wrap Nicely On Phones", type: "Home" }),
     product("c3d", 4, { title: "Broken Publish Product", type: "Test" })],
@@ -88,8 +89,9 @@ async function main() {
   page.on("console", (m) => { if (m.type() === "error" && !expected.test(m.text())) errors.push(m.text()); });
   page.on("pageerror", (e) => errors.push(String(e)));
 
-  const mode = { c3d: "ok", ed: "ok", insights: "ok", postDelay: 150 };
+  const mode = { c3d: "ok", ed: "ok", insights: "ok", postDelay: 150, listing: "ok" };
   const posts = [];
+  const productGets = [];
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.fulfill({ status: 200, contentType: "text/css", body: "" }));
   // Image library: kept in memory, list/upload/delete need the key, files are served without it.
   const images = new Map();
@@ -116,6 +118,7 @@ async function main() {
     const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
     if (req.method() === "GET") {
       const store = new URL(req.url()).searchParams.get("store");
+      productGets.push(store);
       if (req.headers()["x-console-key"] !== KEY) return json(401, { error: "Wrong or missing console key.", code: "bad_key" });
       await new Promise((r) => setTimeout(r, 60));
       if (mode[store] === "not_connected") return json(503, { error: `Set ${store.toUpperCase()}_SHOPIFY_DOMAIN and ${store.toUpperCase()}_ADMIN_TOKEN in the console's environment variables.`, code: "not_connected" });
@@ -128,6 +131,16 @@ async function main() {
     if (req.headers()["x-console-key"] !== KEY) return json(401, { error: "Wrong or missing console key.", code: "bad_key" });
     await new Promise((r) => setTimeout(r, mode.postDelay));
     const p = PRODUCTS[body.store].find((x) => x.id === body.id);
+    if ("customizable" in body) {
+      if (body.store !== "c3d") return json(400, { error: "Customizable is a Charleston 3D setting.", code: "wrong_store" });
+      if (p.title.startsWith("Broken")) return json(422, { error: "Couldn't add the customizable tag: Tags is invalid", code: "shopify_rejected" });
+      p.customizable = body.customizable;
+      return json(200, { store: "c3d", id: p.id, customizable: p.customizable, product: { ...p } });
+    }
+    if (p.title.startsWith("Half")) {
+      Object.assign(p, { status: "ACTIVE", live: false });
+      return json(422, { error: "It's now Active in Shopify, but it isn't on the Online Store yet: Online Store isn't available. Try the switch again, or publish it in Shopify.", code: "partly_published", details: { product: { ...p } } });
+    }
     if (p.title.startsWith("Broken")) return json(422, { error: "Couldn't publish to the Online Store: Product needs a price", code: "shopify_rejected" });
     const out = { ...p, live: body.live, status: body.live ? "ACTIVE" : p.status };
     Object.assign(p, out); // the store remembers it, like Shopify would
@@ -141,8 +154,34 @@ async function main() {
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(mode.insights === "ok" ? await insightsFixture(store, days) : await edgeFixture(mode.insights, store, days)) });
   });
 
+  // Listings: the body the page sends is checked with the server's own parser, so a sheet that
+  // builds something the API would refuse fails here.
+  const L = await import(path.join(ROOT, "lib/listings.mjs"));
+  const TPL = L.listingTemplate(() => undefined);
+  const listings = [];
+  let listingGets = 0;
+  await page.route("**/api/listings**", async (route) => {
+    const req = route.request();
+    const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    if (req.headers()["x-console-key"] !== KEY) return json(401, { error: "Wrong or missing console key.", code: "bad_key" });
+    if (req.method() === "GET") { listingGets++; return json(200, { template: TPL }); }
+    const body = JSON.parse(req.postData());
+    listings.push(body);
+    let input;
+    try { input = L.parseListingInput(body, TPL); } catch (e) { listings.at(-1).refused = e.message; return json(e.status ?? 400, { error: e.message, code: e.code }); }
+    await new Promise((r) => setTimeout(r, 200));
+    const handle = input.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const product = { id: "gid://shopify/Product/555", handle, title: input.title, url: `https://theelevateddesignsllc.com/products/${handle}`, adminUrl: "https://admin.shopify.com/store/elevated-designs/products/555" };
+    if (mode.listing === "error") return json(422, { error: "Shopify wouldn't create the product: Title has already been taken", code: "shopify_rejected" });
+    if (mode.listing === "partly") return json(422, { error: "The product was made in Shopify but isn't on the Online Store yet: Publication not found Press List it again to retry, or publish it in Shopify.", code: "partly_listed", details: { product } });
+    if (mode.listing === "already") return json(200, { store: "ed", alreadyListed: true, republished: false, live: true, product, url: product.url, adminUrl: product.adminUrl, message: `This design is already listed as "${input.title}".` });
+    PRODUCTS.ed.push({ ...product, type: input.productType, status: "ACTIVE", live: true, image: null, price: input.price, currency: "USD", inventory: null, updatedAt: "2026-10-25T10:00:00Z" });
+    return json(201, { store: "ed", alreadyListed: false, live: true, product, url: product.url, adminUrl: product.adminUrl, indexNow: { sent: true }, message: `"${input.title}" is live on theelevateddesignsllc.com.` });
+  });
+
   const rows = () => page.locator(".prow");
-  const sw = (title) => page.locator(".prow", { hasText: title }).locator(".switch");
+  const sw = (title) => page.locator(".prow", { hasText: title }).locator('.switch[data-field="live"]');
+  const csw = (title) => page.locator(".prow", { hasText: title }).locator('.switch[data-field="customizable"]');
   const clearToasts = () => page.evaluate(() => document.querySelectorAll(".toast").forEach((t) => t.remove()));
   const noOverflow = async (label) => {
     const o = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
@@ -240,18 +279,18 @@ async function main() {
     await page.waitForSelector(".prow");
     mode.ed = "not_connected";
     await page.click('.seg-btn[data-store="ed"]');
-    await page.waitForSelector(".state-setup");
-    assert.match(await page.locator(".state-setup").textContent(), /isn't connected yet.*ED_SHOPIFY_DOMAIN/s);
-    assert.equal(await page.locator(".state-setup a").getAttribute("href"), "https://github.com/Adub843/Business-console#connect-a-store");
+    await page.waitForSelector(".plist .state-setup");
+    assert.match(await page.locator(".plist .state-setup").textContent(), /isn't connected yet.*ED_SHOPIFY_DOMAIN/s);
+    assert.equal(await page.locator(".plist .state-setup a").getAttribute("href"), "https://github.com/Adub843/Business-console#connect-a-store");
     mode.ed = "empty";
-    await page.click(".state-setup button");
-    await page.waitForSelector(".state-empty");
-    assert.equal(await page.locator(".state-empty a").getAttribute("href"), "https://theelevateddesignsllc.com/admin/products/new");
+    await page.click(".plist .state-setup button");
+    await page.waitForSelector(".plist .state-empty");
+    assert.equal(await page.locator(".plist .state-empty a").getAttribute("href"), "https://theelevateddesignsllc.com/admin/products/new");
     mode.ed = "error";
     await page.click("#prod-refresh");
-    await page.waitForSelector(".state-error");
+    await page.waitForSelector(".plist .state-error");
     mode.ed = "ok";
-    await page.click(".state-error button");
+    await page.click(".plist .state-error button");
     await page.waitForSelector('.prow:has-text("Lowcountry Tee")');
     await page.click('.seg-btn[data-store="c3d"]');
     await page.waitForSelector('.prow:has-text("Rainbow Row")');
@@ -635,6 +674,319 @@ async function main() {
       await noOverflow(`${r} 390`);
     }
     await page.setViewportSize({ width: 1280, height: 900 });
+  });
+
+  // ---------- Charleston 3D: Customizable switch ----------
+  const customLabel = (id) => page.evaluate((i) => document.querySelector(`.prow[data-id="${i}"] .pcust > span`)?.textContent, id);
+  await step("customizable: a switch per Charleston 3D product, none on Elevated Designs", async () => {
+    await page.click('a.nav[data-route="products"]');
+    await page.click('.seg-btn[data-store="c3d"]').catch(() => {});
+    await page.waitForSelector('.prow:has-text("Rainbow Row")');
+    assert.equal(await page.locator('.switch[data-field="customizable"]').count(), await rows().count());
+    assert.equal(await csw("Personalized Name Ornament").getAttribute("aria-checked"), "true");
+    assert.equal(await csw("Rainbow Row").getAttribute("aria-checked"), "false");
+    assert.match(await csw("Rainbow Row").getAttribute("aria-label"), /Customizable.*Rainbow Row Keychain/);
+    assert.equal(await page.locator("#list-design").isHidden(), true, "no listing panel on Charleston 3D");
+    await page.click('.seg-btn[data-store="ed"]');
+    await page.waitForSelector('.prow:has-text("Lowcountry Tee")');
+    assert.equal(await page.locator('.switch[data-field="customizable"]').count(), 0, "Elevated Designs has no Customizable switch");
+    await page.click('.seg-btn[data-store="c3d"]');
+    await page.waitForSelector('.prow:has-text("Rainbow Row")');
+  });
+
+  await step("customizable: switching on saves (optimistic) and only sends the tag change", async () => {
+    await clearToasts();
+    const before = posts.length;
+    await csw("Rainbow Row").click();
+    assert.equal(await csw("Rainbow Row").getAttribute("aria-checked"), "true", "flips before the server answers");
+    await page.waitForFunction(() => document.querySelector('.prow[data-id="gid://shopify/Product/102"] .pcust > span')?.textContent === "Customizable");
+    assert.equal(posts.length - before, 1);
+    assert.deepEqual(posts.at(-1).body, { store: "c3d", id: "gid://shopify/Product/102", customizable: true });
+    assert.equal(posts.at(-1).key, KEY);
+    assert.match(await toastText(), /Rainbow Row Keychain now asks for a name to print/);
+    assert.equal(await sw("Rainbow Row").getAttribute("aria-checked"), "true", "Live untouched");
+    if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "products-c3d-customizable-1280.png"), fullPage: true }); }
+  });
+
+  await step("customizable: Shopify refusal rolls the switch back with the reason", async () => {
+    await clearToasts();
+    await csw("Broken Publish").click();
+    assert.equal(await csw("Broken Publish").getAttribute("aria-checked"), "true");
+    await page.waitForSelector(".toast >> text=Tags is invalid");
+    await page.waitForFunction(() => document.querySelector('.prow[data-id="gid://shopify/Product/104"] .switch[data-field="customizable"]').getAttribute("aria-checked") === "false");
+    assert.match(await toastText(), /Couldn't change Broken Publish Product/);
+  });
+
+  await step("customizable: keyboard (Space) turns it off and keeps focus on that switch", async () => {
+    await csw("Personalized Name Ornament").focus();
+    await page.keyboard.press("Space");
+    await page.waitForFunction(() => document.querySelector('.prow[data-id="gid://shopify/Product/101"] .switch[data-field="customizable"]').getAttribute("aria-checked") === "false"
+      && document.querySelector('.prow[data-id="gid://shopify/Product/101"] .pcust > span').textContent === "Customizable");
+    assert.deepEqual(await page.evaluate(() => [document.activeElement?.dataset.id, document.activeElement?.dataset.field]), ["gid://shopify/Product/101", "customizable"]);
+    assert.equal(posts.at(-1).body.customizable, false);
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelector('.prow[data-id="gid://shopify/Product/101"] .switch[data-field="customizable"]').getAttribute("aria-checked") === "true");
+    const ring = await page.evaluate(() => { const cs = getComputedStyle(document.activeElement); return cs.outlineStyle !== "none" && parseFloat(cs.outlineWidth) >= 2; });
+    assert.ok(ring, "visible focus ring");
+  });
+
+  await step("customizable: no key asks for it; cancelling rolls back and sends nothing", async () => {
+    await clearToasts();
+    await page.evaluate(() => sessionStorage.removeItem("bc-console-key"));
+    const before = posts.length;
+    await csw("Pineapple").click();
+    await page.waitForSelector("dialog.keydlg[open]");
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.querySelector('.prow[data-id="gid://shopify/Product/103"] .switch[data-field="customizable"]').getAttribute("aria-checked") === "false");
+    assert.equal(posts.length, before);
+    assert.match(await toastText(), /No console key entered/);
+    await csw("Pineapple").click();
+    await page.waitForSelector("dialog.keydlg[open]");
+    await page.fill("#key-in", KEY);
+    await page.click("#key-save");
+    await page.waitForFunction(() => document.querySelector('.prow[data-id="gid://shopify/Product/103"] .switch[data-field="customizable"]').getAttribute("aria-checked") === "true"
+      && document.querySelector('.prow[data-id="gid://shopify/Product/103"] .pcust > span').textContent === "Customizable");
+    assert.equal(posts.at(-1).key, KEY);
+  });
+
+  await step("live: Active worked but publishing didn't: row shows Active, not live, with a clear message", async () => {
+    PRODUCTS.c3d.push(product("c3d", 5, { title: "Half Published Sign", status: "DRAFT" }));
+    await page.click("#prod-refresh");
+    await page.waitForSelector('.prow:has-text("Half Published")');
+    await clearToasts();
+    await sw("Half Published").click();
+    await page.waitForSelector(".toast >> text=now Active in Shopify");
+    await page.waitForFunction(() => document.querySelector('.prow[data-id="gid://shopify/Product/105"] .plive > span')?.textContent === "Off");
+    const r = page.locator(".prow", { hasText: "Half Published" });
+    assert.equal(await r.locator(".pill").textContent(), "Active", "status refreshed from Shopify, not rolled back to Draft");
+    assert.equal(await sw("Half Published").getAttribute("aria-checked"), "false");
+    assert.match(await toastText(), /isn't on the Online Store yet: Online Store isn't available/);
+    PRODUCTS.c3d.pop();
+  });
+
+  // ---------- Elevated Designs: List a design ----------
+  const seed = [["mh2k3x-0123abcd", "lowcountry_sunset-FINAL.png", "image/png", "sunset, charleston"], ["mh2k4a-89abcdef", "palmetto moon.png", "image/png", ""],
+    ["mh2k5b-fedcba98", "logo-vector.svg", "image/svg+xml", ""]];
+  const card = (name) => page.locator(".lcard", { hasText: name });
+  const openSheet = async (name) => {
+    await card(name).locator('button[data-act="list"]').click();
+    await page.waitForSelector("#list-sheet[open] #ls-title");
+  };
+  await step("list a design: panel on Elevated Designs shows the online library; SVG can't be listed", async () => {
+    seed.forEach(([key, name, type, tags], n) => images.set(key, { key, name, type, size: 68, tags, added: 1000 - n }));
+    await page.click('.seg-btn[data-store="ed"]');
+    await page.waitForSelector('.prow:has-text("Lowcountry Tee")');
+    assert.equal(await page.locator("#list-design").isVisible(), true);
+    await page.click("#lib-refresh");
+    await page.waitForSelector('.lcard:has-text("palmetto moon")');
+    assert.equal(await page.locator(".lcard").count(), 3);
+    assert.match(await page.locator("#lib-count").textContent(), /3 of 3 designs/);
+    assert.equal(await card("logo-vector").locator("button").count(), 0, "SVG has no list button");
+    assert.match(await card("logo-vector").textContent(), /Export it as a PNG/);
+    assert.equal(await card("lowcountry").locator('button[data-act="list"]').getAttribute("aria-label"), "Add lowcountry_sunset-FINAL.png to Elevated Designs");
+    await page.fill("#lib-q", "palmetto");
+    assert.equal(await page.locator(".lcard").count(), 1);
+    await page.fill("#lib-q", "");
+    await page.dispatchEvent("#lib-q", "input");
+    if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "ed-list-panel-1280.png"), fullPage: true }); }
+  });
+
+  await step("list a design: sheet is prefilled from the template", async () => {
+    await openSheet("lowcountry");
+    assert.equal(listingGets, 1, "template fetched once");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "ls-title", "focus starts on the title");
+    assert.equal(await page.inputValue("#ls-title"), "Lowcountry Sunset Tee");
+    assert.equal(await page.inputValue("#ls-price"), "28");
+    assert.equal(await page.inputValue("#ls-up"), "3");
+    assert.match(await page.locator("#ls-summary").textContent(), /5 sizes at \$28\.00, 2XL \$31\.00/);
+    await page.click(".lmore summary");
+    const checked = await page.locator(".lsizes input:checked").evaluateAll((i) => i.map((x) => x.value));
+    assert.deepEqual(checked, ["S", "M", "L", "XL", "2XL"]);
+    assert.equal(await page.inputValue("#ls-type"), "T-Shirt");
+    assert.equal(await page.inputValue("#ls-fabric"), "Soft ring-spun cotton tee");
+    assert.match(await page.inputValue("#ls-tags"), /^elevated-designs, graphic-tee, t-shirt, printed-to-order, sunset, charleston$/);
+    const desc = await page.inputValue("#ls-desc");
+    assert.match(desc, /<strong>Lowcountry Sunset<\/strong>/);
+    assert.match(desc, /Soft ring-spun cotton tee/);
+    assert.match(desc, /S, M, L, XL, 2XL \(2XL \+\$3\)/);
+    assert.match(desc, /Printed to order for you; ships in 5-7 business days/);
+    assert.equal(await page.inputValue("#ls-seo-title"), "Lowcountry Sunset Tee | Elevated Designs");
+    assert.ok((await page.inputValue("#ls-seo-desc")).length <= 155);
+    assert.match(await page.locator(".lfield", { hasText: "SEO title" }).locator(".count").textContent(), /^\d+\/60$/);
+    if (SCREENS) await page.screenshot({ path: path.join(SCREENS, "ed-list-sheet-1280.png") });
+  });
+
+  await step("list a design: edits flow into the copy; a hand-edited field is kept", async () => {
+    await page.fill("#ls-title", "Lowcountry Sunset Classic Tee");
+    assert.match(await page.inputValue("#ls-desc"), /<strong>Lowcountry Sunset Classic<\/strong>/);
+    assert.equal(await page.inputValue("#ls-seo-title"), "Lowcountry Sunset Classic Tee | Elevated Designs");
+    await page.fill("#ls-fabric", "Heavyweight cotton tee");
+    assert.match(await page.inputValue("#ls-desc"), /<li>Heavyweight cotton tee<\/li>/);
+    await page.fill("#ls-seo-desc", "Hand-written SEO description for the Lowcountry Sunset tee.");
+    await page.fill("#ls-title", "Lowcountry Sunset Tee");
+    assert.equal(await page.inputValue("#ls-seo-desc"), "Hand-written SEO description for the Lowcountry Sunset tee.", "kept after a title change");
+    await page.fill("#ls-price", "30");
+    await page.check("#ls-size-3XL");
+    await page.uncheck("#ls-size-S");
+    assert.match(await page.locator("#ls-summary").textContent(), /5 sizes at \$30\.00, 2XL \$33\.00/);
+    await page.fill("#ls-tags", "elevated-designs, sunset,  , lowcountry");
+  });
+
+  await step("list a design: List it sends one valid listing and shows the live link", async () => {
+    await clearToasts();
+    const before = listings.length, gets = productGets.length;
+    await page.click("#ls-submit");
+    assert.equal(await page.locator("#ls-submit").textContent(), "Listing…");
+    assert.equal(await page.locator("#ls-submit").isDisabled(), true);
+    await page.waitForSelector("#ls-result");
+    assert.equal(listings.length - before, 1);
+    const body = listings.at(-1);
+    assert.equal(body.refused, undefined, `server would refuse: ${body.refused}`);
+    assert.equal(body.store, "ed");
+    assert.equal(body.imageKey, "mh2k3x-0123abcd");
+    assert.equal(body.title, "Lowcountry Sunset Tee");
+    assert.equal(body.price, 30);
+    assert.deepEqual(body.sizes, ["M", "L", "XL", "2XL", "3XL"]);
+    assert.deepEqual(body.upcharges, { "2XL": 3 });
+    assert.deepEqual(body.tags, ["elevated-designs", "sunset", "lowcountry"]);
+    assert.equal(body.seoDescription, "Hand-written SEO description for the Lowcountry Sunset tee.");
+    assert.match(await page.locator("#ls-result").textContent(), /Live on theelevateddesignsllc\.com.*is live/s);
+    assert.equal(await page.locator("#ls-view").getAttribute("href"), "https://theelevateddesignsllc.com/products/lowcountry-sunset-tee");
+    assert.equal(await page.locator("#ls-view").getAttribute("target"), "_blank");
+    assert.equal(await page.locator("#ls-admin").getAttribute("href"), "https://admin.shopify.com/store/elevated-designs/products/555");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "ls-view");
+    if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "ed-list-success-1280.png") }); }
+    await page.click("#ls-done");
+    assert.equal(await page.locator("#list-sheet[open]").count(), 0);
+    await page.waitForSelector('.prow:has-text("Lowcountry Sunset Tee")'); // the product list reloaded
+    assert.deepEqual(productGets.slice(gets), ["ed"], "Elevated Designs list reloaded once");
+    assert.equal(await card("lowcountry").locator(".pill").textContent(), "Listed");
+    assert.equal(await card("lowcountry").locator('a[data-act="listed-view"]').getAttribute("href"), "https://theelevateddesignsllc.com/products/lowcountry-sunset-tee");
+  });
+
+  await step("list a design: already listed says so with the links", async () => {
+    mode.listing = "already";
+    await openSheet("lowcountry");
+    await page.click("#ls-submit");
+    await page.waitForSelector("#ls-result");
+    assert.match(await page.locator("#ls-result").textContent(), /Already listed.*already listed as "Lowcountry Sunset Tee"/s);
+    assert.equal(await page.locator("#ls-admin").getAttribute("href"), "https://admin.shopify.com/store/elevated-designs/products/555");
+    await page.keyboard.press("Escape");
+    assert.equal(await page.locator("#list-sheet[open]").count(), 0);
+    mode.listing = "ok";
+  });
+
+  await step("list a design: errors stay in the sheet, the form is kept, and a retry works", async () => {
+    PRODUCTS.ed.pop();
+    mode.listing = "error";
+    await openSheet("palmetto");
+    assert.equal(await page.inputValue("#ls-title"), "Palmetto Moon Tee");
+    await page.click("#ls-submit");
+    await page.waitForSelector("#ls-error:not([hidden])");
+    assert.match(await page.locator("#ls-error").textContent(), /Not listed yet.*Title has already been taken/s);
+    assert.equal(await page.locator("#ls-submit").isDisabled(), false);
+    assert.equal(await page.locator("#ls-submit").textContent(), "List it");
+    assert.equal(await page.inputValue("#ls-title"), "Palmetto Moon Tee", "nothing typed is lost");
+    mode.listing = "partly";
+    await page.click("#ls-submit");
+    await page.waitForSelector("#ls-err-admin");
+    assert.match(await page.locator("#ls-error").textContent(), /isn't on the Online Store yet/);
+    assert.equal(await page.locator("#ls-err-admin").getAttribute("href"), "https://admin.shopify.com/store/elevated-designs/products/555");
+    mode.listing = "ok";
+    await page.click("#ls-submit");
+    await page.waitForSelector("#ls-result");
+    await page.click("#ls-done");
+  });
+
+  await step("list a design: empty title or no sizes are caught before anything is sent", async () => {
+    await openSheet("palmetto");
+    const before = listings.length;
+    await page.fill("#ls-title", "");
+    await page.click("#ls-submit");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "ls-title");
+    await page.fill("#ls-title", "Palmetto Moon Tee");
+    await page.click(".lmore summary");
+    for (const s of ["S", "M", "L", "XL", "2XL"]) await page.uncheck(`#ls-size-${s}`);
+    assert.match(await page.locator("#ls-summary").textContent(), /Pick at least one size/);
+    await page.click("#ls-submit");
+    await page.waitForSelector("#ls-error:not([hidden]) >> text=Pick at least one size");
+    await page.fill("#ls-seo-title", "x".repeat(70));
+    assert.equal((await page.inputValue("#ls-seo-title")).length, 60, "SEO title capped at 60");
+    assert.equal(listings.length, before, "nothing sent");
+    await page.click("#ls-cancel");
+    assert.equal(await page.locator("#list-sheet[open]").count(), 0);
+  });
+
+  await step("list a design: keyboard only: open, move through, close, focus returns", async () => {
+    await page.locator("#lib-refresh").focus();
+    await page.waitForSelector(".lcard button");
+    let found = false;
+    for (let i = 0; i < 10 && !found; i++) {
+      await page.keyboard.press("Tab");
+      found = await page.evaluate(() => document.activeElement?.dataset.act === "list");
+    }
+    assert.ok(found, "Tab reaches Add to Elevated Designs");
+    const opener = await page.evaluate(() => document.activeElement.closest(".lcard").dataset.key);
+    await page.keyboard.press("Enter");
+    await page.waitForSelector("#list-sheet[open] #ls-title");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "ls-title");
+    const ids = [];
+    for (let i = 0; i < 6; i++) { await page.keyboard.press("Tab"); ids.push(await page.evaluate(() => document.activeElement?.id || document.activeElement?.tagName)); }
+    assert.deepEqual(ids.slice(0, 2), ["ls-price", "ls-up"]);
+    assert.ok(ids.includes("ls-submit"), `List it reachable by Tab: ${ids}`);
+    await page.keyboard.press("Escape");
+    assert.equal(await page.locator("#list-sheet[open]").count(), 0);
+    assert.equal(await page.evaluate(() => document.activeElement?.closest(".lcard")?.dataset.key), opener, "focus back on the button that opened it");
+  });
+
+  await step("list a design: with no key, List it asks for it, then lists", async () => {
+    await page.evaluate(() => sessionStorage.removeItem("bc-console-key"));
+    await openSheet("palmetto");
+    await page.click("#ls-submit");
+    await page.waitForSelector("dialog.keydlg[open]");
+    await page.fill("#key-in", KEY);
+    await page.click("#key-save");
+    await page.waitForSelector("#ls-result");
+    assert.equal(await page.locator("#ls-view").getAttribute("href"), "https://theelevateddesignsllc.com/products/palmetto-moon-tee");
+    await page.click("#ls-done");
+  });
+
+  await step("list a design and customizable: no horizontal overflow at 390 and 1280", async () => {
+    await noOverflow("ed products 1280");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(150);
+    await noOverflow("ed products 390");
+    if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "ed-list-panel-390.png"), fullPage: true }); }
+    await openSheet("lowcountry");
+    assert.equal(await page.locator("dialog#list-sheet").count(), 1, "one sheet however often the page is drawn");
+    const box = await page.locator("#list-sheet").boundingBox();
+    assert.ok(box.x >= 0 && box.x + box.width <= 390, `sheet fits the phone: ${JSON.stringify(box)}`);
+    const wide = await page.evaluate(() => [...document.querySelectorAll("#list-sheet *")].filter((e) => e.getBoundingClientRect().right > 390.5).map((e) => e.id || e.tagName));
+    assert.deepEqual(wide, [], "nothing in the sheet sticks out");
+    await noOverflow("sheet 390");
+    if (SCREENS) await page.screenshot({ path: path.join(SCREENS, "ed-list-sheet-390.png") });
+    await page.keyboard.press("Escape");
+    await page.click('.seg-btn[data-store="c3d"]');
+    await page.waitForSelector('.prow:has-text("Rainbow Row")');
+    await noOverflow("c3d products 390");
+    const sticking = await page.evaluate(() => [...document.querySelectorAll(".prow *")].filter((e) => e.getBoundingClientRect().right > 390.5).length);
+    assert.equal(sticking, 0, "rows with two switches fit");
+    if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "products-c3d-customizable-390.png"), fullPage: true }); }
+    await page.setViewportSize({ width: 1280, height: 900 });
+  });
+
+  await step("list a design: Elevated Designs page links straight to it; Service Map shows the route", async () => {
+    await page.click('a.nav[data-route="ed"]');
+    await page.click(".quick a:has-text('List a design')");
+    await page.waitForSelector('.lcard:has-text("palmetto")');
+    assert.equal(await page.locator('.seg-btn[data-store="ed"]').getAttribute("aria-pressed"), "true");
+    const top = await page.locator("#list-design").evaluate((e) => e.getBoundingClientRect().top);
+    assert.ok(top < 900, `panel scrolled into view (${top})`);
+    await page.click('a.nav[data-route="c3d"]');
+    assert.equal(await page.locator(".quick a", { hasText: "List a design" }).count(), 0, "no listing link on Charleston 3D");
+    await page.click('a.nav[data-route="map"]');
+    assert.match(await page.locator(".route.brand-ed").textContent(), /List in one click/);
+    assert.match(await page.locator(".route.brand-c3d").textContent(), /set customizable/);
   });
 
   await step("no console errors", async () => {
