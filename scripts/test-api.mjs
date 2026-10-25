@@ -404,6 +404,14 @@ test("forecast: one week of sales is scaled to 30 days, not repeated as a month"
   assert.equal(forecast30([], TODAY, {}).next30, 0, "no sales at all");
 });
 
+test("insights: $0 orders (free custom print requests) are not counted as sales", async () => {
+  const now = new Date(`${TODAY}T15:00:00Z`);
+  const r = buildInsights({ store: "c3d", now, days: 30, orderNodes: [order(TODAY, 40), order(TODAY, 0, [["gid://shopify/Product/9", "Custom 3D print request", 1]])] });
+  const p30 = r.periods["30"];
+  assert.equal(p30.current.orders, 1);
+  assert.equal(p30.current.aov, 40);
+});
+
 test("forecast: holiday season vs after Christmas", async () => {
   const { seasonOf } = await import("../lib/insights.mjs");
   assert.equal(seasonOf("2026-10-01"), null, "Oct 1 window ends Oct 31");
