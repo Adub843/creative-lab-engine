@@ -3,8 +3,9 @@
 // GET    /api/images/:key   the image file itself
 // POST   /api/images        save one image (raw body, filename in x-filename)
 // DELETE /api/images/:key   remove one image
-// Writes require the x-console-key header to match the CONSOLE_KEY env var when it is set.
+// Writes require the x-console-key header to match the CONSOLE_KEY env var, and are refused while it is unset.
 import { getStore } from "@netlify/blobs";
+import { requireKey } from "../../lib/shopify.mjs";
 
 const MAX_BYTES = 6 * 1024 * 1024; // Netlify function request bodies cap out around 6 MB
 const TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "image/svg+xml"]);
@@ -12,9 +13,10 @@ const TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "im
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
-const canWrite = (req) => {
-  const key = Netlify.env.get("CONSOLE_KEY");
-  return !key || req.headers.get("x-console-key") === key;
+// Returns an error Response when the request may not write, otherwise null.
+const writeRefusal = (req) => {
+  try { requireKey({ header: (k) => req.headers.get(k) }, (k) => Netlify.env.get(k)); return null; }
+  catch (e) { return json({ error: e.message, code: e.code }, e.status); }
 };
 
 export default async (req) => {
@@ -41,7 +43,8 @@ export default async (req) => {
     });
   }
 
-  if (!canWrite(req)) return json({ error: "Wrong or missing console key" }, 401);
+  const refused = writeRefusal(req);
+  if (refused) return refused;
 
   if (req.method === "POST") {
     const type = (req.headers.get("content-type") ?? "").split(";")[0];
