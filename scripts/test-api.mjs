@@ -707,6 +707,7 @@ test("netlify.toml publishes only index.html and assets/, with CSP and frame-anc
 });
 
 // ---------- customizable (Charleston 3D only) ----------
+const { handleListings, libraryReader, listingTemplate } = await import("../lib/listings.mjs");
 
 test("list: Charleston 3D products say whether they're customizable (any case); ED products don't carry it", async () => {
   const sh = fakeShopify({ override: { ConsoleProducts: (v, data) => data({ products: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [
@@ -781,11 +782,247 @@ test("publish fails after making it active: 422 with Shopify's current state, no
   assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["OnlineStorePublication", "ConsoleProduct", "ConsoleActivate", "ConsolePublish", "ConsoleProduct"]);
 });
 
+// ---------- listings (Elevated Designs only) ----------
+const IMG_KEY = "mh2k3x-0123abcd";
+const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 1, 2, 3]);
+async function libraryWith(items = [[IMG_KEY, PNG_BYTES, "image/png"]]) {
+  const blobs = fakeBlobs();
+  for (const [k, data, type] of items) await blobs.set(k, data.buffer, { metadata: { name: "lowcountry_sunset-FINAL.png", type, size: data.byteLength, added: 1 } });
+  return libraryReader({ blobs, env: envOf() });
+}
+const LISTING = {
+  store: "ed", imageKey: IMG_KEY, title: "Lowcountry Sunset Tee", price: 28, sizes: ["S", "M", "L", "XL", "2XL"], upcharges: { "2XL": 3 },
+  productType: "T-Shirt", tags: ["elevated-designs", "graphic-tee"],
+  descriptionHtml: "<p>Lowcountry Sunset: an original Elevated Designs graphic.</p><ul><li>Soft ring-spun cotton tee</li></ul>",
+  seoTitle: "Lowcountry Sunset Tee | Elevated Designs", seoDescription: "Lowcountry Sunset graphic tee from Elevated Designs, printed to order. Sizes S to 2XL.",
+};
+const listCtx = async (sh, over = {}) => ({ env: envOf(over.env), fetch: sh.fetch, readImage: over.readImage ?? await libraryWith() });
+
+test("listings: template defaults, ED_HANDLING_DAYS, key and store checks", async () => {
+  const res = await handleListings(keyed({ store: "ed" }), { env: envOf(), fetch: fakeShopify().fetch });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.template.price, 28);
+  assert.deepEqual(res.body.template.sizes, ["S", "M", "L", "XL", "2XL"]);
+  assert.deepEqual(res.body.template.upcharges, { "2XL": 3 });
+  assert.equal(res.body.template.handlingDays, "5-7");
+  assert.equal(listingTemplate(envOf({ ED_HANDLING_DAYS: "3-5" })).handlingDays, "3-5");
+  assert.equal(listingTemplate(envOf({ ED_HANDLING_DAYS: "<b>soon</b>" })).handlingDays, "5-7", "odd values fall back");
+  assert.equal((await handleListings(get({ store: "ed" }), { env: envOf() })).status, 401);
+  assert.equal((await handleListings(keyed({ store: "c3d" }), { env: envOf() })).body.code, "wrong_store");
+});
+
+test("listings: happy path stages the image, creates the product, publishes it and pings IndexNow", async () => {
+  const sh = fakeShopify();
+  const res = await handleListings(post(LISTING), await listCtx(sh));
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  assert.equal(res.body.alreadyListed, false);
+  assert.equal(res.body.url, "https://theelevateddesignsllc.com/products/lowcountry-sunset-tee");
+  assert.equal(res.body.adminUrl, "https://admin.shopify.com/store/elevated-designs/products/555");
+  assert.match(res.body.message, /is live on theelevateddesignsllc\.com/);
+  assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["OnlineStorePublication", "ConsoleListingLookup", "ConsoleStagedUpload", "ConsoleListingCreate", "ConsolePublish"]);
+  assert.ok(sh.calls.filter((c) => c.op).every((c) => c.domain === "elevated-designs.myshopify.com"), "only the ED store is touched");
+  assert.equal(sh.calls.find((c) => c.op === "ConsoleListingLookup").variables.q, `tag:"design:${IMG_KEY}"`);
+  const stage = sh.calls.find((c) => c.op === "ConsoleStagedUpload").variables.input[0];
+  assert.deepEqual(stage, { resource: "IMAGE", filename: "lowcountry-sunset-tee.png", mimeType: "image/png", httpMethod: "POST", fileSize: String(PNG_BYTES.byteLength) });
+  const up = sh.calls.find((c) => c.upload).upload;
+  assert.deepEqual(up.fields, { "Content-Type": "image/png", key: "tmp/123/x", policy: "abc" }, "staged parameters sent first, as given");
+  assert.equal(up.size, PNG_BYTES.byteLength);
+  assert.equal(up.type, "image/png");
+  const input = sh.calls.find((c) => c.op === "ConsoleListingCreate").variables.input;
+  assert.equal(input.status, "ACTIVE");
+  assert.equal(input.vendor, "Elevated Designs");
+  assert.equal(input.productType, "T-Shirt");
+  assert.deepEqual(input.tags, ["elevated-designs", "graphic-tee", `design:${IMG_KEY}`]);
+  assert.deepEqual(input.seo, { title: LISTING.seoTitle, description: LISTING.seoDescription });
+  assert.deepEqual(input.productOptions, [{ name: "Size", position: 1, values: ["S", "M", "L", "XL", "2XL"].map((name) => ({ name })) }]);
+  assert.deepEqual(input.variants.map((v) => [v.optionValues[0].name, v.price]), [["S", "28.00"], ["M", "28.00"], ["L", "28.00"], ["XL", "28.00"], ["2XL", "31.00"]]);
+  assert.ok(input.variants.every((v) => v.inventoryItem.tracked === false && v.inventoryPolicy === "CONTINUE"), "print on demand: stock not tracked");
+  assert.deepEqual(input.files, [{ originalSource: `${STAGED_URL}tmp/123/lowcountry-sunset-tee.png`, contentType: "IMAGE", alt: "Lowcountry Sunset Tee", filename: "lowcountry-sunset-tee.png" }]);
+  assert.equal(sh.calls.find((c) => c.op === "ConsolePublish").variables.id, "gid://shopify/Product/555");
+  assert.deepEqual(sh.calls.find((c) => c.indexnow).indexnow.urlList, ["https://theelevateddesignsllc.com/products/lowcountry-sunset-tee"]);
+  assert.equal(sh.calls.find((c) => c.indexnow).indexnow.host, "theelevateddesignsllc.com");
+  assert.equal(res.body.indexNow.sent, true);
+  noLeak(res);
+});
+
+test("listings: price as a string and a 2XL-only upcharge on chosen sizes", async () => {
+  const sh = fakeShopify();
+  const res = await handleListings(post({ ...LISTING, price: "30.50", sizes: ["2XL", "M"], upcharges: { "2XL": 3, XL: 2 } }), await listCtx(sh));
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  const v = sh.calls.find((c) => c.op === "ConsoleListingCreate").variables.input.variants;
+  assert.deepEqual(v.map((x) => [x.optionValues[0].name, x.price]), [["M", "30.50"], ["2XL", "33.50"]], "sizes in shop order");
+});
+
+test("listings: already listed returns the existing product with a link, and creates nothing", async () => {
+  const listed = [{ id: "gid://shopify/Product/777", handle: "lowcountry-sunset-tee", title: "Lowcountry Sunset Tee", status: "ACTIVE", tags: [`design:${IMG_KEY}`], publishedOnPublication: true }];
+  const sh = fakeShopify({ listed });
+  const res = await handleListings(post(LISTING), await listCtx(sh));
+  assert.equal(res.status, 200);
+  assert.equal(res.body.alreadyListed, true);
+  assert.equal(res.body.republished, false);
+  assert.match(res.body.message, /already listed as "Lowcountry Sunset Tee"/);
+  assert.equal(res.body.url, "https://theelevateddesignsllc.com/products/lowcountry-sunset-tee");
+  assert.equal(res.body.adminUrl, "https://admin.shopify.com/store/elevated-designs/products/777");
+  assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["OnlineStorePublication", "ConsoleListingLookup"]);
+  assert.ok(!sh.calls.some((c) => c.upload || c.indexnow));
+});
+
+test("listings: already listed but off the site (or a failed publish) is put back on", async () => {
+  const listed = [{ id: "gid://shopify/Product/777", handle: "lowcountry-sunset-tee", title: "Lowcountry Sunset Tee", status: "DRAFT", tags: [`design:${IMG_KEY}`], publishedOnPublication: false }];
+  const sh = fakeShopify({ listed });
+  const res = await handleListings(post(LISTING), await listCtx(sh));
+  assert.equal(res.status, 200);
+  assert.equal(res.body.republished, true);
+  assert.match(res.body.message, /back on the site/);
+  assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["OnlineStorePublication", "ConsoleListingLookup", "ConsoleActivate", "ConsolePublish"]);
+  assert.ok(sh.calls.some((c) => c.indexnow));
+});
+
+test("listings: a loose search hit with another design tag is not treated as listed", async () => {
+  const sh = fakeShopify({ listed: [{ id: "gid://shopify/Product/9", handle: "x", title: "X", status: "ACTIVE", tags: [`design:${IMG_KEY}x`], publishedOnPublication: true }] });
+  const res = await handleListings(post(LISTING), await listCtx(sh));
+  assert.equal(res.status, 201);
+});
+
+const BAD_LISTINGS = [
+  ["Charleston 3D store", { store: "c3d" }, "wrong_store"],
+  ["no store", { store: undefined }, "bad_store"],
+  ["bad image key", { imageKey: "../etc" }, "bad_input"],
+  ["local-only image key", { imageKey: "local-abc-123456" }, "bad_input"],
+  ["empty title", { title: " " }, "bad_input"],
+  ["title too long", { title: "T".repeat(256) }, "bad_input"],
+  ["price zero", { price: 0 }, "bad_input"],
+  ["price too high", { price: 501 }, "bad_input"],
+  ["price fractions of a cent", { price: 28.005 }, "bad_input"],
+  ["price not a number", { price: "twenty" }, "bad_input"],
+  ["unknown size", { sizes: ["S", "XXL"] }, "bad_input"],
+  ["no sizes", { sizes: [] }, "bad_input"],
+  ["negative upcharge", { upcharges: { "2XL": -1 } }, "bad_input"],
+  ["SEO title over 60", { seoTitle: "S".repeat(61) }, "bad_input"],
+  ["SEO description over 155", { seoDescription: "D".repeat(156) }, "bad_input"],
+  ["script in description", { descriptionHtml: "<p>Nice</p><script>alert(1)</script>" }, "bad_input"],
+  ["event handler in description", { descriptionHtml: "<p onclick=\"x()\">Nice shirt here</p>" }, "bad_input"],
+  ["customizable tag on ED", { tags: ["customizable"] }, "bad_input"],
+  ["design tag forged", { tags: ["design:other-01234567"] }, "bad_input"],
+  ["tag with comma", { tags: ["a,b"] }, "bad_input"],
+  ["vendor override", { vendor: "Charleston 3D" }, "bad_input"],
+  ["status override", { status: "DRAFT" }, "bad_input"],
+];
+for (const [name, over, code] of BAD_LISTINGS)
+  test(`listings: ${name} is 400 (${code}) and never reaches Shopify`, async () => {
+    const sh = fakeShopify();
+    const res = await handleListings(post({ ...LISTING, ...over }), await listCtx(sh));
+    assert.equal(res.status, 400, JSON.stringify(res.body));
+    assert.equal(res.body.code, code);
+    assert.equal(sh.calls.length, 0);
+  });
+
+test("listings: key required (401), CONSOLE_KEY unset (403), body too large (413)", async () => {
+  const sh = fakeShopify();
+  assert.equal((await handleListings(post(LISTING, { "content-type": "application/json" }), await listCtx(sh))).status, 401);
+  assert.equal((await handleListings(post(LISTING, { "content-type": "application/json", "x-console-key": "guess" }), await listCtx(sh))).status, 401);
+  assert.equal((await handleListings(post(LISTING), await listCtx(sh, { env: { CONSOLE_KEY: undefined } }))).status, 403);
+  assert.equal((await handleListings(post({ ...LISTING, descriptionHtml: "x".repeat(40000) }), await listCtx(sh))).status, 413);
+  assert.equal(sh.calls.length, 0);
+});
+
+test("listings: an image missing from the library is 404 and nothing is created", async () => {
+  const sh = fakeShopify();
+  const res = await handleListings(post({ ...LISTING, imageKey: "zz9-89abcdef" }), await listCtx(sh));
+  assert.equal(res.status, 404);
+  assert.equal(res.body.code, "image_not_found");
+  assert.ok(!sh.calls.some((c) => c.op === "ConsoleStagedUpload" || c.op === "ConsoleListingCreate"));
+});
+
+test("listings: an SVG design is refused (Shopify product photos can't be SVG)", async () => {
+  const svg = new TextEncoder().encode("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
+  const sh = fakeShopify();
+  const res = await handleListings(post(LISTING), await listCtx(sh, { readImage: await libraryWith([[IMG_KEY, svg, "image/svg+xml"]]) }));
+  assert.equal(res.status, 415);
+  assert.match(res.body.error, /PNG, JPEG, WebP or GIF/);
+  assert.ok(!sh.calls.some((c) => c.op === "ConsoleStagedUpload"));
+});
+
+for (const mode of ["403", "throw"])
+  test(`listings: staged upload failure (${mode}) is 502 and no product is made`, async () => {
+    const sh = fakeShopify({ upload: mode });
+    const res = await handleListings(post(LISTING), await listCtx(sh));
+    assert.equal(res.status, 502);
+    assert.equal(res.body.code, "upload_failed");
+    assert.match(res.body.error, /Nothing was listed/);
+    assert.ok(!sh.calls.some((c) => c.op === "ConsoleListingCreate" || c.indexnow));
+  });
+
+test("listings: stagedUploadsCreate userErrors are 422 and stop before the upload", async () => {
+  const sh = fakeShopify({ stageErrors: [{ field: ["input", "0", "mimeType"], message: "Mime type is not supported" }] });
+  const res = await handleListings(post(LISTING), await listCtx(sh));
+  assert.equal(res.status, 422);
+  assert.match(res.body.error, /Mime type is not supported/);
+  assert.ok(!sh.calls.some((c) => c.upload));
+});
+
+test("listings: productSet userErrors are passed on as 422 with Shopify's messages", async () => {
+  const sh = fakeShopify({ createErrors: [{ field: ["input", "variants", "0", "price"], message: "Price must be greater than or equal to 0", code: "INVALID_VARIANT" }] });
+  const res = await handleListings(post(LISTING), await listCtx(sh));
+  assert.equal(res.status, 422);
+  assert.equal(res.body.code, "shopify_rejected");
+  assert.match(res.body.error, /Shopify wouldn't create the product: Price must be/);
+  assert.deepEqual(res.body.details.userErrors[0].field, ["input", "variants", "0", "price"]);
+  assert.ok(!sh.calls.some((c) => c.op === "ConsolePublish" || c.indexnow));
+});
+
+test("listings: product made but publish refused says so, with the admin link, and retry publishes it", async () => {
+  const sh = fakeShopify({ publishErrors: [{ field: ["input"], message: "Publication not found" }] });
+  const res = await handleListings(post(LISTING), await listCtx(sh));
+  assert.equal(res.status, 422);
+  assert.equal(res.body.code, "partly_listed");
+  assert.match(res.body.error, /made in Shopify but isn't on the Online Store yet: Publication not found/);
+  assert.equal(res.body.details.product.adminUrl, "https://admin.shopify.com/store/elevated-designs/products/555");
+  assert.ok(!sh.calls.some((c) => c.indexnow));
+});
+
+test("listings: IndexNow failure doesn't fail a listing; no ED creds is 503", async () => {
+  const sh = fakeShopify({ indexNow: "throw" });
+  const res = await handleListings(post(LISTING), await listCtx(sh));
+  assert.equal(res.status, 201);
+  assert.equal(res.body.indexNow.sent, false);
+  const none = await handleListings(post(LISTING), await listCtx(fakeShopify(), { env: { ED_ADMIN_TOKEN: "" } }));
+  assert.equal(none.status, 503);
+  assert.match(none.body.error, /ED_ADMIN_TOKEN/);
+});
+
+test("listings: unsupported method is 405", async () => {
+  const res = await handleListings({ method: "DELETE", query: new URLSearchParams(), header: (k) => (k === "x-console-key" ? "open-sesame-test-key-0001" : null), text: async () => "" }, { env: envOf() });
+  assert.equal(res.status, 405);
+});
+
+test("the listing template builder (assets/listing.js) fits Shopify's limits and the brand", async () => {
+  const { buildListing, cleanTitle } = await import("../assets/listing.js");
+  const tpl = listingTemplate(envOf());
+  assert.equal(cleanTitle("lowcountry_sunset-v2 FINAL copy.png"), "Lowcountry Sunset Tee");
+  assert.equal(cleanTitle("IMG_2041.JPG"), "Graphic Tee");
+  assert.equal(cleanTitle("Palmetto Moon Tee.png"), "Palmetto Moon Tee");
+  const l = buildListing({ name: "a-really-long-design-name-that-goes-on-and-on-about-the-charleston-harbor-at-dusk.png", tags: "harbor, sunset" }, tpl);
+  assert.ok(l.seoTitle.length <= 60, l.seoTitle);
+  assert.ok(l.seoDescription.length <= 155, l.seoDescription);
+  assert.match(l.descriptionHtml, /Soft ring-spun cotton tee/);
+  assert.match(l.descriptionHtml, /printed to order/i);
+  assert.match(l.descriptionHtml, /5-7 business days/);
+  assert.ok(!/100%|organic|eco|best|guarantee/i.test(l.descriptionHtml + l.seoDescription), "no claims the brand can't back");
+  assert.deepEqual(l.tags.slice(-2), ["harbor", "sunset"]);
+  // and what it makes is accepted by the API as is
+  const sh = fakeShopify();
+  const res = await handleListings(post({ store: "ed", imageKey: IMG_KEY, price: tpl.price, sizes: tpl.sizes, upcharges: tpl.upcharges, productType: tpl.productType,
+    title: l.title, tags: l.tags, descriptionHtml: l.descriptionHtml, seoTitle: l.seoTitle, seoDescription: l.seoDescription }), await listCtx(sh));
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+});
+
 // ---------- last: the schema check over everything sent above ----------
 test("every GraphQL string sent matches the Admin API 2025-10 schema, variables included", async () => {
   const S = await import("../lib/shopify.mjs");
+  const L = await import("../lib/listings.mjs");
   const I = await import("../lib/insights.mjs");
-  const ops = [...[S].flatMap((m) => Object.entries(m).filter(([k, v]) => /_(QUERY|MUTATION)$/.test(k) && typeof v === "string").map(([, v]) => v)),
+  const ops = [...[S, L].flatMap((m) => Object.entries(m).filter(([k, v]) => /_(QUERY|MUTATION)$/.test(k) && typeof v === "string").map(([, v]) => v)),
     I.ordersQuery(true), I.ordersQuery(false), I.SHOP_QUERY, I.SESSIONS_QUERY];
   const sent = new Set(checked()); // before the loop below adds the rest
   for (const q of ops) assert.deepEqual(schemaErrors(q), [], q.slice(0, 80));
