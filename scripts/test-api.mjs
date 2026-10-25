@@ -149,7 +149,7 @@ test("publish: activates, publishes to Online Store, pings IndexNow, returns liv
   assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["OnlineStorePublication", "ConsoleProduct", "ConsoleActivate", "ConsolePublish"]);
   assert.deepEqual(sh.calls.find((c) => c.op === "ConsoleActivate").variables.product, { id: PID, status: "ACTIVE" });
   const ping = sh.calls.find((c) => c.indexnow).indexnow;
-  assert.deepEqual(ping, { host: "charleston3d.com", key: "abc123indexnow", keyLocation: "https://charleston3d.com/pages/indexnow-key", urlList: ["https://charleston3d.com/products/name-ornament"] });
+  assert.deepEqual(ping, { host: "charleston3d.com", key: "abc123indexnow", keyLocation: "https://charleston3d.com/abc123indexnow.txt", urlList: ["https://charleston3d.com/products/name-ornament"] });
   assert.equal(res.body.indexNow.sent, true);
 });
 
@@ -756,6 +756,17 @@ test("customizable off: removes every spelling of the tag with tagsRemove", asyn
   assert.equal(res.status, 200, JSON.stringify(res.body));
   assert.equal(res.body.customizable, false);
   assert.deepEqual(sh.calls.find((c) => c.op === "ConsoleTagsRemove").variables, { id: PID, tags: ["customizable", "Customizable"] });
+});
+
+test("customizable matches the theme: older personalized tags count as on, and off removes them too", async () => {
+  const on = fakeShopify({ product: { tags: ["Personalized", "gift"] } });
+  const res = await handleProducts(post({ store: "c3d", id: PID, customizable: true }), { env: envOf(), fetch: on.fetch });
+  assert.equal(res.body.customizable, true);
+  assert.ok(!on.calls.some((c) => /Tags(Add|Remove)/.test(c.op ?? "")), "already on for the theme");
+  const off = fakeShopify({ product: { tags: ["personalized", "Personalised", "customizable", "gift"] } });
+  const res2 = await handleProducts(post({ store: "c3d", id: PID, customizable: false }), { env: envOf(), fetch: off.fetch });
+  assert.equal(res2.body.customizable, false);
+  assert.deepEqual(off.calls.find((c) => c.op === "ConsoleTagsRemove").variables.tags, ["personalized", "Personalised", "customizable"]);
 });
 
 test("customizable is refused for Elevated Designs before any Shopify call", async () => {
