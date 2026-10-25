@@ -5,11 +5,11 @@ One place to run Charleston 3D and Elevated Designs: dashboard, brand pages, a m
 Static site (no build step) plus small serverless functions.
 
 - `index.html`: app shell
-- `assets/`: styles, data and page scripts (`products.js`, `insights.js`, `studio.js`; `api.js` holds the shared store switcher, console key and API calls)
+- `assets/`: styles, data and page scripts (`products.js`, `insights.js`, `studio.js`; `api.js` holds the shared store switcher, console key and API calls). `data.js` is the one list of brands, services, quick links' sites and the cleanup list.
 - `lib/shopify.mjs`, `lib/insights.mjs`: the API logic as plain functions with no hosting code. `lib/netlify.mjs` is the only Netlify glue.
 - `netlify/functions/products.mjs` (`/api/products`), `insights.mjs` (`/api/insights`), `images.mjs` (`/api/images`, image library in Netlify Blobs)
 
-Run locally with `npx netlify dev`, or open `index.html` directly (the library then keeps images in the browser only, and Products and Insights say the API isn't running).
+Run locally with `npm run dev` (`netlify dev`, needs the Netlify CLI), or serve the folder with any static server such as `python3 -m http.server` (the library then keeps images in the browser only, and Products and Insights say the API isn't running). Opening `index.html` straight from disk doesn't work: browsers block its module scripts on `file://`.
 
 ## The store sites
 
@@ -25,7 +25,7 @@ The Elevated Designs **design app** (charlestonprintdesigns.netlify.app) is a se
 
 `#insights` shows, per store: revenue, orders and average order for the last 7, 30 and 90 days against the period before, daily revenue, repeat customer rate, online store sessions and conversion, best sellers, products gaining or losing momentum, a 30-day revenue forecast and plain-English next steps.
 
-The forecast fits a straight line through the last 12 weeks of revenue (least squares) and continues it for 30 days; the range around it is the usual week-to-week wobble. With under 4 weeks of sales it repeats the last 30 days instead. When the next 30 days reach into November or December it says so, because holiday sales normally beat the trend.
+The forecast fits a straight line through the last 12 weeks of revenue (least squares) and continues it for 30 days; the range around it is the usual week-to-week wobble. With under 4 weeks of sales it repeats the last 30 days instead. When the next 30 days reach into November or December it says so, because holiday sales normally beat the trend. Next steps don't call sales up or down with under 5 orders in the previous 30 days, or say one product carries the store with under 10 orders.
 
 If a scope is missing, that part of the page says which scope to add and the rest still works.
 
@@ -42,7 +42,7 @@ Set these in Netlify (Site configuration > Environment variables). Never put the
 | `C3D_SITE_URL` | Optional. Public site address, default `https://charleston3d.com` |
 | `ED_SITE_URL` | Optional. Public site address, default `https://theelevateddesignsllc.com` |
 | `CONSOLE_KEY` | **Required.** A long random password. Publishing, uploads and Insights are refused until it's set; enter the same value when the console asks for it (kept for that browser tab only). |
-| `INDEXNOW_KEY` | Optional. An IndexNow key; the theme must serve it at `https://<site>/pages/indexnow-key`. |
+| `INDEXNOW_KEY` | Optional. An IndexNow key, used for both stores. In each store add a page with handle `indexnow-key` and template `page.indexnow`, and paste the same key in Theme settings > Search and AI, so it's served at `https://<site>/pages/indexnow-key`. |
 
 ### Admin API access scopes
 
@@ -67,7 +67,7 @@ After saving the variables, redeploy the console once so the functions pick them
 
 - `npm run check`: syntax check of every script
 - `npm test` (`node scripts/test-api.mjs`): the API with Shopify mocked (listing, publishing, unpublishing, bad input, keys, missing settings, Shopify errors, IndexNow failures, insights maths)
-- `npm run test:ui` (`NODE_PATH=$(npm root -g) node scripts/test-ui.cjs`): Products and Insights in a real browser with `/api/*` mocked; needs Playwright and python3. Set `SCREENS=<folder>` to save screenshots.
+- `npm run test:ui` (`NODE_PATH=$(npm root -g) node scripts/test-ui.cjs`): Products and Insights in a real browser with `/api/*` mocked; needs Playwright (installed globally or in the project) and python3. Set `SCREENS=<folder>` to save screenshots.
 
 ## Moving off Netlify later
 
