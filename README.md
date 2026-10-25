@@ -32,15 +32,36 @@ Each Charleston 3D product also has a **Customizable** switch. Some 3D files can
 
 ### Elevated Designs: List a design
 
-On the Elevated Designs Products page (also **List a design** on the Elevated Designs page), every PNG, JPEG, WebP or GIF in the online image library has an **Add to Elevated Designs** button. It opens a short sheet filled in from the listing template: title from the file name, T-Shirt, sizes S, M, L, XL, 2XL (2XL +$3), $28, tags, description, SEO title (60 characters at most) and SEO description (155 at most). Everything can be edited; **List it** then, in one go:
+On the Elevated Designs Products page (also **List a design** on the Elevated Designs page), every PNG, JPEG, WebP or GIF in the online image library has an **Add to Elevated Designs** button. It opens a sheet filled in from the listing template and the blank catalog (`data/blanks.json`):
+
+- **Shirts to offer**: every blank in the catalog, grouped by type (T-shirts, long sleeve, hoodies...), each with its tier, brand, style, fit, fabric and lowest price. Ticking a shirt shows its colors. By default the cheapest tee in each tier (value, standard, premium) is ticked, in black, white, navy and a grey/heather where it has them, otherwise its first 4 colors.
+- **Markup**: dollars added to every catalog price (0 uses the catalog; -10 to 100). Each size's price comes from the blank's `prices` in the catalog. Those prices are still placeholders in the catalog (`pricing.placeholder`), and the sheet says so.
+- A live **variant counter** (shirts x colors x sizes). It turns amber over 100 and red over 2,048, Shopify's limit per product, where List it is switched off. The server checks the same limit and rejects unknown shirts, colors or sizes.
+- Under **More**: sizes (XS to 5XL; a shirt only gets the sizes it comes in), product type, tags, description and SEO title (60 characters at most) and description (155 at most). The description and SEO follow the shirts you pick until you edit them by hand.
+
+**List it** then, in one go:
 
 1. looks for a product tagged `design:<image key>`, so a design is never listed twice (an existing one is returned with its link, and put back on the site if it was off);
 2. reads the image from the library and uploads it to Shopify (`stagedUploadsCreate`, then a POST to the staged address);
-3. creates the product with `productSet`: vendor Elevated Designs, Active, Size variants, stock not tracked (printed to order), description, SEO and tags;
+3. creates the product with `productSet`: vendor Elevated Designs, Active, three options **Blank** ("Gildan 5000 – Heavy Cotton Tee"), **Color** and **Size**, one variant per shirt, color and size with SKU `<design key>-<blank id>-<color slug>-<size>` (for example `palmetto-moon-gildan-5000-sport-grey-2XL`), stock not tracked (printed to order), description, SEO and tags;
 4. publishes it to the Online Store and pings IndexNow;
 5. shows the live link (`https://theelevateddesignsllc.com/products/<handle>`) and the Shopify admin link.
 
-The description says the shirt is printed to order and ships in `ED_HANDLING_DAYS` business days, and has an editable fabric line ("Soft ring-spun cotton tee" by default): change it to match the blank you print on. It makes no other claims. SVG designs can't be Shopify product photos; export them as PNG first.
+The description has a short intro, a **Choose your shirt** list of the offered blanks with their fabric, weight and fit (from the catalog), the size range, and says the shirt is printed to order and ships in `ED_HANDLING_DAYS` business days. It makes no other claims. SVG designs can't be Shopify product photos; export them as PNG first.
+
+**Big listings.** Netlify functions stop after 10 seconds. Up to 100 variants, `productSet` runs synchronously (one call, the product comes back). Above 100 it runs with `synchronous: false`: the console polls `productOperation` for about 4 seconds; if Shopify is still working, it answers 202 with the operation id and the sheet shows **Check again**, which polls the same operation and finishes (publish, IndexNow) without making a second product. Stores without Shopify's extended variants allow 100 variants per product, so the sheet warns above 100: if Shopify refuses, offer fewer shirts, colors or sizes.
+
+### The blank catalog (`data/blanks.json`)
+
+`data/blanks.json` is a copy of the shared catalog the shirt app keeps at `/mnt/project-files/elevated-designs/blanks.json` (its source of truth). The console reads its own copy (bundled into the functions by `included_files` in `netlify.toml`), so it never depends on that folder at run time. To refresh it after the catalog changes:
+
+```sh
+cp /mnt/project-files/elevated-designs/blanks.json data/blanks.json
+sha256sum /mnt/project-files/elevated-designs/blanks.json data/blanks.json   # should match
+npm test && npm run test:ui                                                  # the tests check the catalog is well formed
+```
+
+Then commit and deploy. Listings already in Shopify keep the prices and blanks they were made with.
 
 ## Insights
 
@@ -102,8 +123,9 @@ Run `npm install` once first (the API tests use `graphql` as a dev dependency).
 | `GET /api/products?store=c3d\|ed` | Every product, with `live` and (Charleston 3D) `customizable` |
 | `POST /api/products {store, id, live}` | Put a product on the site or take it off |
 | `POST /api/products {store: "c3d", id, customizable}` | Add or remove the `customizable` tag (Charleston 3D only) |
-| `GET /api/listings?store=ed` | Listing template defaults |
-| `POST /api/listings {store: "ed", imageKey, title, price, sizes, upcharges, productType, tags, descriptionHtml, seoTitle, seoDescription}` | List a library design on Elevated Designs (201 new, 200 already listed) |
+| `GET /api/listings?store=ed` | Listing template: defaults, limits and the blank catalog (without costs or suppliers) |
+| `POST /api/listings {store: "ed", imageKey, title, blanks: [{id, colors}], sizes, markup, productType, tags, descriptionHtml, seoTitle, seoDescription}` | List a library design on Elevated Designs (201 new, 200 already listed, 202 `{pending, operationId}` while Shopify is still making a big one) |
+| `POST /api/listings {store: "ed", imageKey, ..., operationId}` | Finish a pending listing (same body plus the operation id from the 202) |
 | `GET /api/insights?store=c3d\|ed&days=90` | Insights |
 | `/api/images` | Image library (see `lib/images.mjs`) |
 
