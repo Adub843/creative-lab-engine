@@ -25,6 +25,7 @@ const envOf = (over = {}) => (k) => (k in over ? over[k] : ENV[k]);
 const PUB = "gid://shopify/Publication/1";
 const PID = "gid://shopify/Product/101";
 const STAGED_URL = "https://shopify-staged-uploads.storage.googleapis.com/";
+const OPERATION = "gid://shopify/ProductSetOperation/42";
 
 // ---------- fake Shopify ----------
 function fakeShopify(opts = {}) {
@@ -87,8 +88,19 @@ function fakeShopify(opts = {}) {
         : { stagedTargets: [{ url: STAGED_URL, resourceUrl: `${STAGED_URL}tmp/123/${variables.input[0].filename}`,
           parameters: [{ name: "Content-Type", value: variables.input[0].mimeType }, { name: "key", value: "tmp/123/x" }, { name: "policy", value: "abc" }] }], userErrors: [] } });
       case "ConsoleListingCreate": return data({ productSet: opts.createErrors
-        ? { product: null, userErrors: opts.createErrors }
-        : { product: { id: "gid://shopify/Product/555", handle: "lowcountry-sunset-tee", title: variables.input.title, status: "ACTIVE" }, userErrors: [] } });
+        ? { product: null, productSetOperation: null, userErrors: opts.createErrors }
+        : variables.synchronous
+          ? { product: { id: "gid://shopify/Product/555", handle: "lowcountry-sunset-tee", title: variables.input.title, status: "ACTIVE" }, productSetOperation: null, userErrors: [] }
+          : { product: null, productSetOperation: { id: OPERATION, status: "CREATED" }, userErrors: [] } });
+      case "ConsoleListingOperation": {
+        // opts.operation: statuses returned in turn (the last one repeats), or "errors" / "missing"
+        if (opts.operation === "missing") return data({ productOperation: null });
+        const seq = opts.operation ?? ["ACTIVE", "COMPLETE"];
+        const status = seq[Math.min(calls.filter((c) => c.op === "ConsoleListingOperation").length - 1, seq.length - 1)];
+        return data({ productOperation: { id: variables.id, status,
+          product: status === "COMPLETE" ? { id: "gid://shopify/Product/556", handle: "big-tee", title: "Big Tee", status: "ACTIVE" } : null,
+          userErrors: opts.operationErrors ?? [] } });
+      }
       default: throw new Error(`unexpected op ${op}`);
     }
   };
@@ -790,28 +802,59 @@ async function libraryWith(items = [[IMG_KEY, PNG_BYTES, "image/png"]]) {
   for (const [k, data, type] of items) await blobs.set(k, data.buffer, { metadata: { name: "lowcountry_sunset-FINAL.png", type, size: data.byteLength, added: 1 } });
   return libraryReader({ blobs, env: envOf() });
 }
+const OFFER = [{ id: "gildan-5000", colors: ["Black", "White"] }, { id: "bella-3001", colors: ["Navy"] }];
 const LISTING = {
-  store: "ed", imageKey: IMG_KEY, title: "Lowcountry Sunset Tee", price: 28, sizes: ["S", "M", "L", "XL", "2XL"], upcharges: { "2XL": 3 },
+  store: "ed", imageKey: IMG_KEY, title: "Lowcountry Sunset Tee", blanks: OFFER, sizes: ["S", "M", "2XL"], markup: 0,
   productType: "T-Shirt", tags: ["elevated-designs", "graphic-tee"],
-  descriptionHtml: "<p>Lowcountry Sunset: an original Elevated Designs graphic.</p><ul><li>Soft ring-spun cotton tee</li></ul>",
+  descriptionHtml: "<p>Lowcountry Sunset: an original Elevated Designs graphic.</p><h3>Choose your shirt</h3><ul><li>Gildan 5000</li></ul>",
   seoTitle: "Lowcountry Sunset Tee | Elevated Designs", seoDescription: "Lowcountry Sunset graphic tee from Elevated Designs, printed to order. Sizes S to 2XL.",
 };
-const listCtx = async (sh, over = {}) => ({ env: envOf(over.env), fetch: sh.fetch, readImage: over.readImage ?? await libraryWith() });
+const listCtx = async (sh, over = {}) => ({ env: envOf(over.env), fetch: sh.fetch, readImage: over.readImage ?? await libraryWith(), sleep: over.sleep ?? (async () => {}) });
 
-test("listings: template defaults, ED_HANDLING_DAYS, key and store checks", async () => {
+test("blank catalog: data/blanks.json is well formed and its Blank names are unique", async () => {
+  const { blankCatalog } = await import("../lib/listings.mjs");
+  const { blankLabel, SIZES } = await import("../assets/listing.js");
+  const c = blankCatalog();
+  assert.ok(c.blanks.length >= 3);
+  assert.equal(new Set(c.blanks.map((b) => b.id)).size, c.blanks.length, "ids unique");
+  assert.equal(new Set(c.blanks.map(blankLabel)).size, c.blanks.length, "Blank option values unique");
+  for (const b of c.blanks) {
+    assert.ok(c.tiers[b.tier] && c.types[b.type], b.id);
+    assert.ok(b.sizes.every((s) => SIZES.includes(s)), `${b.id} sizes`);
+    assert.deepEqual(Object.keys(b.prices).sort(), [...b.sizes].sort(), `${b.id} has a price for every size`);
+    assert.equal(new Set(b.colors.map((x) => x.name)).size, b.colors.length, `${b.id} colors unique`);
+    assert.ok(!("cost" in b) && !("suppliers" in b), "costs and suppliers stay on the server");
+  }
+});
+
+test("listings: template has the catalog and a preset: cheapest tee per tier with black, white, navy, grey", async () => {
   const res = await handleListings(keyed({ store: "ed" }), { env: envOf(), fetch: fakeShopify().fetch });
   assert.equal(res.status, 200);
-  assert.equal(res.body.template.price, 28);
-  assert.deepEqual(res.body.template.sizes, ["S", "M", "L", "XL", "2XL"]);
-  assert.deepEqual(res.body.template.upcharges, { "2XL": 3 });
-  assert.equal(res.body.template.handlingDays, "5-7");
+  const t = res.body.template;
+  assert.equal(t.handlingDays, "5-7");
+  assert.deepEqual(t.options, ["Blank", "Color", "Size"]);
+  assert.equal(t.limits.variants, 2048);
+  const tiers = t.defaults.blanks.map((d) => t.catalog.blanks.find((b) => b.id === d.id));
+  assert.deepEqual(tiers.map((b) => [b.type, b.tier]), [["tee", "value"], ["tee", "standard"], ["tee", "premium"]]);
+  for (const b of tiers) {
+    const cheaper = t.catalog.blanks.filter((x) => x.type === "tee" && x.tier === b.tier && Math.min(...Object.values(x.prices)) < Math.min(...Object.values(b.prices)));
+    assert.deepEqual(cheaper, [], `${b.id} is the cheapest ${b.tier} tee`);
+  }
+  assert.deepEqual(t.defaults.blanks.find((d) => d.id === "gildan-64000").colors, ["Black", "White", "Navy", "Sport Grey"]);
+  assert.deepEqual(t.defaults.blanks[0].colors, ["Black", "White", "J. Navy", "Athletic Heather"]);
   assert.equal(listingTemplate(envOf({ ED_HANDLING_DAYS: "3-5" })).handlingDays, "3-5");
   assert.equal(listingTemplate(envOf({ ED_HANDLING_DAYS: "<b>soon</b>" })).handlingDays, "5-7", "odd values fall back");
   assert.equal((await handleListings(get({ store: "ed" }), { env: envOf() })).status, 401);
   assert.equal((await handleListings(keyed({ store: "c3d" }), { env: envOf() })).body.code, "wrong_store");
 });
 
-test("listings: happy path stages the image, creates the product, publishes it and pings IndexNow", async () => {
+test("listings: presetColors falls back to the blank's first colors", async () => {
+  const { presetColors } = await import("../assets/listing.js");
+  assert.deepEqual(presetColors({ colors: ["Red", "Gold", "Pink", "Teal", "Lime"].map((name) => ({ name })) }), ["Red", "Gold", "Pink", "Teal"]);
+  assert.deepEqual(presetColors({ colors: ["Navy", "Red", "Black"].map((name) => ({ name })) }), ["Black", "Navy", "Red"]);
+});
+
+test("listings: happy path stages the image, creates Blank x Color x Size, publishes it and pings IndexNow", async () => {
   const sh = fakeShopify();
   const res = await handleListings(post(LISTING), await listCtx(sh));
   assert.equal(res.status, 201, JSON.stringify(res.body));
@@ -828,14 +871,25 @@ test("listings: happy path stages the image, creates the product, publishes it a
   assert.deepEqual(up.fields, { "Content-Type": "image/png", key: "tmp/123/x", policy: "abc" }, "staged parameters sent first, as given");
   assert.equal(up.size, PNG_BYTES.byteLength);
   assert.equal(up.type, "image/png");
-  const input = sh.calls.find((c) => c.op === "ConsoleListingCreate").variables.input;
+  const create = sh.calls.find((c) => c.op === "ConsoleListingCreate").variables;
+  assert.equal(create.synchronous, true, "a few variants: synchronous");
+  const input = create.input;
   assert.equal(input.status, "ACTIVE");
   assert.equal(input.vendor, "Elevated Designs");
   assert.equal(input.productType, "T-Shirt");
   assert.deepEqual(input.tags, ["elevated-designs", "graphic-tee", `design:${IMG_KEY}`]);
   assert.deepEqual(input.seo, { title: LISTING.seoTitle, description: LISTING.seoDescription });
-  assert.deepEqual(input.productOptions, [{ name: "Size", position: 1, values: ["S", "M", "L", "XL", "2XL"].map((name) => ({ name })) }]);
-  assert.deepEqual(input.variants.map((v) => [v.optionValues[0].name, v.price]), [["S", "28.00"], ["M", "28.00"], ["L", "28.00"], ["XL", "28.00"], ["2XL", "31.00"]]);
+  assert.deepEqual(input.productOptions, [
+    { name: "Blank", position: 1, values: [{ name: "Gildan 5000 – Heavy Cotton Tee" }, { name: "Bella+Canvas 3001 – Unisex Jersey Tee" }] },
+    { name: "Color", position: 2, values: [{ name: "White" }, { name: "Black" }, { name: "Navy" }] },
+    { name: "Size", position: 3, values: [{ name: "S" }, { name: "M" }, { name: "2XL" }] }]);
+  assert.equal(input.variants.length, 9, "2 colors x 3 sizes + 1 color x 3 sizes");
+  const row = (v) => [...v.optionValues.map((o) => o.name), v.price, v.sku];
+  assert.deepEqual(row(input.variants[0]), ["Gildan 5000 – Heavy Cotton Tee", "White", "S", "13.99", `${IMG_KEY}-gildan-5000-white-S`]);
+  assert.deepEqual(row(input.variants[5]), ["Gildan 5000 – Heavy Cotton Tee", "Black", "2XL", "17.99", `${IMG_KEY}-gildan-5000-black-2XL`]);
+  assert.deepEqual(row(input.variants[8]), ["Bella+Canvas 3001 – Unisex Jersey Tee", "Navy", "2XL", "20.99", `${IMG_KEY}-bella-3001-navy-2XL`]);
+  assert.ok(input.variants.every((v) => v.optionValues.map((o) => o.optionName).join() === "Blank,Color,Size"));
+  assert.equal(new Set(input.variants.map((v) => v.sku)).size, 9, "SKUs unique");
   assert.ok(input.variants.every((v) => v.inventoryItem.tracked === false && v.inventoryPolicy === "CONTINUE"), "print on demand: stock not tracked");
   assert.deepEqual(input.files, [{ originalSource: `${STAGED_URL}tmp/123/lowcountry-sunset-tee.png`, contentType: "IMAGE", alt: "Lowcountry Sunset Tee", filename: "lowcountry-sunset-tee.png" }]);
   assert.equal(sh.calls.find((c) => c.op === "ConsolePublish").variables.id, "gid://shopify/Product/555");
@@ -845,12 +899,12 @@ test("listings: happy path stages the image, creates the product, publishes it a
   noLeak(res);
 });
 
-test("listings: price as a string and a 2XL-only upcharge on chosen sizes", async () => {
+test("listings: markup (as a string too) is added to every catalog price; sizes a blank lacks are skipped", async () => {
   const sh = fakeShopify();
-  const res = await handleListings(post({ ...LISTING, price: "30.50", sizes: ["2XL", "M"], upcharges: { "2XL": 3, XL: 2 } }), await listCtx(sh));
+  const res = await handleListings(post({ ...LISTING, blanks: [{ id: "hanes-5280", colors: ["Black"] }], sizes: ["M", "5XL", "XS"], markup: "5.50" }), await listCtx(sh));
   assert.equal(res.status, 201, JSON.stringify(res.body));
   const v = sh.calls.find((c) => c.op === "ConsoleListingCreate").variables.input.variants;
-  assert.deepEqual(v.map((x) => [x.optionValues[0].name, x.price]), [["M", "30.50"], ["2XL", "33.50"]], "sizes in shop order");
+  assert.deepEqual(v.map((x) => [x.optionValues[2].name, x.price]), [["M", "19.49"]], "Hanes 5280 has no XS or 5XL");
 });
 
 test("listings: already listed returns the existing product with a link, and creates nothing", async () => {
@@ -891,13 +945,25 @@ const BAD_LISTINGS = [
   ["local-only image key", { imageKey: "local-abc-123456" }, "bad_input"],
   ["empty title", { title: " " }, "bad_input"],
   ["title too long", { title: "T".repeat(256) }, "bad_input"],
-  ["price zero", { price: 0 }, "bad_input"],
-  ["price too high", { price: 501 }, "bad_input"],
-  ["price fractions of a cent", { price: 28.005 }, "bad_input"],
-  ["price not a number", { price: "twenty" }, "bad_input"],
+  ["no blanks", { blanks: [] }, "bad_input"],
+  ["blanks missing", { blanks: undefined }, "bad_input"],
+  ["unknown blank id", { blanks: [{ id: "gildan-9999", colors: ["Black"] }] }, "bad_input"],
+  ["blank id injection", { blanks: [{ id: "__proto__", colors: ["Black"] }] }, "bad_input"],
+  ["same blank twice", { blanks: [{ id: "gildan-5000", colors: ["Black"] }, { id: "gildan-5000", colors: ["White"] }] }, "bad_input"],
+  ["unknown color", { blanks: [{ id: "gildan-5000", colors: ["Black", "Plaid"] }] }, "bad_input"],
+  ["color from another blank", { blanks: [{ id: "bella-3001", colors: ["Sport Grey"] }] }, "bad_input"],
+  ["no colors", { blanks: [{ id: "gildan-5000", colors: [] }] }, "bad_input"],
+  ["color twice", { blanks: [{ id: "gildan-5000", colors: ["Black", "Black"] }] }, "bad_input"],
+  ["extra key on a blank", { blanks: [{ id: "gildan-5000", colors: ["Black"], price: 1 }] }, "bad_input"],
   ["unknown size", { sizes: ["S", "XXL"] }, "bad_input"],
   ["no sizes", { sizes: [] }, "bad_input"],
-  ["negative upcharge", { upcharges: { "2XL": -1 } }, "bad_input"],
+  ["blank with none of the sizes", { blanks: [{ id: "gildan-5000b", colors: ["Black"] }], sizes: ["2XL"] }, "bad_input"],
+  ["markup too low", { markup: -11 }, "bad_input"],
+  ["markup too high", { markup: 101 }, "bad_input"],
+  ["markup fractions of a cent", { markup: 1.005 }, "bad_input"],
+  ["markup not a number", { markup: "lots" }, "bad_input"],
+  ["price override sent", { price: 5 }, "bad_input"],
+  ["bad operation id", { operationId: "gid://shopify/Product/1" }, "bad_input"],
   ["SEO title over 60", { seoTitle: "S".repeat(61) }, "bad_input"],
   ["SEO description over 155", { seoDescription: "D".repeat(156) }, "bad_input"],
   ["script in description", { descriptionHtml: "<p>Nice</p><script>alert(1)</script>" }, "bad_input"],
@@ -991,13 +1057,71 @@ test("listings: IndexNow failure doesn't fail a listing; no ED creds is 503", as
   assert.match(none.body.error, /ED_ADMIN_TOKEN/);
 });
 
+test("listings: more than 2,048 variants is refused before Shopify, naming the count", async () => {
+  const { blankCatalog } = await import("../lib/listings.mjs");
+  const all = blankCatalog().blanks.map((b) => ({ id: b.id, colors: b.colors.map((c) => c.name) }));
+  const sh = fakeShopify();
+  const res = await handleListings(post({ ...LISTING, blanks: all, sizes: ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"] }), await listCtx(sh));
+  assert.equal(res.status, 400);
+  assert.equal(res.body.code, "too_many_variants");
+  assert.match(res.body.error, /That's \d,?\d+ variants; Shopify allows 2048 per product/);
+  assert.ok(res.body.details.variants > 2048);
+  assert.equal(sh.calls.length, 0);
+});
+
+const bigOffer = async () => {
+  const { blankCatalog } = await import("../lib/listings.mjs");
+  const ids = ["gildan-5000", "bella-3001", "comfortcolors-1717"];
+  return ids.map((id) => ({ id, colors: blankCatalog().blanks.find((b) => b.id === id).colors.slice(0, 8).map((c) => c.name) }));
+};
+
+test("listings: over 100 variants runs productSet asynchronously and polls until it's done", async () => {
+  const sh = fakeShopify({ operation: ["CREATED", "ACTIVE", "COMPLETE"] });
+  const slept = [];
+  const res = await handleListings(post({ ...LISTING, blanks: await bigOffer(), sizes: ["S", "M", "L", "XL", "2XL", "3XL"] }), await listCtx(sh, { sleep: async (ms) => slept.push(ms) }));
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  const create = sh.calls.find((c) => c.op === "ConsoleListingCreate").variables;
+  assert.equal(create.synchronous, false);
+  assert.ok(create.input.variants.length > 100 && create.input.variants.length <= 2048, String(create.input.variants.length));
+  assert.equal(sh.calls.filter((c) => c.op === "ConsoleListingOperation").length, 3);
+  assert.deepEqual(slept, [1000, 1000]);
+  assert.equal(sh.calls.find((c) => c.op === "ConsoleListingOperation").variables.id, OPERATION);
+  assert.equal(sh.calls.find((c) => c.op === "ConsolePublish").variables.id, "gid://shopify/Product/556");
+  assert.equal(res.body.url, "https://theelevateddesignsllc.com/products/big-tee");
+});
+
+test("listings: still running after the wait is 202 with the operation id; asking again with it finishes, without a second product", async () => {
+  const sh = fakeShopify({ operation: ["ACTIVE"] });
+  const body = { ...LISTING, blanks: await bigOffer(), sizes: ["S", "M", "L", "XL", "2XL", "3XL"] };
+  const first = await handleListings(post(body), await listCtx(sh));
+  assert.equal(first.status, 202);
+  assert.equal(first.body.pending, true);
+  assert.equal(first.body.operationId, OPERATION);
+  assert.match(first.body.message, /still making this listing/);
+  assert.ok(!sh.calls.some((c) => c.op === "ConsolePublish"));
+  assert.ok(sh.calls.filter((c) => c.op === "ConsoleListingOperation").length <= 5, "waits about 4 seconds at most");
+  const sh2 = fakeShopify({ operation: ["COMPLETE"] });
+  const again = await handleListings(post({ ...body, operationId: OPERATION }), await listCtx(sh2));
+  assert.equal(again.status, 201, JSON.stringify(again.body));
+  assert.deepEqual(sh2.calls.filter((c) => c.op).map((c) => c.op), ["OnlineStorePublication", "ConsoleListingOperation", "ConsolePublish"], "no lookup, upload or second productSet");
+});
+
+test("listings: an asynchronous productSet's userErrors are 422; an unknown operation is 404", async () => {
+  const body = { ...LISTING, blanks: await bigOffer(), sizes: ["S", "M", "L", "XL", "2XL", "3XL"] };
+  const bad = await handleListings(post(body), await listCtx(fakeShopify({ operation: ["COMPLETE"], operationErrors: [{ field: ["variants"], message: "Too many variants", code: "INVALID_INPUT" }] })));
+  assert.equal(bad.status, 422);
+  assert.match(bad.body.error, /Too many variants/);
+  const gone = await handleListings(post({ ...body, operationId: OPERATION }), await listCtx(fakeShopify({ operation: "missing" })));
+  assert.equal(gone.status, 404);
+});
+
 test("listings: unsupported method is 405", async () => {
   const res = await handleListings({ method: "DELETE", query: new URLSearchParams(), header: (k) => (k === "x-console-key" ? "open-sesame-test-key-0001" : null), text: async () => "" }, { env: envOf() });
   assert.equal(res.status, 405);
 });
 
 test("the listing template builder (assets/listing.js) fits Shopify's limits and the brand", async () => {
-  const { buildListing, cleanTitle } = await import("../assets/listing.js");
+  const { buildListing, cleanTitle, describe, variantCount } = await import("../assets/listing.js");
   const tpl = listingTemplate(envOf());
   assert.equal(cleanTitle("lowcountry_sunset-v2 FINAL copy.png"), "Lowcountry Sunset Tee");
   assert.equal(cleanTitle("IMG_2041.JPG"), "Graphic Tee");
@@ -1005,16 +1129,22 @@ test("the listing template builder (assets/listing.js) fits Shopify's limits and
   const l = buildListing({ name: "a-really-long-design-name-that-goes-on-and-on-about-the-charleston-harbor-at-dusk.png", tags: "harbor, sunset" }, tpl);
   assert.ok(l.seoTitle.length <= 60, l.seoTitle);
   assert.ok(l.seoDescription.length <= 155, l.seoDescription);
-  assert.match(l.descriptionHtml, /Soft ring-spun cotton tee/);
-  assert.match(l.descriptionHtml, /printed to order/i);
+  assert.match(l.descriptionHtml, /<h3>Choose your shirt<\/h3>/);
+  assert.match(l.descriptionHtml, /<li><strong>Fruit of the Loom 3930R – HD Cotton Tee<\/strong>: 100% cotton, 5 oz, classic fit<\/li>/);
+  assert.equal((l.descriptionHtml.match(/<li>/g) ?? []).length, 3, "one line per offered blank");
+  assert.match(l.descriptionHtml, /Printed to order/);
   assert.match(l.descriptionHtml, /5-7 business days/);
-  assert.ok(!/100%|organic|eco|best|guarantee/i.test(l.descriptionHtml + l.seoDescription), "no claims the brand can't back");
+  const brandCopy = l.descriptionHtml.replace(/<ul>[\s\S]*<\/ul>/, "") + l.seoDescription; // blank facts come from the catalog
+  assert.ok(!/100%|organic|eco|best|guarantee/i.test(brandCopy), "no claims the brand can't back");
   assert.deepEqual(l.tags.slice(-2), ["harbor", "sunset"]);
+  assert.equal(variantCount(tpl.catalog, { blanks: l.blanks, sizes: l.sizes }), 80, "default preset: 3 blanks x 4 colors, all their sizes");
+  assert.ok(!describe({ title: "<b>x</b>", handlingDays: "5-7", catalog: tpl.catalog, blanks: [], sizes: ["S"] }).includes("<b>x</b>"), "escaped");
   // and what it makes is accepted by the API as is
   const sh = fakeShopify();
-  const res = await handleListings(post({ store: "ed", imageKey: IMG_KEY, price: tpl.price, sizes: tpl.sizes, upcharges: tpl.upcharges, productType: tpl.productType,
+  const res = await handleListings(post({ store: "ed", imageKey: IMG_KEY, blanks: l.blanks, sizes: l.sizes, markup: l.markup, productType: l.productType,
     title: l.title, tags: l.tags, descriptionHtml: l.descriptionHtml, seoTitle: l.seoTitle, seoDescription: l.seoDescription }), await listCtx(sh));
   assert.equal(res.status, 201, JSON.stringify(res.body));
+  assert.equal(sh.calls.find((c) => c.op === "ConsoleListingCreate").variables.input.variants.length, 80);
 });
 
 // ---------- last: the schema check over everything sent above ----------
