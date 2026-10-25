@@ -80,11 +80,11 @@ export const SERVICES = [
       { label: "Docs", url: "https://charlestonprintdesigns.netlify.app/#/docs" },
       ...nlAdmin("charlestonprintdesigns")] },
   { id: "studio", name: "Design Studio", brand: "ed", kind: "In this console", status: "live",
-    does: "Image library and shirt designer. Images are stored online, so your PC doesn't need to be on.",
+    does: "Image library and shirt designer. Images are stored online, so your PC doesn't need to be on. Any library design can be listed on the Elevated Designs store in one click from Products (Elevated Designs).",
     links: [{ label: "Open Design Studio", url: "#studio" }] },
   { id: "publish", name: "Products and Insights", brand: "other", kind: "In this console · both stores", status: "live",
-    does: "Switch products on or off each store's Shopify site, and see sales, visits, a 30-day forecast and next steps for each store.",
-    links: [{ label: "Products", url: "#products" }, { label: "Insights", url: "#insights" }] },
+    does: "Switch products on or off each store's Shopify site, choose which Charleston 3D products are customizable (the theme then asks for a name to print), list a library design on Elevated Designs in one click, and see sales, visits, a 30-day forecast and next steps for each store.",
+    links: [{ label: "Products", url: "#products" }, { label: "List a design (Elevated Designs)", url: "#products/ed/list" }, { label: "Insights", url: "#insights" }] },
 
   // Content and video
   { id: "btd", source: "Your PC: Documents\\briefline-trend-desk", name: "briefline-trend-desk", brand: "other", kind: "Web app · Netlify", status: "attn",
@@ -140,8 +140,8 @@ export const SERVICES = [
     does: "Created but never launched.", links: nlAdmin(n) }));
 
 export const ROUTES = [
-  { brand: "c3d", hops: [["Pick products", "publish"], ["Catalog and checkout", "c3dshop"], ["Customers shop", "c3dsite"], ["Theme code", "ghtheme"]] },
-  { brand: "ed", hops: [["Design", "studio"], ["Listings", "cpd"], ["Pick products", "publish"], ["Catalog and checkout", "shop"], ["Customers shop", "edsite"], ["Theme code", "ghtheme"]] },
+  { brand: "c3d", hops: [["Pick products, set customizable", "publish"], ["Catalog and checkout", "c3dshop"], ["Customers shop", "c3dsite"], ["Theme code", "ghtheme"]] },
+  { brand: "ed", hops: [["Design ideas", "cpd"], ["Design", "studio"], ["List in one click", "publish"], ["Catalog and checkout", "shop"], ["Customers shop", "edsite"], ["Theme code", "ghtheme"]] },
   { brand: "other", hops: [["Spot trends", "btd"], ["Make videos", "vs"], ["Collect clips", "fvc"], ["Publish", "yt"]] },
 ];
 

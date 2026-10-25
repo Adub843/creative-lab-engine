@@ -159,6 +159,7 @@ const ED_LINKS = [
   ["Products", "Pick what's on the site", "#products/ed"],
   ["Insights", "Sales, visits, forecast", "#insights/ed"],
   ["Orders", "Shopify admin", `${BRANDS.ed.site}/admin/orders`],
+  ["List a design", "One click to the store", "#products/ed/list"],
   ["Products", "Shopify admin", `${BRANDS.ed.site}/admin/products`],
   ["Add a product", "Shopify admin", `${BRANDS.ed.site}/admin/products/new`],
   ["Designs and listings", "Elevated Designs app", "https://charlestonprintdesigns.netlify.app/#/"],

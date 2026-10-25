@@ -7,7 +7,8 @@ Static site plus small serverless functions. The only build step copies `index.h
 - `index.html`: app shell
 - `assets/`: styles, data and page scripts (`products.js`, `insights.js`, `studio.js`; `api.js` holds the shared store switcher, console key and API calls). `data.js` is the one list of brands, services, quick links' sites and the cleanup list.
 - `lib/shopify.mjs`, `lib/insights.mjs`, `lib/images.mjs`: the API logic as plain functions with no hosting code. `lib/netlify.mjs` is the only Netlify glue.
-- `netlify/functions/products.mjs` (`/api/products`), `insights.mjs` (`/api/insights`), `images.mjs` (`/api/images`, image library in Netlify Blobs)
+- `lib/listings.mjs`: one-click Elevated Designs listings; `assets/listing.js` builds the listing copy (title, description, SEO, tags) and `assets/list-design.js` is the panel and sheet.
+- `netlify/functions/products.mjs` (`/api/products`), `insights.mjs` (`/api/insights`), `images.mjs` (`/api/images`, image library in Netlify Blobs), `listings.mjs` (`/api/listings`)
 
 Run locally with `npm run dev` (`netlify dev`, needs the Netlify CLI), or serve the folder with any static server such as `python3 -m http.server` (the library then keeps images in the browser only, and Products and Insights say the API isn't running). Opening `index.html` straight from disk doesn't work: browsers block its module scripts on `file://`.
 
@@ -20,6 +21,26 @@ The Elevated Designs **design app** (charlestonprintdesigns.netlify.app) is a se
 ## Products
 
 `#products` lists every product in the chosen store (Charleston 3D or Elevated Designs) with a **Live** switch. Switching one on sets it to Active and publishes it to the store's Online Store channel, so it's on the site straight away; switching it off unpublishes it from the Online Store (it stays in Shopify). Each row links to the live product page and to the product in Shopify admin. If `INDEXNOW_KEY` is set, each change is also sent to IndexNow (Bing and others) so search engines pick it up sooner.
+
+If making a product Active works but publishing to the Online Store doesn't, the row shows what Shopify now has (Active, not on the site) with Shopify's reason, instead of flipping back to Draft.
+
+The two brands are kept apart on the server: a store id must be `c3d` or `ed`, Customizable is refused for Elevated Designs, and listings are refused for Charleston 3D.
+
+### Charleston 3D: Customizable
+
+Each Charleston 3D product also has a **Customizable** switch. Some 3D files can't be personalized, so this is chosen per product: on adds the Shopify tag `customizable`, off removes it (any capitalisation). The Charleston 3D theme shows the "Name to print" field only on products with that tag. Elevated Designs products have no such switch.
+
+### Elevated Designs: List a design
+
+On the Elevated Designs Products page (also **List a design** on the Elevated Designs page), every PNG, JPEG, WebP or GIF in the online image library has an **Add to Elevated Designs** button. It opens a short sheet filled in from the listing template: title from the file name, T-Shirt, sizes S, M, L, XL, 2XL (2XL +$3), $28, tags, description, SEO title (60 characters at most) and SEO description (155 at most). Everything can be edited; **List it** then, in one go:
+
+1. looks for a product tagged `design:<image key>`, so a design is never listed twice (an existing one is returned with its link, and put back on the site if it was off);
+2. reads the image from the library and uploads it to Shopify (`stagedUploadsCreate`, then a POST to the staged address);
+3. creates the product with `productSet`: vendor Elevated Designs, Active, Size variants, stock not tracked (printed to order), description, SEO and tags;
+4. publishes it to the Online Store and pings IndexNow;
+5. shows the live link (`https://theelevateddesignsllc.com/products/<handle>`) and the Shopify admin link.
+
+The description says the shirt is printed to order and ships in `ED_HANDLING_DAYS` business days, and has an editable fabric line ("Soft ring-spun cotton tee" by default): change it to match the blank you print on. It makes no other claims. SVG designs can't be Shopify product photos; export them as PNG first.
 
 ## Insights
 
@@ -42,16 +63,19 @@ Set these in Netlify (Site configuration > Environment variables). Never put the
 | `C3D_SITE_URL` | Optional. Public site address, default `https://charleston3d.com` |
 | `ED_SITE_URL` | Optional. Public site address, default `https://theelevateddesignsllc.com` |
 | `CONSOLE_KEY` | **Required.** A long random password, at least 16 characters (there's no lockout on wrong guesses, so make it long). The product list, publishing, the image library list, uploads and Insights are refused until it's set; enter the same value when the console asks for it (kept for that browser tab only). |
+| `ED_HANDLING_DAYS` | Optional. Business days to ship, used in new Elevated Designs listings, like `5-7` (the default) or `3-5`. |
 | `INDEXNOW_KEY` | Optional. An IndexNow key, used for both stores. In each store add a page with handle `indexnow-key` and template `page.indexnow`, and paste the same key in Theme settings > Search and AI, so it's served at `https://<site>/pages/indexnow-key`. |
 
 ### Admin API access scopes
 
 Give each store's app these scopes:
 
-- `read_products`, `write_products`: list products and make them Active
+- `read_products`, `write_products`: list products, make them Active, add or remove the `customizable` tag (`tagsAdd`/`tagsRemove`), and create listings (`productSet` and the image upload through `stagedUploadsCreate`)
 - `read_publications`, `write_publications`: find the Online Store channel and publish to it
 - `read_orders`: sales, best sellers and the forecast
 - `read_reports`: sessions and conversion (ShopifyQL)
+
+If Elevated Designs answers a listing with "access denied" for the product image, also add `write_files` (the image becomes a Shopify file); Shopify's docs list only `write_products` for `productSet` and staged uploads.
 
 Optional: `read_customers` (repeat customer rate across a customer's whole history; without it, repeats are counted within the period) and `read_all_orders` (orders older than 60 days, needed for the 90-day comparisons).
 
@@ -65,9 +89,25 @@ After saving the variables, redeploy the console once so the functions pick them
 
 ## Tests
 
+Run `npm install` once first (the API tests use `graphql` as a dev dependency).
+
 - `npm run check`: syntax check of every script
-- `npm test` (`node scripts/test-api.mjs`): the API with Shopify mocked (listing, publishing, unpublishing, bad input, keys, missing settings, Shopify errors, IndexNow failures, insights maths)
+- `npm test` (`node scripts/test-api.mjs`): the API with Shopify mocked (listing, publishing, unpublishing, customizable, one-click listings, bad input, keys, missing settings, Shopify errors, IndexNow failures, insights maths). Every GraphQL query and mutation the mock receives, and its variables, is validated against the Admin API 2025-10 schema in `scripts/schema/` (the introspection file from `@shopify/dev-mcp@1.5.0`).
 - `npm run test:ui` (`NODE_PATH=$(npm root -g) node scripts/test-ui.cjs`): Products and Insights in a real browser with `/api/*` mocked; needs Playwright (installed globally or in the project) and python3. Set `SCREENS=<folder>` to save screenshots.
+
+### API
+
+| Route | What it does |
+| --- | --- |
+| `GET /api/products?store=c3d\|ed` | Every product, with `live` and (Charleston 3D) `customizable` |
+| `POST /api/products {store, id, live}` | Put a product on the site or take it off |
+| `POST /api/products {store: "c3d", id, customizable}` | Add or remove the `customizable` tag (Charleston 3D only) |
+| `GET /api/listings?store=ed` | Listing template defaults |
+| `POST /api/listings {store: "ed", imageKey, title, price, sizes, upcharges, productType, tags, descriptionHtml, seoTitle, seoDescription}` | List a library design on Elevated Designs (201 new, 200 already listed) |
+| `GET /api/insights?store=c3d\|ed&days=90` | Insights |
+| `/api/images` | Image library (see `lib/images.mjs`) |
+
+All of them need the console key (`x-console-key`), except fetching an image file by its key. A listing makes several Shopify calls including a 6 MB upload at most; on Netlify's default 10-second function limit a very large image may time out. If that happens after the product was made, List it again finds it by its `design:` tag and finishes publishing it instead of making a second one.
 
 ## Moving off Netlify later
 
