@@ -2,7 +2,7 @@
 // Mapped 18 Oct 2026 from the connected Netlify, Wix and Shopify accounts and account emails.
 // 25 Oct 2026: both store sites are Shopify themes on their own stores (no Netlify hosting), and
 // each brand has its own theme repo: Charleston 3D in charleston3d-site, Elevated Designs in
-// elevated-designs-site (not created yet). Nothing here is shared between the two brands.
+// elevated-designs-site. Nothing here is shared between the two brands.
 // "probably" in a description means it was inferred from a name or setup, not opened.
 
 const nl = (n) => [
@@ -62,8 +62,8 @@ export const SERVICES = [
   // Elevated Designs
   { id: "edsite", name: "theelevateddesignsllc.com", brand: "ed", kind: "Website · Shopify theme", status: "attn",
     does: "Elevated Designs' storefront: its own hand-coded Shopify theme, separate from Charleston 3D, running on the Elevated Designs Shopify store. Products and checkout come live from Shopify.",
-    source: "GitHub: Adub843/elevated-designs-site (not created yet)",
-    note: "Not built yet; the store keeps its current theme until then. The new theme can start from the Charleston3D theme as it was at commit 9020272, before the Elevated Designs preset was taken out.",
+    source: "GitHub: Adub843/elevated-designs-site (branch claude/ed-theme)",
+    note: "Being built on branch claude/ed-theme. The store keeps its current theme until you preview and approve the new one.",
     links: [{ label: "Products on the site", url: "#products/ed" }, { label: "Insights", url: "#insights/ed" },
       { label: "Open live site", url: BRANDS.ed.site }, { label: "Themes in Shopify", url: `${BRANDS.ed.site}/admin/themes` }] },
   { id: "shop", name: "Elevated Designs store", brand: "ed", kind: "Store backend · Shopify", status: "live",
@@ -85,9 +85,9 @@ export const SERVICES = [
     does: "Customers design a shirt from the public part of the image library; their orders are paid through the Elevated Designs Shopify checkout, so they land in the Elevated Designs orders.",
     note: "Being built separately. Add its address here once it's live.",
     links: [{ label: "Orders in Shopify", url: `${BRANDS.ed.site}/admin/orders` }] },
-  { id: "ghedtheme", name: "GitHub · elevated-designs-site", brand: "ed", kind: "Code storage · GitHub", status: "empty",
-    does: "Will be the single home for Elevated Designs' own Shopify theme. Not created yet.",
-    links: [{ label: "Your GitHub repositories", url: "https://github.com/Adub843?tab=repositories" }] },
+  { id: "ghedtheme", name: "GitHub · elevated-designs-site", brand: "ed", kind: "Code storage · GitHub", status: "attn",
+    does: "The single home for Elevated Designs' own Shopify theme. Shopify's GitHub integration deploys it to the store.",
+    links: [{ label: "Open repository", url: "https://github.com/Adub843/elevated-designs-site" }] },
   { id: "studio", name: "Design Studio", brand: "ed", kind: "In this console", status: "live",
     does: "Image library and shirt designer. Images are stored online, so your PC doesn't need to be on. Any library design can be listed on the Elevated Designs store in one click from Products (Elevated Designs).",
     links: [{ label: "Open Design Studio", url: "#studio" }] },

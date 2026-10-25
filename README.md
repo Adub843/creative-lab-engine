@@ -5,7 +5,7 @@ One place to run Charleston 3D and Elevated Designs: dashboard, brand pages, a m
 ## How it all fits together
 
 - **Charleston 3D** (charleston3d.com): everything 3D printing. Its own hand-coded Shopify theme in `Adub843/charleston3d-site` (branch `claude/shopify-theme`), Charleston 3D only. Products show a "Name to print" field only when this console marks them **Customizable** (the `customizable` tag); free custom requests come in through the theme's Custom request page as $0 orders.
-- **Elevated Designs** (theelevateddesignsllc.com): apparel and prints. Its own Shopify store and its own theme, to live in `Adub843/elevated-designs-site` (not created yet). This console lists designs on it in one click (Blank x Color x Size).
+- **Elevated Designs** (theelevateddesignsllc.com): apparel and prints. Its own Shopify store and its own theme, in `Adub843/elevated-designs-site`. This console lists designs on it in one click (Blank x Color x Size).
 - **The shirt app** (built separately) takes customers' shirt designs; its orders pay through the Elevated Designs Shopify checkout.
 - **This console** is private (behind `CONSOLE_KEY`): one page per brand, one image library, publishing and Insights. The two brands never share a request: every call names its store (`c3d` or `ed`) and the server refuses brand-specific actions on the other store.
 
