@@ -1,6 +1,8 @@
 // Everything the console knows about the two businesses and the services behind them.
 // Mapped 18 Oct 2026 from the connected Netlify, Wix and Shopify accounts and account emails.
-// 25 Oct 2026: both store sites are Shopify themes on their own stores (no Netlify hosting).
+// 25 Oct 2026: both store sites are Shopify themes on their own stores (no Netlify hosting), and
+// each brand has its own theme repo: Charleston 3D in charleston3d-site, Elevated Designs in
+// elevated-designs-site (not created yet). Nothing here is shared between the two brands.
 // "probably" in a description means it was inferred from a name or setup, not opened.
 
 const nl = (n) => [
@@ -36,7 +38,7 @@ export const SERVICES = [
   // Charleston 3D
   { id: "c3dsite", name: "charleston3d.com", brand: "c3d", kind: "Website · Shopify theme", status: "attn",
     does: "Charleston 3D's storefront: a hand-coded Shopify theme running on the Charleston3D store. Products, prices and checkout come live from Shopify, so a product switched on in Products shows up at once. No Netlify, no build step.",
-    source: "GitHub: Adub843/charleston3d-site, branch claude/shopify-theme (one theme for both stores)",
+    source: "GitHub: Adub843/charleston3d-site, branch claude/shopify-theme (Charleston 3D only)",
     note: "The coded theme is being finished in Oct 2026; the live theme is still \"Charleston3D Lowcountry\" until it's published. The old Wix plan was canceled on 8 Oct.",
     links: [{ label: "Products on the site", url: "#products/c3d" }, { label: "Insights", url: "#insights/c3d" },
       { label: "Open live site", url: BRANDS.c3d.site }, { label: "Themes in Shopify", url: `${BRANDS.c3d.site}/admin/themes` }] },
@@ -59,9 +61,9 @@ export const SERVICES = [
 
   // Elevated Designs
   { id: "edsite", name: "theelevateddesignsllc.com", brand: "ed", kind: "Website · Shopify theme", status: "attn",
-    does: "Elevated Designs' storefront: the same hand-coded Shopify theme as Charleston 3D with the Elevated Designs look, running on its own Shopify store. Products and checkout come live from Shopify.",
-    source: "GitHub: Adub843/charleston3d-site, branch claude/shopify-theme (Elevated Designs preset)",
-    note: "Being built in Oct 2026. Publish the theme in the Elevated Designs store when it's ready.",
+    does: "Elevated Designs' storefront: its own hand-coded Shopify theme, separate from Charleston 3D, running on the Elevated Designs Shopify store. Products and checkout come live from Shopify.",
+    source: "GitHub: Adub843/elevated-designs-site (not created yet)",
+    note: "Not built yet; the store keeps its current theme until then. The new theme can start from the Charleston3D theme as it was at commit 9020272, before the Elevated Designs preset was taken out.",
     links: [{ label: "Products on the site", url: "#products/ed" }, { label: "Insights", url: "#insights/ed" },
       { label: "Open live site", url: BRANDS.ed.site }, { label: "Themes in Shopify", url: `${BRANDS.ed.site}/admin/themes` }] },
   { id: "shop", name: "Elevated Designs store", brand: "ed", kind: "Store backend · Shopify", status: "live",
@@ -79,6 +81,13 @@ export const SERVICES = [
       { label: "Market calendar", url: "https://charlestonprintdesigns.netlify.app/#/cal" },
       { label: "Docs", url: "https://charlestonprintdesigns.netlify.app/#/docs" },
       ...nlAdmin("charlestonprintdesigns")] },
+  { id: "shirtapp", name: "Elevated Designs shirt app", brand: "ed", kind: "Web app · in progress", status: "empty",
+    does: "Customers design a shirt from the public part of the image library; their orders are paid through the Elevated Designs Shopify checkout, so they land in the Elevated Designs orders.",
+    note: "Being built separately. Add its address here once it's live.",
+    links: [{ label: "Orders in Shopify", url: `${BRANDS.ed.site}/admin/orders` }] },
+  { id: "ghedtheme", name: "GitHub · elevated-designs-site", brand: "ed", kind: "Code storage · GitHub", status: "empty",
+    does: "Will be the single home for Elevated Designs' own Shopify theme. Not created yet.",
+    links: [{ label: "Your GitHub repositories", url: "https://github.com/Adub843?tab=repositories" }] },
   { id: "studio", name: "Design Studio", brand: "ed", kind: "In this console", status: "live",
     does: "Image library and shirt designer. Images are stored online, so your PC doesn't need to be on. Any library design can be listed on the Elevated Designs store in one click from Products (Elevated Designs).",
     links: [{ label: "Open Design Studio", url: "#studio" }] },
@@ -123,8 +132,8 @@ export const SERVICES = [
   { id: "gh", name: "GitHub · Business-console", brand: "other", kind: "Code storage · GitHub", status: "live",
     does: "The single home for this console's code.",
     links: [{ label: "Open repository", url: "https://github.com/Adub843/Business-console" }] },
-  { id: "ghtheme", name: "GitHub · charleston3d-site", brand: "other", kind: "Code storage · GitHub", status: "live",
-    does: "The single home for the Shopify theme that runs both store sites (one theme, a Charleston3D and an Elevated Designs preset).",
+  { id: "ghtheme", name: "GitHub · charleston3d-site", brand: "c3d", kind: "Code storage · GitHub", status: "live",
+    does: "The single home for Charleston 3D's Shopify theme. Charleston 3D only; Elevated Designs gets its own repo.",
     links: [{ label: "Open theme code", url: "https://github.com/Adub843/charleston3d-site/tree/claude/shopify-theme" }] },
   { id: "nlteam", name: "Netlify team", brand: "other", kind: "Hosting account · Netlify", status: "attn",
     does: "Hosts 30 sites on the Pro plan: 16 live, 14 never launched.",
@@ -141,7 +150,7 @@ export const SERVICES = [
 
 export const ROUTES = [
   { brand: "c3d", hops: [["Pick products, set customizable", "publish"], ["Catalog and checkout", "c3dshop"], ["Customers shop", "c3dsite"], ["Theme code", "ghtheme"]] },
-  { brand: "ed", hops: [["Design ideas", "cpd"], ["Design", "studio"], ["List in one click", "publish"], ["Catalog and checkout", "shop"], ["Customers shop", "edsite"], ["Theme code", "ghtheme"]] },
+  { brand: "ed", hops: [["Design ideas", "cpd"], ["Design", "studio"], ["List in one click", "publish"], ["Catalog and checkout", "shop"], ["Customers shop", "edsite"], ["Theme code", "ghedtheme"]] },
   { brand: "other", hops: [["Spot trends", "btd"], ["Make videos", "vs"], ["Collect clips", "fvc"], ["Publish", "yt"]] },
 ];
 
