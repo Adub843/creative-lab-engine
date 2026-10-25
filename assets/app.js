@@ -142,7 +142,8 @@ async function recentImages(n = 12) {
 // ---------- pages ----------
 const C3D_LINKS = [
   ["Website", "charleston3d.com", BRANDS.c3d.site],
-  ["Wix dashboard", "Edit the site", BRANDS.c3d.admin.url],
+  ["Products", "Pick what's on the site", "#products"],
+  ["Shopify admin", "Orders and products", BRANDS.c3d.admin.url],
   ["Order maker", "hype-chain-maker", "https://hype-chain-maker.netlify.app"],
   ["Nameplates", "nameplate-maker", "https://nameplate-maker.netlify.app"],
   ["File finder", "3d-print-file-finder", "https://3d-print-file-finder.netlify.app"],
@@ -190,7 +191,7 @@ function dashboard() {
     el("div", { class: "grid-2" },
       el("section", { class: "panel" }, el("h2", {}, "Needs you"), alertsList(attn)),
       el("section", { class: "panel" }, el("h2", {}, "Today's tasks"),
-        todoWidget("bc-todo", [{ t: "Decide: renew Wix for charleston3d.com or move it", d: false }, { t: "Check Netlify credit usage", d: false }]))),
+        todoWidget("bc-todo", [{ t: "Pick which Charleston 3D products go on the new site", d: false }, { t: "Check Netlify credit usage", d: false }]))),
     el("section", { class: "panel" },
       el("div", { class: "panel-head" }, el("h2", {}, "Latest images"), el("a", { class: "btn ghost", href: "#studio" }, "Open library")), imgs),
   ];
@@ -239,6 +240,11 @@ function mapPage(initial = "all") {
   ];
 }
 
+async function productsPage() {
+  const { renderProducts } = await import("./products.js");
+  return [header("Charleston 3D", "Products", "Pick which designs are on charleston3d.com. Switching one on makes it active in Shopify and rebuilds the site."), await renderProducts()];
+}
+
 async function studioPage() {
   const { renderStudio } = await import("./studio.js");
   return [header("Elevated Designs", "Design Studio", "Browse your whole image library, drag images onto a shirt, and export a print-ready file."), await renderStudio()];
@@ -259,12 +265,13 @@ async function render() {
       el("p", { class: "muted" }, "Your image library and shirt designer. Images are stored online, so you can design from any device."))]),
     map: () => mapPage(pendingFilter ?? "all"),
     studio: studioPage,
+    products: productsPage,
   };
   const make = pages[route] ?? dashboard;
   const nodes = await make();
   pendingFilter = null;
   view.replaceChildren(...[nodes].flat());
-  document.title = `${{ dashboard: "Dashboard", c3d: "Charleston 3D", ed: "Elevated Designs", map: "Service Map", studio: "Design Studio" }[route] ?? "Dashboard"} · Business Console`;
+  document.title = `${{ dashboard: "Dashboard", c3d: "Charleston 3D", ed: "Elevated Designs", map: "Service Map", studio: "Design Studio", products: "Products" }[route] ?? "Dashboard"} · Business Console`;
   view.focus({ preventScroll: true });
   window.scrollTo(0, 0);
 }

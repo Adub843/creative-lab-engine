@@ -11,9 +11,9 @@ const nlAdmin = (n) => [{ label: "Open in Netlify", url: `https://app.netlify.co
 export const BRANDS = {
   c3d: {
     name: "Charleston 3D",
-    tagline: "3D printing, custom prints and print tools",
-    site: "https://www.charleston3d.com",
-    admin: { label: "Wix dashboard", url: "https://manage.wix.com/dashboard/589bb47c-ab16-4e32-974a-28671b277987" },
+    tagline: "Personalized 3D printed gifts, sold on a coded site with Shopify checkout",
+    site: "https://charleston3d.com",
+    admin: { label: "Shopify admin", url: "https://admin.shopify.com/" },
   },
   ed: {
     name: "Elevated Designs",
@@ -33,10 +33,14 @@ export const STATUS = {
 
 export const SERVICES = [
   // Charleston 3D
-  { id: "wix", name: "charleston3d.com", brand: "c3d", kind: "Website · Wix", status: "attn",
-    does: "Charleston 3D's public website, built on Wix (site name \"Charelston3D\").",
-    note: "Wix emailed on 8 Oct that the Wix Studio plan was canceled and the @charleston3d.com business email will expire at the end of the billing cycle.",
-    links: [BRANDS.c3d.admin, { label: "Open live site", url: BRANDS.c3d.site }] },
+  { id: "c3dsite", name: "charleston3d.com", brand: "c3d", kind: "Website · Netlify + Shopify", status: "attn",
+    does: "Charleston 3D's coded storefront (Astro on Netlify). Products come from Shopify and checkout is Shopify's. Pick what's on it from the Products page.",
+    source: "GitHub: Adub843/charleston3d-site",
+    note: "Being built in Oct 2026. charleston3d.com is set as the Shopify store's domain until the new site goes live. The old Wix plan was canceled on 8 Oct.",
+    links: [{ label: "Products on the site", url: "#products" }, { label: "Open live site", url: BRANDS.c3d.site }] },
+  { id: "c3dshop", name: "Charleston3D store", brand: "c3d", kind: "Store backend · Shopify", status: "live",
+    does: "Shopify store (Basic plan) that holds the Charleston 3D catalog, takes payment and sends order emails. Moving checkout to Stripe is planned for January.",
+    links: [BRANDS.c3d.admin] },
   { id: "hype", source: "Your PC: Documents\\hype-chain-maker-site", name: "hype-chain-maker", brand: "c3d", kind: "Web app · Netlify", status: "live",
     does: "3D-print maker tool that exports .3MF files, with an order form and library and orders functions.",
     links: nl("hype-chain-maker") },
@@ -122,7 +126,7 @@ export const SERVICES = [
     does: "Created but never launched.", links: nlAdmin(n) }));
 
 export const ROUTES = [
-  { brand: "c3d", hops: [["Customers find you", "wix"], ["Tools and orders", "hype"], ["Code", "gh"]] },
+  { brand: "c3d", hops: [["Pick products", "c3dsite"], ["Catalog and checkout", "c3dshop"], ["Customers find you", "c3dsite"], ["Code", "gh"]] },
   { brand: "ed", hops: [["Design", "studio"], ["Catalog and listings", "cpd"], ["Sell", "shop"], ["Code", "gh"]] },
   { brand: "other", hops: [["Spot trends", "btd"], ["Make videos", "vs"], ["Collect clips", "fvc"], ["Publish", "yt"]] },
 ];
@@ -136,5 +140,5 @@ export const CLEANUP = [
   { what: "briefline-trend-desk scans every 3 hours", why: "Likely the biggest drain on Netlify credits", fix: "Slow to once or twice a day" },
   { what: "Documents\\PrintRoomDeploy (31 MB zip plus copies)", why: "The old Print Room, already merged into the Elevated Designs app", fix: "Delete the folder after a last look" },
   { what: "Elevated Designs app has no online backup", why: "Code and 330 MB of photos live only on your PC and the live site", fix: "Push its code to GitHub and keep photos in cloud storage" },
-  { what: "Wix plan canceled", why: "charleston3d.com and its email will expire", fix: "Renew Wix or move the site" },
+  { what: "Old Wix site for charleston3d.com", why: "Plan canceled 8 Oct; the domain is now set up in Shopify and will move to the new coded site", fix: "Let the Wix site lapse once the new site is live" },
 ];
