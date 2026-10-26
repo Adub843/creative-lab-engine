@@ -1338,6 +1338,16 @@ test("worker: image library on Workers KV keeps the same API (list, file, upload
   assert.equal(kv.m.size, 4);
 });
 
+test("worker: a KV write that fails (e.g. the free plan's daily limit) is a clear 503, not a crash", async () => {
+  const kv = fakeKV();
+  kv.put = async () => { throw new Error("KV PUT failed: 429 Too Many Requests"); };
+  const res = await W.handleRequest(wreq("/api/images", { method: "POST", headers: { "content-type": "image/png", ...KEYH }, body: PNG }), workerEnv({ IMAGES: kv }));
+  assert.equal(res.status, 503);
+  const body = await res.json();
+  assert.equal(body.code, "storage_failed");
+  assert.ok(!/429|KV PUT/.test(body.error), "the platform's own error isn't passed on");
+});
+
 test("worker: without the IMAGES binding the library says it isn't set up (and touches nothing)", async () => {
   const env = workerEnv({ IMAGES: undefined });
   const res = await W.handleRequest(wreq("/api/images", { headers: KEYH }), env);
