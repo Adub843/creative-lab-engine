@@ -2427,15 +2427,16 @@ test("worker: /api/marketing runs through the Worker with the MARKETING KV, and 
   }, f.fetch);
 });
 
-test("wrangler.toml: MARKETING and PRICING KV bindings, the daily audit cron and the price sync cron", async () => {
+test("wrangler.toml: MARKETING and PRICING KV bindings, the daily audit cron, the price sync cron and the Kittl sync cron", async () => {
   const fs = await import("node:fs");
   const toml = fs.readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   assert.match(toml, /\[\[kv_namespaces\]\]\s*\nbinding = "MARKETING"/);
   assert.match(toml, /\[\[kv_namespaces\]\]\s*\nbinding = "PRICING"/);
-  assert.match(toml, /\[triggers\]\s*\ncrons = \["0 11 \* \* \*", "30 11 \* \* \*", "\*\/15 \* \* \* \*"\]/);
+  assert.match(toml, /\[triggers\]\s*\ncrons = \["0 11 \* \* \*", "30 11 \* \* \*", "\*\/15 \* \* \* \*", "45 \* \* \* \*"\]/);
   const W2 = await import("../worker/app.mjs");
   assert.equal(W2.AUDIT_CRON, "0 11 * * *");
   assert.equal(W2.AUTOFIX_CRON, "30 11 * * *");
+  assert.equal(W2.KITTL_CRON, "45 * * * *");
 });
 
 // ---------- promotions ----------
@@ -2723,4 +2724,99 @@ test("marketing: suggested titles keep the first part of long names, and SEO wri
   assert.equal(res.status, 200, JSON.stringify(res.body));
   assert.ok(seen.length > 0);
   for (const seo of seen) assert.deepEqual(Object.keys(seo).sort(), ["description", "title"]);
+});
+
+// ---------- Kittl library sync ----------
+const KS = await import("../lib/kittl-sync.mjs");
+const { handleRequest, scheduledKittlSync } = await import("../worker/app.mjs");
+const WS = "cmg2xuxy59gcc0h7o81r9dnid", CLIP = "cmg2ygtn05fvy7o0hds631ob0";
+const kid = (n) => `cmkittl${String(n).padStart(18, "0")}`;
+const libItem = (blobs, n, meta = {}) => blobs.set(`k${n}-0000000${n % 10}`, PNG.buffer.slice(0), {
+  metadata: { name: `kittl-${kid(n)}`, type: "image/png", size: PNG.byteLength, tags: `kittl:${kid(n)}`, added: n, public: true, category: "Clipped Images", source: "kittl", ...meta } });
+const manifest = (ids, extra = {}) => ({ workspace: WS, folders: { [CLIP]: "Clipped Images" }, images: ids.map((n) => ({ id: kid(n), type: "image/png", folder: CLIP, ...(extra[n] ?? {}) })) });
+function kittlFetch(man, { bad = new Set() } = {}) {
+  const calls = [];
+  const fetchImpl = async (url) => {
+    const u = String(url); calls.push(u);
+    if (u === KS.MANIFEST_URL) return man ? new Response(JSON.stringify(man)) : new Response("nope", { status: 404 });
+    const m = /^https:\/\/cache\.kittl\.com\/pr:sharp\/plain\/api\/users\/(\w+)\/uploads\/(\w+)\.png$/.exec(u);
+    if (!m || m[1] !== WS) return new Response("not here", { status: 404 });
+    return new Response(bad.has(m[2]) ? new Uint8Array([1, 2, 3]) : PNG, { headers: { "content-type": "image/png" } });
+  };
+  return { fetchImpl, calls };
+}
+const metas = (blobs) => [...blobs.m.values()].map((v) => v.metadata).filter(Boolean);
+
+test("kittl sync: new Kittl images are copied in with the folder's category, removed ones leave", async () => {
+  const blobs = fakeBlobs();
+  for (const n of [1, 2, 3]) await libItem(blobs, n);
+  await libItem(blobs, 4, { public: false }); // hidden in the console: stays hidden
+  const { fetchImpl, calls } = kittlFetch(manifest([1, 3, 4, 5, 6], { 6: { public: false } }));
+  const out = await KS.syncKittlLibrary({ blobs, fetchImpl, now: () => 1_800_000_000_000 });
+  assert.equal(out.ok, true, out.error);
+  assert.deepEqual([out.added, out.removed, out.waiting, out.failed.length], [2, 1, 0, 0]);
+  const tags = metas(blobs).map((m) => m.tags).sort();
+  assert.deepEqual(tags, [1, 3, 4, 5, 6].map((n) => `kittl:${kid(n)}`));
+  const five = metas(blobs).find((m) => m.tags === `kittl:${kid(5)}`);
+  assert.deepEqual([five.category, five.source, five.public, five.kind, five.type], ["Clipped Images", "kittl", true, "png", "image/png"]);
+  assert.equal(metas(blobs).find((m) => m.tags === `kittl:${kid(6)}`).public, false, "a brand logo comes in hidden");
+  assert.equal(metas(blobs).find((m) => m.tags === `kittl:${kid(4)}`).public, false, "the console's own hide is kept");
+  assert.ok(calls.filter((u) => u !== KS.MANIFEST_URL).every((u) => u.startsWith(`https://cache.kittl.com/pr:sharp/plain/api/users/${WS}/uploads/`)));
+  // a second run with nothing new does nothing
+  const again = await KS.syncKittlLibrary({ blobs, fetchImpl });
+  assert.deepEqual([again.added, again.removed], [0, 0]);
+});
+
+test("kittl sync: console uploads and other categories are never removed", async () => {
+  const blobs = fakeBlobs();
+  await libItem(blobs, 1);
+  await libItem(blobs, 2, { category: "Charleston3D Shirts" });
+  await libItem(blobs, 3, { source: "console" });
+  await blobs.set("own-00000001", PNG.buffer.slice(0), { metadata: { name: "mine.png", type: "image/png", tags: "", public: true } });
+  const out = await KS.syncKittlLibrary({ blobs, fetchImpl: kittlFetch(manifest([1])).fetchImpl });
+  assert.equal(out.removed, 0);
+  assert.equal(blobs.m.size, 4);
+});
+
+test("kittl sync: a mass removal, an empty or broken list, and bad files change nothing", async () => {
+  const blobs = fakeBlobs();
+  for (let n = 1; n <= 40; n++) await libItem(blobs, n);
+  const mass = await KS.syncKittlLibrary({ blobs, fetchImpl: kittlFetch(manifest([1, 2])).fetchImpl });
+  assert.equal(mass.removed, 0);
+  assert.match(mass.warning, /38 images left Kittl/);
+  assert.equal(blobs.m.size, 40);
+  for (const bad of [null, { ...manifest([]) }, { ...manifest([1]), workspace: "../evil" }, { workspace: WS, folders: {}, images: [] },
+    { ...manifest([1]), images: [{ id: kid(1), type: "text/html", folder: CLIP }] }]) {
+    const out = await KS.syncKittlLibrary({ blobs, fetchImpl: kittlFetch(bad).fetchImpl });
+    assert.equal(out.ok, false);
+  }
+  assert.equal(blobs.m.size, 40);
+  const odd = await KS.syncKittlLibrary({ blobs, fetchImpl: kittlFetch(manifest([...Array(40)].map((_, i) => i + 1).concat(41)), { bad: new Set([kid(41)]) }).fetchImpl });
+  assert.deepEqual([odd.added, odd.failed.length, odd.waiting], [0, 1, 1]);
+  assert.equal(blobs.m.size, 40, "a file that isn't a real PNG is not saved");
+});
+
+test("kittl sync: a few copies per run, the rest on the next runs", async () => {
+  const blobs = fakeBlobs();
+  const { fetchImpl } = kittlFetch(manifest([...Array(20)].map((_, i) => i + 1)));
+  const first = await KS.syncKittlLibrary({ blobs, fetchImpl });
+  assert.deepEqual([first.added, first.waiting], [KS.MAX_ADDS, 20 - KS.MAX_ADDS]);
+  await KS.syncKittlLibrary({ blobs, fetchImpl });
+  const third = await KS.syncKittlLibrary({ blobs, fetchImpl });
+  assert.deepEqual([third.added, third.waiting], [20 - 2 * KS.MAX_ADDS, 0]);
+  assert.equal(blobs.m.size, 20);
+});
+
+test("kittl sync: the hourly cron saves its result and /api/library-sync shows the counts without the key", async () => {
+  const kv = fakeKV();
+  const env = { IMAGES: kv };
+  await libItem(kvBlobStore(kv), 1);
+  const out = await scheduledKittlSync(env, kittlFetch(manifest([1, 2])).fetchImpl);
+  assert.equal(out.added, 1);
+  const res = await handleRequest(new Request("https://console.example/api/library-sync"), env);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.deepEqual([body.ok, body.added, body.removed, body.inKittl, body.failed], [true, 1, 0, 2, 0]);
+  const list = await handleImages(imgReq("/api/images?public=1"), { blobs: kvBlobStore(kv), env: envOf() });
+  assert.equal((await list.json()).items.length, 2, "the sync's own record isn't listed as an image");
 });

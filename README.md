@@ -98,6 +98,17 @@ If a scope is missing, that part of the page says which scope to add and the res
 - **Plain words on the page.** The page never shows setting names. "Connect Google Search Console" means `GSC_SERVICE_ACCOUNT` (and `<PREFIX>_GSC_PROPERTY` if the property isn't the domain), "Connect Google Analytics" means `C3D_GA4_PROPERTY` / `ED_GA4_PROPERTY`, "Connect Bing Webmaster Tools" means `BING_WEBMASTER_API_KEY`, "the console's storage" means the `MARKETING` KV binding, an IndexNow key means `C3D_INDEXNOW_KEY` / `ED_INDEXNOW_KEY`, and "automatic morning fixes are switched off" means `MARKETING_AUTOFIX=off`.
 - **UTM link builder and Tools.** Tagged links for the store's own pages, a button to send the whole sitemap to IndexNow, links to the outside tools, and a monthly routine checklist (kept in that browser).
 
+## Kittl library sync
+
+The image library follows the Kittl "Clipped Images" folder by itself, so the shirt apps' designs stay current.
+- Every hour at :45, the Worker reads the list at https://design.elevatedshirts.com/library/kittl.json (lib/kittl-sync.mjs).
+- New Kittl images are copied in, up to 8 per run, from Kittl's image host only.
+- Images that left Kittl are removed. Only Kittl images in a listed category are ever removed. If more than 10% would go at once, nothing is removed and the run reports a warning.
+- Console uploads, other categories, and your edits (name, tags, hidden or shown) are never touched.
+- A scheduled Claude task writes the list after reading Kittl. It marks brand logos (Charleston3D and Elevated Designs marks) hidden, so they never show in a customer library.
+- The last run's counts are at /api/library-sync. No key is needed.
+- No key or secret is involved anywhere in this sync.
+
 ## Put the console online (Cloudflare)
 
 The console runs as one Cloudflare Worker on Cloudflare's free plan: the pages, the API and the image library (in Workers KV) all live there. You only do steps 1 to 5 once.

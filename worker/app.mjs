@@ -20,6 +20,7 @@ import { kvBlobStore } from "../lib/kv-store.mjs";
 import { handlePricing, scheduledPricing } from "../lib/pricing.mjs";
 import { handleMarketing, runScheduledAudits, runScheduledFixes } from "../lib/marketing.mjs";
 import { handlePromotions } from "../lib/promotions.mjs";
+import { syncKittlLibrary, STATE_KEY as KITTL_STATE_KEY } from "../lib/kittl-sync.mjs";
 
 // The app pages: only its own scripts, Shopify's CDN for product photos, never framed.
 export const SITE_HEADERS = {
@@ -101,6 +102,12 @@ export async function handleRequest(req, env) {
       return await listings(req, env, { readImage });
     }
     if (pathname === "/api/pricing") return await pricing(req, env, { kv: env?.PRICING ?? null });
+    // The last Kittl library sync (counts only), so a check doesn't need the console key.
+    if (pathname === "/api/library-sync" && req.method === "GET") {
+      const last = env?.IMAGES ? await env.IMAGES.get(KITTL_STATE_KEY, "json") : null;
+      const { failed = [], ...rest } = last ?? {};
+      return json(last ? { ...rest, failed: failed.length } : { ok: false, error: "No sync has run yet." }, 200);
+    }
     if (pathname === "/api/images" || pathname.startsWith("/api/images/"))
       return await handleImages(req, { blobs: imageStore(env), env: envReader(env) });
     if (pathname === "/api" || pathname.startsWith("/api/")) return json({ error: "Not found" }, 404);
@@ -122,13 +129,27 @@ export async function handleRequest(req, env) {
 // and every 15 minutes one step of the shirt price sync (lib/pricing.mjs).
 export const AUDIT_CRON = "0 11 * * *";
 export const AUTOFIX_CRON = "30 11 * * *";
+// Hourly, at :45: the image library follows Aaron's Kittl library (lib/kittl-sync.mjs).
+export const KITTL_CRON = "45 * * * *";
 export async function handleScheduled(env, cron) {
   if (!cron || cron === AUDIT_CRON) return runScheduledAudits(envReader(env), (input, init) => fetch(input, init), marketingKv(env));
   if (cron === AUTOFIX_CRON) return runScheduledFixes(envReader(env), (input, init) => fetch(input, init), marketingKv(env));
+  if (cron === KITTL_CRON) return scheduledKittlSync(env);
   try {
     return await scheduledPricing({ env: envReader(env), kv: env?.PRICING ?? null, fetchImpl: (input, init) => fetch(input, init) });
   } catch (e) {
     console.error("price sync", e?.code ?? e?.name, e?.message);
+    return null;
+  }
+}
+
+export async function scheduledKittlSync(env, fetchImpl = (input, init) => fetch(input, init)) {
+  try {
+    const result = await syncKittlLibrary({ blobs: imageStore(env), fetchImpl });
+    await env.IMAGES.put(KITTL_STATE_KEY, JSON.stringify(result));
+    return result;
+  } catch (e) {
+    console.error("kittl sync", e?.code ?? e?.name, e?.message);
     return null;
   }
 }
