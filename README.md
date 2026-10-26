@@ -9,19 +9,20 @@ One place to run Charleston 3D and Elevated Designs: dashboard, brand pages, a m
 - **The shirt app** (built separately) takes customers' shirt designs; its orders pay through the Elevated Designs Shopify checkout.
 - **This console** is private (behind `CONSOLE_KEY`): one page per brand, one image library, publishing and Insights. The two brands never share a request: every call names its store (`c3d` or `ed`) and the server refuses brand-specific actions on the other store.
 
-Neither store site is hosted on Netlify or has a build step: products, prices and checkout come live from Shopify, and every payment goes through Shopify checkout. Only this console runs on Netlify. The Elevated Designs **design app** (charlestonprintdesigns.netlify.app) is an older tool for designs and listings, not the store.
+Neither store site has its own hosting or a build step: products, prices and checkout come live from Shopify, and every payment goes through Shopify checkout. This console runs on **Cloudflare Workers** (free plan): see [Put the console online (Cloudflare)](#put-the-console-online-cloudflare). The older Elevated Designs **design app** (on the Service Map) is a tool for designs and listings, not the store.
 
 ## Code
 
-Static site plus small serverless functions. The only build step copies `index.html` and `assets/` into `dist/`, which is all that gets published, so `lib/`, `scripts/` and the rest of the repo are never downloadable from the site.
+One Cloudflare Worker serves both the app's files and its API. The only build step (`scripts/build.mjs`, run by wrangler before `dev` and `deploy`) copies `index.html` and `assets/` into `dist/`, which is all that is served as files, so `lib/`, `scripts/`, `worker/`, `data/` and the rest of the repo are never downloadable from the site.
 
 - `index.html`: app shell
 - `assets/`: styles, data and page scripts (`products.js`, `insights.js`, `studio.js`; `api.js` holds the shared store switcher, console key and API calls). `data.js` is the one list of brands, services, quick links' sites and the cleanup list.
-- `lib/shopify.mjs`, `lib/insights.mjs`, `lib/images.mjs`: the API logic as plain functions with no hosting code. `lib/netlify.mjs` is the only Netlify glue.
+- `lib/shopify.mjs`, `lib/insights.mjs`, `lib/images.mjs`: the API logic as plain functions with no hosting code. `lib/kv-store.mjs` stores the image library in Workers KV.
 - `lib/listings.mjs`: one-click Elevated Designs listings; `assets/listing.js` builds the listing copy (title, description, SEO, tags) and `assets/list-design.js` is the panel and sheet.
-- `netlify/functions/products.mjs` (`/api/products`), `insights.mjs` (`/api/insights`), `images.mjs` (`/api/images`, image library in Netlify Blobs), `listings.mjs` (`/api/listings`)
+- `worker/index.mjs` (entry point) and `worker/app.mjs`: the Worker. It sends `/api/products`, `/api/insights`, `/api/listings` and `/api/images` (and `/api/images/<key>`) to the handlers in `lib/`, reads settings from the Worker's secrets, and serves every other path from `dist/` with the security headers (CSP, no framing, nosniff).
+- `wrangler.toml`: the Worker's settings (files in `dist/`, the `IMAGES` KV namespace, `nodejs_compat`). No secrets in it.
 
-Run locally with `npm run dev` (`netlify dev`, needs the Netlify CLI), or serve the folder with any static server such as `python3 -m http.server` (the library then keeps images in the browser only, and Products and Insights say the API isn't running). Opening `index.html` straight from disk doesn't work: browsers block its module scripts on `file://`.
+Run locally with `npm run dev` (`wrangler dev`, installed by `npm install`): the console opens at http://localhost:8787 with its own local image library on your computer. For Products, Insights and listings locally, put the same settings in a `.dev.vars` file (one `NAME=value` per line; it is git-ignored, never commit it). Or serve the folder with any static server such as `python3 -m http.server` (the library then keeps images in the browser only, and Products and Insights say the API isn't running). Opening `index.html` straight from disk doesn't work: browsers block its module scripts on `file://`.
 
 ## Products
 
@@ -54,11 +55,11 @@ On the Elevated Designs Products page (also **List a design** on the Elevated De
 
 The description has a short intro, a **Choose your shirt** list of the offered blanks with their fabric, weight and fit (from the catalog), the size range, and says the shirt is printed to order and ships in `ED_HANDLING_DAYS` business days. It makes no other claims. SVG designs can't be Shopify product photos; export them as PNG first.
 
-**Big listings.** Netlify functions stop after 10 seconds. Up to 100 variants, `productSet` runs synchronously (one call, the product comes back). Above 100 it runs with `synchronous: false`: the console polls `productOperation` for about 4 seconds; if Shopify is still working, it answers 202 with the operation id and the sheet shows **Check again**, which polls the same operation and finishes (publish, IndexNow) without making a second product. Stores without Shopify's extended variants allow 100 variants per product, so the sheet warns above 100: if Shopify refuses, offer fewer shirts, colors or sizes.
+**Big listings.** So the page never waits long, up to 100 variants, `productSet` runs synchronously (one call, the product comes back). Above 100 it runs with `synchronous: false`: the console polls `productOperation` for about 4 seconds; if Shopify is still working, it answers 202 with the operation id and the sheet shows **Check again**, which polls the same operation and finishes (publish, IndexNow) without making a second product. Stores without Shopify's extended variants allow 100 variants per product, so the sheet warns above 100: if Shopify refuses, offer fewer shirts, colors or sizes.
 
 ### The blank catalog (`data/blanks.json`)
 
-`data/blanks.json` is a copy of the shared catalog the shirt app keeps at `/mnt/project-files/elevated-designs/blanks.json` (its source of truth). The console reads its own copy (bundled into the functions by `included_files` in `netlify.toml`), so it never depends on that folder at run time. To refresh it after the catalog changes:
+`data/blanks.json` is a copy of the shared catalog the shirt app keeps at `/mnt/project-files/elevated-designs/blanks.json` (its source of truth). The console reads its own copy (bundled into the Worker when it is deployed), so it never depends on that folder at run time. To refresh it after the catalog changes:
 
 ```sh
 cp /mnt/project-files/elevated-designs/blanks.json data/blanks.json
@@ -66,7 +67,7 @@ sha256sum /mnt/project-files/elevated-designs/blanks.json data/blanks.json   # s
 npm test && npm run test:ui                                                  # the tests check the catalog is well formed
 ```
 
-Then commit and deploy. Listings already in Shopify keep the prices and blanks they were made with.
+Then commit and deploy (`npm run deploy`, or push to `main` if the GitHub Action is set up). Listings already in Shopify keep the prices and blanks they were made with.
 
 ## Insights
 
@@ -78,9 +79,67 @@ Cancelled, test and $0 orders are left out ($0 orders are Charleston 3D's free c
 
 If a scope is missing, that part of the page says which scope to add and the rest still works.
 
+## Put the console online (Cloudflare)
+
+The console runs as one Cloudflare Worker on Cloudflare's free plan: the pages, the API and the image library (in Workers KV) all live there. You only do steps 1 to 5 once.
+
+**1. A Cloudflare account.** If you don't have one yet, sign up for free at https://dash.cloudflare.com/sign-up (no card needed, no domain needed). You don't need to turn on R2 or anything else: the first deploy makes the one thing the console needs (a KV namespace for images).
+
+**2. Node.js on your computer.** Install the LTS version (22 or newer) from https://nodejs.org. Then open a terminal (Windows: PowerShell; Mac: Terminal) in this folder. If you don't have the code yet: on GitHub open `Adub843/Business-console`, choose **Code > Download ZIP**, unzip it, and open the terminal in that folder.
+
+**3. Install and sign in.** Type each line and press Enter:
+
+```sh
+npm install
+npx wrangler login
+```
+
+`wrangler login` opens your browser: sign in to Cloudflare and press **Allow**. Then `npx wrangler whoami` should show your account.
+
+**4. Put it online.**
+
+```sh
+npm run deploy
+```
+
+This runs the tests, then `wrangler deploy`. The first time, Cloudflare may ask you to choose a `workers.dev` subdomain (any name you like), and wrangler creates the `IMAGES` KV namespace for the image library by itself (if it asks for a name, press Enter to take the suggested one). At the end it prints the console's address, like `https://business-console.<your-subdomain>.workers.dev`.
+
+**5. Add the settings (secrets).** Each one is one command; it asks for the value, and you paste it and press Enter. Nothing you type shows on screen, and the value is stored only in Cloudflare, encrypted. Start with the console key (make up a long random password, 16 characters or more):
+
+```sh
+npx wrangler secret put CONSOLE_KEY
+npx wrangler secret put C3D_SHOPIFY_DOMAIN
+npx wrangler secret put C3D_ADMIN_TOKEN
+npx wrangler secret put ED_SHOPIFY_DOMAIN
+npx wrangler secret put ED_ADMIN_TOKEN
+```
+
+Use `C3D_CLIENT_ID` and `C3D_CLIENT_SECRET` (or the `ED_` pair) instead of the `_ADMIN_TOKEN` if the store's app gives you a Client ID and secret; add the optional ones (`INDEXNOW_KEY`, `ED_HANDLING_DAYS`, `C3D_SITE_URL`, `ED_SITE_URL`) the same way. The full list is in [Connect a store](#connect-a-store). Each secret works straight away.
+
+- See which are set: `npx wrangler secret list` (names only, never values)
+- Change one: run `npx wrangler secret put NAME` again
+- Remove one: `npx wrangler secret delete NAME`
+
+Then open the console's address and enter the console key when it asks.
+
+**Updating later.** After changing the code, run `npm run deploy` again. Your secrets and images stay as they are.
+
+### Deploy from GitHub instead (optional)
+
+`.github/workflows/deploy.yml` runs the tests and deploys every time `main` changes on GitHub (and from the **Actions** tab with **Run workflow**). It needs two repository secrets, set once on GitHub under **Settings > Secrets and variables > Actions > New repository secret**:
+
+- `CLOUDFLARE_API_TOKEN`: in Cloudflare, open **My Profile > API Tokens > Create Token**, use the **Edit Cloudflare Workers** template, pick your account under Account Resources (and **All zones** under Zone Resources), then **Continue to summary > Create Token**, and copy the token. It is shown only once.
+- `CLOUDFLARE_ACCOUNT_ID`: the Account ID shown by `npx wrangler whoami`, or on the right of your account's **Workers & Pages** page.
+
+The Action only deploys code. The console's own secrets (step 5) are set once with `wrangler secret put` and are kept by every deploy.
+
+### What the free plan allows
+
+Plenty for one person's console: 100,000 requests a day; image library storage up to 1 GB, 1,000 uploads, 1,000 deletes, 1,000 library list loads and 100,000 image reads a day; each image up to 20 MB. A new or deleted image can take up to a minute to show in the list on another device (Workers KV is eventually consistent; the tab you uploaded from shows it at once). Each request gets 10 ms of CPU time on the free plan (time spent waiting for Shopify doesn't count), which covers normal use; if Insights for a very busy store ever fails with a Cloudflare error, Workers Paid ($5 a month) lifts that limit.
+
 ## Connect a store
 
-Set these in Netlify (Site configuration > Environment variables). Never put them in code, in chat, or in the theme.
+Set each of these as a Worker secret, from the console's folder: `npx wrangler secret put NAME`, then paste the value when it asks (see [Put the console online](#put-the-console-online-cloudflare)). Never put them in code, in `wrangler.toml`, in chat, or in the theme.
 
 | Variable | What it is |
 | --- | --- |
@@ -109,18 +168,18 @@ Optional: `read_customers` (repeat customer rate across a customer's whole histo
 
 ### Getting the credentials (do this in each store)
 
-**If the store already has a custom app made in the admin**: in Shopify admin, go to **Settings > Apps and sales channels > Develop apps**, open the app, choose **Configuration**, edit **Admin API integration**, tick the scopes above and save. Then on **API credentials**, install or reinstall the app. If the Admin API access token is still shown, copy it straight into `C3D_ADMIN_TOKEN` or `ED_ADMIN_TOKEN` in Netlify; if not, use the option on that page to generate a new one. The token is only shown once.
+**If the store already has a custom app made in the admin**: in Shopify admin, go to **Settings > Apps and sales channels > Develop apps**, open the app, choose **Configuration**, edit **Admin API integration**, tick the scopes above and save. Then on **API credentials**, install or reinstall the app. If the Admin API access token is still shown, save it straight into `C3D_ADMIN_TOKEN` or `ED_ADMIN_TOKEN` with `npx wrangler secret put`; if not, use the option on that page to generate a new one. The token is only shown once.
 
 **If there is no app yet**: Shopify no longer lets you create new custom apps in the admin's Develop apps page, so create one in the **Dev Dashboard** instead (from the Develop apps page, or dev.shopify.com): create an app, add the scopes above to its version, release it, and install it on the store. Then in **App settings**, copy the **Client ID** and **Client secret** into `C3D_CLIENT_ID` / `C3D_CLIENT_SECRET` (or the `ED_` pair). The console swaps them for a 24-hour access token by itself.
 
-After saving the variables, redeploy the console once so the functions pick them up.
+Each `wrangler secret put` takes effect straight away; there's no need to deploy again.
 
 ## Tests
 
-Run `npm install` once first (the API tests use `graphql` as a dev dependency).
+Run `npm install` once first (the API tests use `graphql`, and `wrangler` runs the console locally).
 
 - `npm run check`: syntax check of every script
-- `npm test` (`node scripts/test-api.mjs`): the API with Shopify mocked (listing, publishing, unpublishing, customizable, one-click listings, bad input, keys, missing settings, Shopify errors, IndexNow failures, insights maths). Every GraphQL query and mutation the mock receives, and its variables, is validated against the Admin API 2025-10 schema in `scripts/schema/` (the introspection file from `@shopify/dev-mcp@1.5.0`).
+- `npm test` (`node scripts/test-api.mjs`): the API with Shopify mocked, called through the Worker's own fetch handler with an in-memory Workers KV (same limits as the real one: 25 MiB values, 1024-byte metadata, paged lists) (listing, publishing, unpublishing, customizable, one-click listings, bad input, keys, missing settings, Shopify errors, IndexNow failures, insights maths, the Worker's routes, headers, body and upload limits, and that `dist/` holds only the app). Every GraphQL query and mutation the mock receives, and its variables, is validated against the Admin API 2025-10 schema in `scripts/schema/` (the introspection file from `@shopify/dev-mcp@1.5.0`).
 - `npm run test:ui` (`NODE_PATH=$(npm root -g) node scripts/test-ui.cjs`): Products and Insights in a real browser with `/api/*` mocked; needs Playwright (installed globally or in the project) and python3. Set `SCREENS=<folder>` to save screenshots.
 
 ### API
@@ -134,10 +193,13 @@ Run `npm install` once first (the API tests use `graphql` as a dev dependency).
 | `POST /api/listings {store: "ed", imageKey, title, blanks: [{id, colors}], sizes, markup, productType, tags, descriptionHtml, seoTitle, seoDescription}` | List a library design on Elevated Designs (201 new, 200 already listed, 202 `{pending, operationId}` while Shopify is still making a big one) |
 | `POST /api/listings {store: "ed", imageKey, ..., operationId}` | Finish a pending listing (same body plus the operation id from the 202) |
 | `GET /api/insights?store=c3d\|ed&days=90` | Insights |
-| `/api/images` | Image library (see `lib/images.mjs`) |
+| `GET /api/images` | Image library list: `{items: [{key, name, type, size, tags, added}]}` |
+| `GET /api/images/<key>` | The image file (no key needed; keys are unguessable) |
+| `POST /api/images` | Save one image: the raw file as the body, its type in `content-type` (PNG, JPEG, WebP, GIF or SVG, checked against the file), `x-filename`, optional `x-tags`; 20 MB at most |
+| `DELETE /api/images/<key>` | Remove one image |
 
-All of them need the console key (`x-console-key`), except fetching an image file by its key. A listing makes several Shopify calls including a 6 MB upload at most; on Netlify's default 10-second function limit a very large image may time out. If that happens after the product was made, List it again finds it by its `design:` tag and finishes publishing it instead of making a second one.
+All of them need the console key (`x-console-key`), except fetching an image file by its key. There is no CORS: only the console's own pages can call the API from a browser. A listing makes several Shopify calls including an image upload of up to 20 MB. If one is cut off after the product was made, List it again finds it by its `design:` tag and finishes publishing it instead of making a second one.
 
-## Moving off Netlify later
+## Moving to another host later
 
-`lib/` has no Netlify code. A new host needs a small adapter like `lib/netlify.mjs` that passes `{ method, query, header(name), text() }` and `{ env(name), fetch }` to `handleProducts` / `handleInsights` and sends back `{ status, body }` as JSON. The image library (`lib/images.mjs`) takes any blob store with the same few methods; `netlify/functions/images.mjs` passes it Netlify Blobs.
+`lib/` has no hosting code. A new host needs a small adapter like `worker/app.mjs` that passes `{ method, query, header(name), text() }` and `{ env(name), fetch }` to `handleProducts` / `handleInsights` / `handleListings` and sends back `{ status, body }` as JSON. The image library (`lib/images.mjs`) takes any blob store with the same few methods (`list`, `getWithMetadata`, `set`, `delete`); `lib/kv-store.mjs` makes one from Workers KV.
