@@ -662,6 +662,7 @@ function fakeKV({ pageSize = 1000 } = {}) {
       const value = type === "arrayBuffer" ? hit.data.slice(0) : type === "json" ? JSON.parse(new TextDecoder().decode(hit.data)) : new TextDecoder().decode(hit.data);
       return { value, metadata: hit.metadata };
     },
+    async get(k, opts) { return (await this.getWithMetadata(k, opts)).value; },
     async delete(k) { ops.push(["delete", k]); m.delete(k); },
     async list({ prefix = "", cursor, limit = pageSize } = {}) {
       ops.push(["list", prefix]);
@@ -1317,10 +1318,10 @@ test("build: dist/ holds only index.html and assets/, and wrangler.toml serves j
   for (const f of hosting) assert.ok(!/netlify/i.test(fs.readFileSync(path.join(root, f), "utf8")), `${f} mentions Netlify`);
 });
 
-test("worker: the entry module exports only the fetch handler (workerd refuses anything else)", async () => {
+test("worker: the entry module exports only the fetch and scheduled handlers (workerd refuses anything else)", async () => {
   const entry = await import("../worker/index.mjs");
   assert.deepEqual(Object.keys(entry), ["default"]);
-  assert.deepEqual(Object.keys(entry.default), ["fetch"]);
+  assert.deepEqual(Object.keys(entry.default), ["fetch", "scheduled"]);
   const res = await entry.default.fetch(wreq("/api/nope"), workerEnv());
   assert.equal(res.status, 404);
 });
@@ -1489,12 +1490,532 @@ test("worker: a listing reads its design from the same KV image library", async 
   }, sh.fetch);
 });
 
+// ---------- marketing ----------
+const MK = await import("../lib/marketing.mjs");
+const MKENV = { C3D_INDEXNOW_KEY: "c3dkey12345678", ED_INDEXNOW_KEY: "edkey987654321" };
+const HOME_GOOD = `<!doctype html><html><head><title>Charleston3D | Personalized 3D Printed Gifts, Charleston SC</title>
+<meta name="description" content="Personalized ornaments, Lowcountry decor and custom 3D printed gifts, designed and made to order in Charleston, SC. Ships in 5-7 days.">
+<link rel="canonical" href="https://charleston3d.com/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta property="og:title" content="Charleston3D"><meta property="og:description" content="Gifts"><meta property="og:image" content="https://cdn.shopify.com/a.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="geo.region" content="US-SC"><meta name="geo.placename" content="Charleston">
+<meta name="google-site-verification" content="abcDEF1234567890">
+<meta name="msvalidate.01" content="0123456789ABCDEF0123456789ABCDEF">
+<link rel="alternate" type="text/plain" href="/pages/llms">
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":["OnlineStore","LocalBusiness"],"name":"Charleston3D","address":{"@type":"PostalAddress","addressLocality":"Charleston","addressRegion":"SC"},"areaServed":[{"@type":"City","name":"Charleston"}]},{"@type":"WebSite","url":"https://charleston3d.com"}]}</script>
+</head><body><h1>Gifts</h1><img src="a.png" alt="Ornament"><p>Made in Charleston, SC. Orders ship in 5-7 days.</p>
+<script>(function(g,c){})("G-ABC1234XYZ", "k2abc3defg");</script></body></html>`;
+const HOME_BAD = `<!doctype html><html><head><title>Home</title><meta name="robots" content="noindex,nofollow">
+<script type="application/ld+json">{"@type":"LocalBusiness","telephone":"843-555-0100","address":{"streetAddress":"12 King St"}}</script>
+<script type="application/ld+json">{ broken </script></head><body><h1>a</h1><h1>b</h1><img src="x.png"><p>Call 843-555-0100</p></body></html>`;
+const PRODUCT_PAGE = `<html><head><title>Name Ornament, Charleston SC | Charleston3D</title><meta name="description" content="A personalized ornament with your family name, 3D printed to order in Charleston, SC. Ships in 5-7 days.">
+<script type="application/ld+json">[{"@type":"Product","offers":[{"@type":"Offer","price":"24.00"}]},{"@type":"BreadcrumbList"}]</script></head><body></body></html>`;
+const COLLECTION_PAGE = `<html><head><title>Personalized Christmas Ornaments | Charleston3D</title><meta name="description" content="Personalized Christmas ornaments with your family name, 3D printed to order in Charleston, SC. From $12."><script type="application/ld+json">{"@type":"BreadcrumbList"}</script></head><body></body></html>`;
+const ROBOTS_GOOD = `# Shopify defaults\nUser-agent: *\nDisallow: /cart\nDisallow: /checkout\n\nUser-agent: GPTBot\nUser-agent: ClaudeBot\nAllow: /\nDisallow: /cart\n\nSitemap: https://charleston3d.com/sitemap.xml\n`;
+const ROBOTS_BAD = `User-agent: GPTBot\nDisallow: /\n\nUser-agent: ClaudeBot\nUser-agent: PerplexityBot\nDisallow: /\n\nUser-agent: Bingbot\nDisallow: /\n\nUser-agent: *\nDisallow: /checkout\n`;
+const LLMS = `# Charleston3D\n\n> Personalized 3D printed gifts made to order in Charleston, SC.\n\n${"- Ornaments from $12\n".repeat(20)}`;
+
+function fakeSite({ bad = false, site = "https://charleston3d.com", keys = MKENV, down = false, noLlms = false } = {}) {
+  const hits = [];
+  const host = new URL(site).host;
+  const text = (body, status = 200, type = "text/html") => new Response(body, { status, headers: { "content-type": type } });
+  return { hits, fetch: async (url, init = {}) => {
+    const u = new URL(String(url));
+    if (u.host !== host) return null;
+    hits.push(u.pathname);
+    assert.ok(init.signal, "every site fetch has a timeout");
+    assert.match(init.headers["user-agent"], /BusinessConsole-SEO/);
+    if (down) return text("", 503);
+    switch (u.pathname) {
+      case "/": return text(bad ? HOME_BAD : HOME_GOOD);
+      case "/robots.txt": return text(bad ? ROBOTS_BAD : ROBOTS_GOOD, 200, "text/plain");
+      case "/llms.txt": return noLlms || bad ? text("<html>Not found</html>", 404) : text(LLMS, 200, "text/plain");
+      case "/sitemap.xml": return text(`<?xml version="1.0"?><sitemapindex><sitemap><loc>${site}/sitemap_products_1.xml?from=1&amp;to=9</loc></sitemap><sitemap><loc>${site}/sitemap_collections_1.xml</loc></sitemap><sitemap><loc>https://evil.example/x.xml</loc></sitemap></sitemapindex>`, 200, "application/xml");
+      case "/sitemap_products_1.xml": return text(`<urlset><url><loc>${site}/</loc></url><url><loc>${site}/products/name-ornament</loc></url><url><loc>${site}/products/keychain</loc></url></urlset>`, 200, "application/xml");
+      case "/sitemap_collections_1.xml": return text(`<urlset><url><loc>${site}/collections/all</loc></url><url><loc>${site}/collections/frontpage</loc></url><url><loc>${site}/collections/ornaments</loc></url></urlset>`, 200, "application/xml");
+      case "/products/name-ornament": return text(PRODUCT_PAGE);
+      case "/collections/ornaments": return text(COLLECTION_PAGE);
+      default: {
+        const key = Object.values(keys).find((k) => u.pathname === `/${k}.txt`);
+        // The C3D theme serves only the C3D key, so a pairing with the other brand's key fails.
+        if (key && (host === "charleston3d.com" ? key === keys.C3D_INDEXNOW_KEY : key === keys.ED_INDEXNOW_KEY)) return text(key, 200, "text/plain");
+        return text("Not found", 404);
+      }
+    }
+  } };
+}
+// One fetch for a test: the public site(s), Bing, Google, IndexNow, then the fake Shopify.
+function mkFetch(sh, ...sites) {
+  const calls = [];
+  const fetch = async (url, init = {}) => {
+    for (const s of sites) { const r = await s.fetch(url, init); if (r) return r; }
+    const u = String(url);
+    if (u.startsWith("https://ssl.bing.com/")) { calls.push({ bing: u }); return mkFetch.bing?.(u) ?? new Response(JSON.stringify({ d: [] }), { status: 200 }); }
+    if (u.startsWith("https://oauth2.googleapis.com/") || u.startsWith("https://searchconsole.googleapis.com/")) { calls.push({ google: u, init }); return mkFetch.google(u, init); }
+    return sh.fetch(url, init);
+  };
+  return { fetch, calls };
+}
+const mkGet = (q) => keyed(q);
+const mkCtx = (f, over = {}, extra = {}) => ({ env: envOf({ ...MKENV, ...over }), fetch: f, ...extra });
+const levelOf = (a, id) => a.checks.find((c) => c.id === id)?.level;
+
+test("marketing: readPage reads title, description, schema types, verification, geo and analytics", () => {
+  const p = MK.readPage(HOME_GOOD);
+  assert.equal(p.title, "Charleston3D | Personalized 3D Printed Gifts, Charleston SC");
+  assert.equal(p.h1, 1);
+  assert.equal(p.canonical, "https://charleston3d.com/");
+  assert.deepEqual(p.ldTypes, ["LocalBusiness", "OnlineStore", "PostalAddress", "WebSite", "City"].sort());
+  assert.equal(p.ldAreaServed, true);
+  assert.equal(p.ldStreetAddress, false);
+  assert.equal(p.ga4, true);
+  assert.equal(p.clarity, true);
+  assert.equal(p.bingVerification, "0123456789ABCDEF0123456789ABCDEF");
+  assert.equal(p.llmsLink, "/pages/llms");
+  assert.equal(p.phoneInText, false, "5-7 days is not a phone number");
+  const b = MK.readPage(HOME_BAD);
+  assert.equal(b.ldBroken, 1);
+  assert.equal(b.ldTelephone, true);
+  assert.equal(b.ldStreetAddress, true);
+  assert.equal(b.phoneInText, true);
+  assert.equal(b.imagesNoAlt, 1);
+  assert.equal(b.clarity, false);
+  assert.equal(b.ga4, false);
+});
+
+test("marketing: robots.txt groups decide which crawlers are blocked", () => {
+  const good = MK.parseRobots(ROBOTS_GOOD);
+  assert.deepEqual(good.sitemaps, ["https://charleston3d.com/sitemap.xml"]);
+  for (const [bot] of MK.CRAWLERS) assert.equal(MK.crawlerBlocked(good, bot), false, bot);
+  const bad = MK.parseRobots(ROBOTS_BAD);
+  assert.equal(MK.crawlerBlocked(bad, "GPTBot"), true);
+  assert.equal(MK.crawlerBlocked(bad, "PerplexityBot"), true, "a group with two user agents applies to both");
+  assert.equal(MK.crawlerBlocked(bad, "Bingbot"), true);
+  assert.equal(MK.crawlerBlocked(bad, "Googlebot"), false, "falls back to * which only blocks /checkout");
+  assert.equal(MK.crawlerBlocked(MK.parseRobots("User-agent: *\nDisallow: /\nAllow: /$\n"), "GPTBot"), false, "Allow wins a tie");
+  assert.equal(MK.crawlerBlocked(MK.parseRobots("User-agent: *\nDisallow:\n"), "GPTBot"), false, "an empty Disallow blocks nothing");
+});
+
+test("marketing: a healthy site scores well, uses its own IndexNow key, and only reads its own host", async () => {
+  const site = fakeSite();
+  const a = await MK.auditSite(site.fetch, { store: "c3d", site: "https://charleston3d.com", key: MKENV.C3D_INDEXNOW_KEY, clock: () => NOW });
+  const notPass = a.checks.filter((c) => c.level !== "pass").map((c) => `${c.id}: ${c.title}`);
+  assert.deepEqual(notPass, []);
+  assert.equal(a.scores.overall, 100);
+  for (const k of Object.keys(MK.AREAS)) assert.equal(a.scores[k], 100, k);
+  assert.ok(site.hits.includes(`/${MKENV.C3D_INDEXNOW_KEY}.txt`));
+  assert.ok(!site.hits.includes(`/${MKENV.ED_INDEXNOW_KEY}.txt`), "never checks the other brand's key");
+  assert.deepEqual(a.pages.map((p) => p.kind), ["home", "product", "collection"]);
+  assert.equal(a.sitemapCount, 6, "other hosts in the sitemap are ignored");
+  assert.ok(!site.hits.includes("/collections/all"), "collections/all is not used as the sample collection");
+  assert.ok(!site.hits.includes("/collections/frontpage"), "the hidden home page collection is not used either");
+});
+
+test("marketing: a domain that redirects to another host is flagged and the live sitemap is still read", async () => {
+  const live = fakeSite({ site: "https://theelevateddesignsllc.com" });
+  const redirecting = async (url, init) => {
+    const u = new URL(String(url));
+    if (u.host !== "elevatedshirts.com") return live.fetch(url, init);
+    u.host = "theelevateddesignsllc.com";
+    const r = await live.fetch(u.href, init);
+    Object.defineProperty(r, "url", { value: u.href });
+    return r;
+  };
+  const a = await MK.auditSite(redirecting, { store: "ed", site: "https://elevatedshirts.com", key: MKENV.ED_INDEXNOW_KEY, clock: () => NOW });
+  const d = a.checks.find((c) => c.id === "domain");
+  assert.equal(d.level, "fail");
+  assert.match(d.title, /elevatedshirts\.com redirects to theelevateddesignsllc\.com/);
+  assert.match(d.fix, /Settings > Domains/);
+  assert.ok(a.sitemapCount > 0, "pages on the live host are counted");
+  assert.deepEqual(a.pages.map((p) => p.kind), ["home", "product", "collection"]);
+  const fine = await MK.auditSite(fakeSite().fetch, { store: "c3d", site: "https://charleston3d.com", key: MKENV.C3D_INDEXNOW_KEY, clock: () => NOW });
+  assert.equal(fine.checks.find((c) => c.id === "domain"), undefined);
+});
+
+test("marketing: an llms link with an empty address is called out", () => {
+  const p = MK.readPage(HOME_GOOD.replace('href="/pages/llms"', 'href=""'));
+  if (p.llmsLink !== "") return assert.fail("fixture has no llms link to empty: " + p.llmsLink);
+  const out = [];
+  MK.pageChecks("home", "https://charleston3d.com/", p, out);
+  assert.match(out.find((c) => c.id === "llms-link").title, /empty address/);
+});
+
+test("marketing: a broken site lists each problem with a fix", async () => {
+  const a = await MK.auditSite(fakeSite({ bad: true }).fetch, { store: "c3d", site: "https://charleston3d.com", key: "", clock: () => NOW });
+  for (const id of ["noindex", "home-description", "schema-home", "schema-broken", "privacy", "llms", "indexnow-key", "crawl-ai", "crawl-bing", "geo-meta", "canonical"])
+    assert.equal(levelOf(a, id), "fail", id);
+  for (const id of ["h1", "home-alt", "ga4", "clarity", "bing-verify", "google-verify", "robots-sitemap"]) assert.equal(levelOf(a, id), "warn", id);
+  assert.equal(levelOf(a, "crawl-seo"), "pass", "Googlebot still allowed");
+  assert.match(a.checks.find((c) => c.id === "crawl-ai").title, /GPTBot, ClaudeBot, PerplexityBot/);
+  assert.match(a.checks.find((c) => c.id === "indexnow-key").fix, /C3D_INDEXNOW_KEY/);
+  assert.ok(a.checks.filter((c) => c.level !== "pass").every((c) => c.fix || c.detail), "every problem says what's wrong or how to fix it");
+  assert.ok(a.scores.overall < 50);
+  const down = await MK.auditSite(fakeSite({ down: true }).fetch, { store: "c3d", site: "https://charleston3d.com", key: "c3dkey12345678", clock: () => NOW });
+  assert.equal(levelOf(down, "home-up"), "fail");
+  assert.equal(levelOf(down, "sitemap"), "fail");
+});
+
+test("marketing: the Elevated Designs key is never verified on Charleston 3D (brands stay apart)", async () => {
+  const a = await MK.auditSite(fakeSite().fetch, { store: "c3d", site: "https://charleston3d.com", key: MKENV.ED_INDEXNOW_KEY, clock: () => NOW });
+  assert.equal(levelOf(a, "indexnow-key"), "fail");
+});
+
+test("marketing: audit needs the key, saves daily history per store and reports new problems", async () => {
+  const kv = fakeKV();
+  const sh = fakeShopify();
+  const ok1 = mkFetch(sh, fakeSite());
+  assert.equal((await MK.handleMarketing(get({ store: "c3d" }), mkCtx(ok1.fetch, {}, { kv }))).status, 401);
+  assert.equal((await MK.handleMarketing(keyed({ store: "xx" }), mkCtx(ok1.fetch, {}, { kv }))).status, 400);
+  assert.equal((await MK.handleMarketing(keyed({ store: "c3d", part: "nope" }), mkCtx(ok1.fetch, {}, { kv }))).status, 400);
+  const day1 = await MK.handleMarketing(keyed({ store: "c3d" }), mkCtx(ok1.fetch, {}, { kv, now: () => new Date("2026-10-24T11:00:00Z") }));
+  assert.equal(day1.status, 200);
+  assert.equal(day1.body.previous, null);
+  assert.equal(day1.body.history.length, 1);
+  assert.deepEqual(day1.body.indexNow, { key: true, own: true });
+  const bad = mkFetch(sh, fakeSite({ noLlms: true }));
+  const day2 = await MK.handleMarketing(keyed({ store: "c3d" }), mkCtx(bad.fetch, {}, { kv, now: () => new Date("2026-10-25T11:00:00Z") }));
+  assert.equal(day2.body.previous.date, "2026-10-24");
+  assert.deepEqual(day2.body.newProblems, ["llms"]);
+  assert.equal(day2.body.history.length, 2);
+  const again = await MK.handleMarketing(keyed({ store: "c3d" }), mkCtx(ok1.fetch, {}, { kv, now: () => new Date("2026-10-25T15:00:00Z") }));
+  assert.equal(again.body.history.length, 2, "one entry per day");
+  assert.deepEqual(again.body.fixed, [], "the previous day had no llms failure");
+  assert.ok(kv.m.has("history:c3d") && !kv.m.has("history:ed"));
+  const hist = await MK.handleMarketing(keyed({ store: "ed", part: "history" }), mkCtx(ok1.fetch, {}, { kv }));
+  assert.deepEqual(hist.body.history, [], "Elevated Designs has its own history");
+  // Without the KV binding it still checks, and says history isn't kept.
+  const nokv = await MK.handleMarketing(keyed({ store: "c3d" }), mkCtx(ok1.fetch));
+  assert.equal(nokv.status, 200);
+  assert.equal(nokv.body.historyAvailable, false);
+  assert.equal(sh.calls.filter((c) => c.op).length, 0, "the audit needs no Shopify access");
+});
+
+test("marketing: history keeps 120 days", async () => {
+  const kv = fakeKV();
+  for (let i = 0; i < 125; i++) {
+    const day = new Date(Date.UTC(2026, 5, 1) + i * 86400000).toISOString();
+    await MK.saveHistory(kv, { store: "ed", checkedAt: day, scores: { overall: i % 100 }, checks: [] });
+  }
+  const h = await MK.readHistory(kv, "ed");
+  assert.equal(h.length, 120);
+  assert.equal(h[0].date, "2026-06-06");
+});
+
+const catalogShopify = (opts = {}) => fakeShopify({ ...opts, override: {
+  MarketingCatalog: (v, data) => data({ products: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [
+    { id: "gid://shopify/Product/1", handle: "name-ornament", title: "Name Ornament", productType: "Ornament", seo: { title: null, description: null },
+      description: "A personalized ornament with your family name. Printed in silk PLA.", featuredMedia: { id: "gid://shopify/MediaImage/11", alt: "", preview: { image: { url: "https://cdn.shopify.com/o.jpg" } } } },
+    { id: "gid://shopify/Product/2", handle: "keychain", title: "Keychain", productType: "", seo: { title: "Custom Keychain, 3D Printed in Charleston SC | Charleston3D", description: "A custom name keychain, 3D printed to order in Charleston, SC. Ships in 5-7 business days." },
+      description: "", featuredMedia: { id: "gid://shopify/MediaImage/12", alt: "Blue keychain", preview: { image: { url: "https://cdn.shopify.com/k.jpg" } } } },
+    { id: "gid://shopify/Product/3", handle: "blank", title: "Ornaments", productType: "", seo: { title: "", description: "" }, description: "", featuredMedia: null },
+  ] } }),
+  MarketingCollections: (v, data) => data({ collections: { nodes: [
+    { id: "gid://shopify/Collection/5", handle: "ornaments", title: "Ornaments", seo: { title: null, description: null }, description: "Ornaments made in Charleston.", image: null },
+    { id: "gid://shopify/Collection/6", handle: "frontpage", title: "Home page", seo: { title: null, description: null }, description: "", image: null },
+  ] } }),
+  ...opts.override,
+} });
+
+test("marketing: catalog lists SEO problems with suggestions inside the limits", async () => {
+  const sh = catalogShopify();
+  const res = await MK.handleMarketing(keyed({ store: "c3d", part: "catalog" }), mkCtx(sh.fetch));
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  const by = Object.fromEntries(res.body.items.map((i) => [i.handle, i]));
+  assert.ok(!by.frontpage, "the hidden frontpage collection is skipped");
+  assert.deepEqual(by.keychain.issues, [], "a complete product has no issues");
+  assert.deepEqual(by["name-ornament"].issues.map((i) => i.field), ["title", "description", "alt"]);
+  assert.equal(by["name-ornament"].mediaId, "gid://shopify/MediaImage/11");
+  assert.equal(by.blank.issues.find((i) => i.field === "description").level, "fail");
+  assert.ok(by.blank.issues.some((i) => i.text === "Same title as another page"), "duplicate titles are flagged");
+  assert.ok(by.ornaments.issues.some((i) => i.text === "Same title as another page"));
+  assert.equal(by["name-ornament"].url, "https://charleston3d.com/products/name-ornament");
+  assert.equal(by.ornaments.url, "https://charleston3d.com/collections/ornaments");
+  for (const i of res.body.items) {
+    assert.ok(i.suggestion.title.length <= 60, i.suggestion.title);
+    assert.ok(i.suggestion.description.length <= 155 && i.suggestion.description.length >= 50, i.suggestion.description);
+    assert.match(i.suggestion.title, /\| Charleston3D$/);
+  }
+  assert.equal(by["name-ornament"].suggestion.title, "Name Ornament, Charleston SC | Charleston3D");
+  assert.match(by["name-ornament"].suggestion.description, /^A personalized ornament with your family name\. Designed and 3D printed/);
+  assert.deepEqual(res.body.summary, { total: 4, withIssues: 3, ok: 1, noSeoTitle: 3, noSeoDescription: 3, noAlt: 1 });
+  noLeak(res);
+});
+
+test("marketing: suggestions stay short for long names, and ED uses its own brand", () => {
+  const s = MK.suggestSeo("ed", { title: "Lowcountry Sunset Palmetto Moon Heavyweight Garment Dyed Tee With Extra Words", description: "" });
+  assert.ok(s.title.length <= 60, s.title);
+  assert.match(s.title, /\| Elevated Designs$/);
+  assert.ok(!/Charleston3D/.test(s.title + s.description));
+  assert.ok(s.description.length <= 155);
+});
+
+test("marketing: saving SEO updates the product or collection and pings that store's IndexNow key", async () => {
+  const sh = fakeShopify({ override: {
+    MarketingProductSeo: (v, data) => data({ productUpdate: { product: { id: v.product.id, handle: "name-ornament", seo: v.product.seo }, userErrors: [] } }),
+    MarketingCollectionSeo: (v, data) => data({ collectionUpdate: { collection: { id: v.input.id, handle: "ornaments", seo: v.input.seo }, userErrors: [] } }),
+  } });
+  const body = { store: "c3d", action: "seo", id: "gid://shopify/Product/1", seoTitle: "  Name Ornament,   Charleston SC | Charleston3D ", seoDescription: "A personalized ornament." };
+  const res = await MK.handleMarketing(post(body), mkCtx(sh.fetch));
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.seoTitle, "Name Ornament, Charleston SC | Charleston3D", "spaces are tidied");
+  const ping = sh.calls.find((c) => c.indexnow).indexnow;
+  assert.equal(ping.key, MKENV.C3D_INDEXNOW_KEY);
+  assert.equal(ping.keyLocation, `https://charleston3d.com/${MKENV.C3D_INDEXNOW_KEY}.txt`);
+  assert.deepEqual(ping.urlList, ["https://charleston3d.com/products/name-ornament"]);
+  const col = await MK.handleMarketing(post({ ...body, store: "ed", id: "gid://shopify/Collection/5" }), mkCtx(sh.fetch));
+  assert.equal(col.status, 200);
+  assert.equal(col.body.url, "https://elevatedshirts.com/collections/ornaments");
+  assert.equal(sh.calls.filter((c) => c.indexnow).at(-1).indexnow.key, MKENV.ED_INDEXNOW_KEY, "ED pings with its own key");
+  assert.equal(sh.calls.find((c) => c.op === "MarketingCollectionSeo").domain, "elevated-designs.myshopify.com");
+});
+
+test("marketing: bad SEO, alt and IndexNow input is refused before any Shopify call", async () => {
+  const sh = fakeShopify();
+  const bad = [
+    { store: "c3d", action: "seo", id: "gid://shopify/Order/1", seoTitle: "a", seoDescription: "b" },
+    { store: "c3d", action: "seo", id: "gid://shopify/Product/1", seoTitle: "x".repeat(71), seoDescription: "b" },
+    { store: "c3d", action: "seo", id: "gid://shopify/Product/1", seoTitle: "<script>", seoDescription: "b" },
+    { store: "c3d", action: "seo", id: "gid://shopify/Product/1", seoTitle: 5, seoDescription: "b" },
+    { store: "c3d", action: "seo", id: "gid://shopify/Product/1", seoTitle: "a", seoDescription: "b", extra: 1 },
+    { store: "c3d", action: "alt", mediaId: "gid://shopify/Product/1", alt: "x" },
+    { store: "c3d", action: "alt", mediaId: "gid://shopify/MediaImage/1", alt: "x".repeat(251) },
+    { store: "c3d", action: "indexnow", urls: [] },
+    { store: "c3d", action: "indexnow", urls: ["https://elevatedshirts.com/products/a"] },
+    { store: "c3d", action: "indexnow", urls: ["http://charleston3d.com/products/a"] },
+    { store: "c3d", action: "delete" },
+    { store: "zz", action: "seo" },
+  ];
+  for (const b of bad) {
+    const res = await MK.handleMarketing(post(b), mkCtx(sh.fetch));
+    assert.equal(res.status, 400, JSON.stringify(b));
+  }
+  assert.equal((await MK.handleMarketing(post(bad[0], { "content-type": "application/json" }), mkCtx(sh.fetch))).status, 401);
+  assert.equal((await MK.handleMarketing({ ...keyed({}), method: "DELETE" }, mkCtx(sh.fetch))).status, 405);
+  assert.equal(sh.calls.length, 0);
+});
+
+test("marketing: alt text is saved with fileUpdate", async () => {
+  const sh = fakeShopify({ override: { MarketingAlt: (v, data) => data({ fileUpdate: { files: [{ id: v.files[0].id, alt: v.files[0].alt }], userErrors: [] } }) } });
+  const res = await MK.handleMarketing(post({ store: "c3d", action: "alt", mediaId: "gid://shopify/MediaImage/11", alt: "Red name ornament with a palmetto" }), mkCtx(sh.fetch));
+  assert.equal(res.status, 200);
+  assert.equal(res.body.alt, "Red name ornament with a palmetto");
+  const err = fakeShopify({ override: { MarketingAlt: (v, data) => data({ fileUpdate: { files: [], userErrors: [{ field: ["files"], message: "File not found" }] } }) } });
+  const r2 = await MK.handleMarketing(post({ store: "c3d", action: "alt", mediaId: "gid://shopify/MediaImage/11", alt: "x" }), mkCtx(err.fetch));
+  assert.equal(r2.status, 422);
+  assert.match(r2.body.error, /File not found/);
+  const denied = fakeShopify({ override: { MarketingAlt: () => new Response(JSON.stringify({ errors: [{ message: "Access denied", extensions: { code: "ACCESS_DENIED", requiredAccess: "`write_files` access scope" } }] }), { status: 200 }) } });
+  const r3 = await MK.handleMarketing(post({ store: "c3d", action: "alt", mediaId: "gid://shopify/MediaImage/11", alt: "x" }), mkCtx(denied.fetch));
+  assert.equal(r3.status, 502);
+  assert.match(r3.body.error, /write_files/);
+});
+
+const SETTINGS_FILE = `/*\n * Shopify comment\n */\n${JSON.stringify({ current: "Charleston3D", presets: { Charleston3D: { brand_name: "Charleston3D", city: "Charleston", region: "SC", areas_served: "Charleston\nMount Pleasant", ga4_id: "", color_navy: "#1f2a44" } } }, null, 2)}`;
+function themeShopify(file = SETTINGS_FILE, extra = {}) {
+  const writes = [];
+  const sh = fakeShopify({ override: {
+    MarketingTheme: (v, data) => data({ themes: { nodes: [{ id: "gid://shopify/OnlineStoreTheme/77", name: "Charleston3D", files: { nodes: file == null ? [] : [{ filename: "config/settings_data.json", body: { content: file } }] } }] } }),
+    MarketingThemeWrite: (v, data) => { writes.push(v); return data({ themeFilesUpsert: { upsertedThemeFiles: [{ filename: "config/settings_data.json" }], userErrors: [] } }); },
+    ...extra,
+  } });
+  return Object.assign(sh, { writes });
+}
+
+test("marketing: theme settings are read from the live theme, preset or edited", async () => {
+  const sh = themeShopify();
+  const res = await MK.handleMarketing(keyed({ store: "c3d", part: "settings" }), mkCtx(sh.fetch));
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.settings.city, "Charleston");
+  assert.equal(res.body.settings.google_verification, "");
+  assert.ok(!("color_navy" in res.body.settings), "only marketing settings are exposed");
+  assert.ok(res.body.fields.ga4_id.label);
+  const edited = themeShopify(JSON.stringify({ current: { city: "Mount Pleasant", bing_verification: "ABC" } }));
+  assert.equal((await MK.handleMarketing(keyed({ store: "c3d", part: "settings" }), mkCtx(edited.fetch))).body.settings.city, "Mount Pleasant");
+  const none = themeShopify(null);
+  assert.equal((await MK.handleMarketing(keyed({ store: "c3d", part: "settings" }), mkCtx(none.fetch))).status, 502);
+  const denied = fakeShopify({ override: { MarketingTheme: () => new Response(JSON.stringify({ errors: [{ message: "Access denied", extensions: { code: "ACCESS_DENIED", requiredAccess: "`read_themes` access scope" } }] }), { status: 200 }) } });
+  const d = await MK.handleMarketing(keyed({ store: "c3d", part: "settings" }), mkCtx(denied.fetch));
+  assert.equal(d.status, 502);
+  assert.deepEqual(d.body.details.scopes, ["read_themes", "write_themes"]);
+});
+
+test("marketing: saving settings writes only allowed keys and keeps the rest of the file", async () => {
+  const sh = themeShopify();
+  const values = { ga4_id: "G-ABC1234XYZ", bing_verification: "0123456789abcdef0123456789ABCDEF", areas_served: "Charleston\r\n  Summerville \n\n", same_as: "https://www.instagram.com/charleston3d" };
+  const res = await MK.handleMarketing(post({ store: "c3d", action: "settings", values }), mkCtx(sh.fetch));
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(res.body.changed.sort(), ["areas_served", "bing_verification", "ga4_id", "same_as"]);
+  const w = sh.writes[0];
+  assert.equal(w.themeId, "gid://shopify/OnlineStoreTheme/77");
+  assert.equal(w.files[0].filename, "config/settings_data.json");
+  const written = w.files[0].body.value;
+  assert.ok(written.startsWith("/*\n * Shopify comment\n */\n"), "the comment header is kept");
+  const data = JSON.parse(written.replace(/^\/\*[\s\S]*?\*\/\s*/, ""));
+  assert.equal(data.current.color_navy, "#1f2a44", "the preset is copied into current so nothing else changes");
+  assert.equal(data.current.areas_served, "Charleston\nSummerville");
+  assert.equal(data.current.ga4_id, "G-ABC1234XYZ");
+  assert.ok(data.presets.Charleston3D, "presets are kept");
+});
+
+test("marketing: settings refuse addresses, phone numbers, bad IDs, markup and unknown keys", async () => {
+  const sh = themeShopify();
+  const bad = [
+    { city: "12 King Street" }, { areas_served: "Charleston\n843-555-0100" }, { brand_description: "Visit us at 123 Meeting St, Charleston" },
+    { ga4_id: "UA-12345-1" }, { clarity_id: "Has Spaces" }, { bing_verification: "short" }, { google_verification: "<meta>" },
+    { same_as: "http://insecure.example" }, { home_title: "{{ shop.name }}" }, { geo_lat: "north" }, { color_navy: "#000" },
+    { ga4_id: 5 }, {}, "values",
+  ];
+  for (const values of bad) {
+    const res = await MK.handleMarketing(post({ store: "c3d", action: "settings", values }), mkCtx(sh.fetch));
+    assert.equal(res.status, 400, JSON.stringify(values));
+  }
+  assert.equal(sh.writes.length, 0);
+  assert.equal(sh.calls.length, 0);
+  // Empty turns a setting off.
+  const off = await MK.handleMarketing(post({ store: "c3d", action: "settings", values: { ga4_id: "" } }), mkCtx(sh.fetch));
+  assert.equal(off.status, 200);
+});
+
+test("marketing: traffic by source and UTM campaign, Bing queries, Google not set up", async () => {
+  const sh = fakeShopify({ override: { MarketingTraffic: (v, data) => /utm_campaign/.test(v.q)
+    ? data({ shopifyqlQuery: { parseErrors: [], tableData: { columns: [{ name: "utm_source" }, { name: "utm_medium" }, { name: "utm_campaign" }, { name: "sessions" }, { name: "conversion_rate" }],
+      rows: [{ utm_source: null, utm_medium: null, utm_campaign: null, sessions: "142", conversion_rate: "0.0" }, { utm_source: "qr", utm_medium: "print", utm_campaign: "ed-builder", sessions: "2", conversion_rate: "0.5" }] } } })
+    : data({ shopifyqlQuery: { parseErrors: [], tableData: { columns: [{ name: "referrer_source" }, { name: "referrer_name" }, { name: "sessions" }, { name: "conversion_rate" }],
+      rows: [["search", "google", "3", "0.0"], ["direct", null, "142", "0.012"], [null, null, "0", "0"]] } } }) } });
+  mkFetch.bing = (u) => {
+    assert.match(u, /GetQueryStats\?siteUrl=https%3A%2F%2Felevatedshirts\.com%2F&apikey=bing-key-1234/);
+    return new Response(JSON.stringify({ d: [
+      { Query: "charleston shirts", Clicks: 2, Impressions: 40, AvgImpressionPosition: 8, Date: "/Date(1316156400000-0700)/" },
+      { Query: "charleston shirts", Clicks: 1, Impressions: 10, AvgImpressionPosition: 3, Date: "/Date(1316761200000-0700)/" },
+      { Query: "elevated designs", Clicks: 5, Impressions: 6, AvgImpressionPosition: 1, Date: "/Date(1316156400000-0700)/" }] }), { status: 200 });
+  };
+  const f = mkFetch(sh);
+  const res = await MK.handleMarketing(keyed({ store: "ed", part: "traffic" }), mkCtx(f.fetch, { BING_WEBMASTER_API_KEY: "bing-key-1234" }));
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(res.body.shop.sources.map((s) => [s.source, s.sessions]), [["direct", 142], ["search", 3]]);
+  assert.equal(res.body.shop.sources[0].conversionRate, 1.2);
+  assert.deepEqual(res.body.shop.campaigns, [{ campaign: "ed-builder", source: "qr", medium: "print", sessions: 2, conversionRate: 50 }]);
+  assert.equal(res.body.bing.clicks, 8);
+  assert.deepEqual(res.body.bing.queries[0], { query: "charleston shirts", clicks: 3, impressions: 50, position: 7 });
+  assert.deepEqual(res.body.bing.opportunities.map((q) => q.query), ["charleston shirts"]);
+  assert.equal(res.body.google.connected, false);
+  assert.ok(!JSON.stringify(res.body).includes("bing-key-1234"), "the Bing key never reaches the browser");
+  delete mkFetch.bing;
+  const nobing = await MK.handleMarketing(keyed({ store: "ed", part: "traffic" }), mkCtx(mkFetch(sh).fetch));
+  assert.equal(nobing.body.bing.connected, false);
+  const denied = fakeShopify({ override: { MarketingTraffic: () => new Response(JSON.stringify({ errors: [{ message: "denied", extensions: { code: "ACCESS_DENIED", requiredAccess: "`read_reports`" } }] }), { status: 200 }) } });
+  const d = await MK.handleMarketing(keyed({ store: "c3d", part: "traffic" }), mkCtx(mkFetch(denied).fetch));
+  assert.equal(d.status, 200);
+  assert.match(d.body.shop.note, /read_reports/);
+});
+
+test("marketing: Google Search Console with a service account signs a JWT and reads queries for the store's own property", async () => {
+  MK.clearGoogleToken();
+  const pair = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
+  const pkcs8 = Buffer.from(await crypto.subtle.exportKey("pkcs8", pair.privateKey)).toString("base64").replace(/(.{64})/g, "$1\n");
+  const sa = JSON.stringify({ client_email: "console@proj.iam.gserviceaccount.com", private_key: `-----BEGIN PRIVATE KEY-----\n${pkcs8}\n-----END PRIVATE KEY-----\n` });
+  const seen = [];
+  mkFetch.google = async (u, init) => {
+    if (u.startsWith("https://oauth2.googleapis.com/token")) {
+      const jwt = new URLSearchParams(init.body).get("assertion");
+      const [h, p, sig] = jwt.split(".");
+      const dec = (s) => Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+      assert.ok(await crypto.subtle.verify("RSASSA-PKCS1-v1_5", pair.publicKey, dec(sig), new TextEncoder().encode(`${h}.${p}`)), "JWT signature verifies");
+      const claims = JSON.parse(dec(p).toString());
+      assert.equal(claims.iss, "console@proj.iam.gserviceaccount.com");
+      assert.equal(claims.scope, "https://www.googleapis.com/auth/webmasters.readonly");
+      seen.push("token");
+      return new Response(JSON.stringify({ access_token: "ya29.test", expires_in: 3600 }), { status: 200 });
+    }
+    seen.push(u);
+    assert.equal(init.headers.authorization, "Bearer ya29.test");
+    const q = JSON.parse(init.body);
+    assert.equal(q.endDate, "2026-10-23");
+    return new Response(JSON.stringify({ rows: [{ keys: ["charleston ornaments"], clicks: 4, impressions: 120, ctr: 0.03, position: 9.4 }] }), { status: 200 });
+  };
+  const sh = fakeShopify({ override: { MarketingTraffic: (v, data) => data({ shopifyqlQuery: { parseErrors: [], tableData: { columns: [], rows: [] } } }) } });
+  const ctx = mkCtx(mkFetch(sh).fetch, { GSC_SERVICE_ACCOUNT: sa }, { now: () => NOW });
+  const res = await MK.handleMarketing(keyed({ store: "c3d", part: "traffic" }), ctx);
+  assert.equal(res.status, 200);
+  assert.equal(res.body.google.property, "sc-domain:charleston3d.com");
+  assert.deepEqual(res.body.google.queries, [{ query: "charleston ornaments", clicks: 4, impressions: 120, position: 9.4 }]);
+  assert.ok(seen[1].includes(encodeURIComponent("sc-domain:charleston3d.com")));
+  await MK.handleMarketing(keyed({ store: "ed", part: "traffic" }), mkCtx(mkFetch(sh).fetch, { GSC_SERVICE_ACCOUNT: sa, ED_GSC_PROPERTY: "https://elevatedshirts.com/" }, { now: () => NOW }));
+  assert.equal(seen.filter((x) => x === "token").length, 1, "the access token is reused");
+  assert.ok(seen.at(-1).includes(encodeURIComponent("https://elevatedshirts.com/")), "ED reads its own property");
+  assert.ok(!JSON.stringify(res.body).includes("PRIVATE KEY"));
+  const broken = await MK.handleMarketing(keyed({ store: "c3d", part: "traffic" }), mkCtx(mkFetch(sh).fetch, { GSC_SERVICE_ACCOUNT: "{not json" }));
+  assert.match(broken.body.google.error, /valid JSON/);
+  MK.clearGoogleToken();
+});
+
+test("marketing: send the whole sitemap to IndexNow with the store's own key", async () => {
+  const sh = fakeShopify();
+  const f = mkFetch(sh, fakeSite({ site: "https://elevatedshirts.com" }));
+  const res = await MK.handleMarketing(post({ store: "ed", action: "indexnow" }), mkCtx(f.fetch));
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  const ping = sh.calls.find((c) => c.indexnow).indexnow;
+  assert.equal(ping.host, "elevatedshirts.com");
+  assert.equal(ping.key, MKENV.ED_INDEXNOW_KEY);
+  assert.equal(ping.urlList.length, 6);
+  assert.ok(ping.urlList.every((u) => u.startsWith("https://elevatedshirts.com/")));
+  const listed = await MK.handleMarketing(post({ store: "ed", action: "indexnow", urls: ["https://elevatedshirts.com/products/a"] }), mkCtx(f.fetch));
+  assert.equal(listed.body.indexNow.count, 1);
+  const nokey = await MK.handleMarketing(post({ store: "ed", action: "indexnow" }), mkCtx(f.fetch, { ED_INDEXNOW_KEY: undefined, INDEXNOW_KEY: undefined }));
+  assert.equal(nokey.status, 502);
+  assert.match(nokey.body.error, /ED_INDEXNOW_KEY/);
+  const failing = fakeShopify({ indexNow: "500" });
+  const r500 = await MK.handleMarketing(post({ store: "ed", action: "indexnow" }), mkCtx(mkFetch(failing, fakeSite({ site: "https://elevatedshirts.com" })).fetch));
+  assert.equal(r500.status, 502);
+});
+
+test("IndexNow: each store pings with its own key, falling back to the shared INDEXNOW_KEY", async () => {
+  const sh = fakeShopify();
+  await handleProducts(post({ store: "ed", id: PID, live: true }), { env: envOf({ ED_INDEXNOW_KEY: "edkey987654321" }), fetch: sh.fetch });
+  await handleProducts(post({ store: "c3d", id: PID, live: true }), { env: envOf({ ED_INDEXNOW_KEY: "edkey987654321" }), fetch: sh.fetch });
+  const keys = sh.calls.filter((c) => c.indexnow).map((c) => [c.indexnow.host, c.indexnow.key]);
+  assert.deepEqual(keys, [["elevatedshirts.com", "edkey987654321"], ["charleston3d.com", "abc123indexnow"]]);
+  const sh2 = fakeShopify();
+  const r = await handleProducts(post({ store: "c3d", id: PID, live: true }), { env: envOf({ INDEXNOW_KEY: "bad key!" }), fetch: sh2.fetch });
+  assert.equal(r.body.indexNow.sent, false, "a malformed key is not sent");
+});
+
+test("worker: /api/marketing runs through the Worker with the MARKETING KV, and the cron checks both stores", async () => {
+  const sh = fakeShopify();
+  const f = mkFetch(sh, fakeSite(), fakeSite({ site: "https://elevatedshirts.com" }));
+  await withFetch(async () => {
+    const kv = fakeKV();
+    const res = await W.handleRequest(wreq("/api/marketing?store=c3d", { headers: KEYH }), workerEnv({ ...MKENV, MARKETING: kv }));
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    assert.equal((await res.json()).historyAvailable, true);
+    const kv2 = fakeKV();
+    const out = await W.handleScheduled(workerEnv({ ...MKENV, MARKETING: kv2 }));
+    assert.equal(out.c3d, 100);
+    assert.ok(out.ed > 0);
+    assert.ok(kv2.m.has("history:c3d") && kv2.m.has("history:ed"));
+    const idx = await import("../worker/index.mjs");
+    let waited = null;
+    idx.default.scheduled({}, workerEnv({ ...MKENV, MARKETING: fakeKV() }), { waitUntil: (p) => { waited = p; } });
+    await waited;
+    assert.ok(waited instanceof Promise);
+  }, f.fetch);
+});
+
+test("wrangler.toml: MARKETING KV binding and a daily cron", async () => {
+  const fs = await import("node:fs");
+  const toml = fs.readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
+  assert.match(toml, /\[\[kv_namespaces\]\]\s*\nbinding = "MARKETING"/);
+  assert.match(toml, /\[triggers\]\s*\ncrons = \["0 11 \* \* \*"\]/);
+});
+
 // ---------- last: the schema check over everything sent above ----------
 test("every GraphQL string sent matches the Admin API 2025-10 schema, variables included", async () => {
   const S = await import("../lib/shopify.mjs");
   const L = await import("../lib/listings.mjs");
   const I = await import("../lib/insights.mjs");
-  const ops = [...[S, L].flatMap((m) => Object.entries(m).filter(([k, v]) => /_(QUERY|MUTATION)$/.test(k) && typeof v === "string").map(([, v]) => v)),
+  const M = await import("../lib/marketing.mjs");
+  const ops = [...[S, L, M].flatMap((m) => Object.entries(m).filter(([k, v]) => /_(QUERY|MUTATION)$/.test(k) && typeof v === "string").map(([, v]) => v)),
     I.ordersQuery(true), I.ordersQuery(false), I.SHOP_QUERY, I.SESSIONS_QUERY];
   const sent = new Set(checked()); // before the loop below adds the rest
   for (const q of ops) assert.deepEqual(schemaErrors(q), [], q.slice(0, 80));

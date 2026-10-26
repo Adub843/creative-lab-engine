@@ -19,14 +19,14 @@ One Cloudflare Worker serves both the app's files and its API. The only build st
 - `assets/`: styles, data and page scripts (`products.js`, `insights.js`, `studio.js`; `api.js` holds the shared store switcher, console key and API calls). `data.js` is the one list of brands, services, quick links' sites and the cleanup list.
 - `lib/shopify.mjs`, `lib/insights.mjs`, `lib/images.mjs`: the API logic as plain functions with no hosting code. `lib/kv-store.mjs` stores the image library in Workers KV.
 - `lib/listings.mjs`: one-click Elevated Designs listings; `assets/listing.js` builds the listing copy (title, description, SEO, tags) and `assets/list-design.js` is the panel and sheet.
-- `worker/index.mjs` (entry point) and `worker/app.mjs`: the Worker. It sends `/api/products`, `/api/insights`, `/api/listings` and `/api/images` (and `/api/images/<key>`) to the handlers in `lib/`, reads settings from the Worker's secrets, and serves every other path from `dist/` with the security headers (CSP, no framing, nosniff).
-- `wrangler.toml`: the Worker's settings (files in `dist/`, the `IMAGES` KV namespace, `nodejs_compat`). No secrets in it.
+- `worker/index.mjs` (entry point) and `worker/app.mjs`: the Worker. It sends `/api/products`, `/api/insights`, `/api/listings`, `/api/marketing` and `/api/images` (and `/api/images/<key>`) to the handlers in `lib/`, reads settings from the Worker's secrets, and serves every other path from `dist/` with the security headers (CSP, no framing, nosniff).
+- `wrangler.toml`: the Worker's settings (files in `dist/`, the `IMAGES` and `MARKETING` KV namespaces, the daily 11:00 UTC health check, `nodejs_compat`). No secrets in it.
 
 Run locally with `npm run dev` (`wrangler dev`, installed by `npm install`): the console opens at http://localhost:8787 with its own local image library on your computer. For Products, Insights and listings locally, put the same settings in a `.dev.vars` file (one `NAME=value` per line; it is git-ignored, never commit it). Or serve the folder with any static server such as `python3 -m http.server` (the library then keeps images in the browser only, and Products and Insights say the API isn't running). Opening `index.html` straight from disk doesn't work: browsers block its module scripts on `file://`.
 
 ## Products
 
-`#products` lists every product in the chosen store (Charleston 3D or Elevated Designs) with a **Live** switch. Switching one on sets it to Active and publishes it to the store's Online Store channel, so it's on the site straight away; switching it off unpublishes it from the Online Store (it stays in Shopify). Each row links to the live product page and to the product in Shopify admin. If `INDEXNOW_KEY` is set, each change is also sent to IndexNow (Bing and others) so search engines pick it up sooner.
+`#products` lists every product in the chosen store (Charleston 3D or Elevated Designs) with a **Live** switch. Switching one on sets it to Active and publishes it to the store's Online Store channel, so it's on the site straight away; switching it off unpublishes it from the Online Store (it stays in Shopify). Each row links to the live product page and to the product in Shopify admin. If the store's IndexNow key (`C3D_INDEXNOW_KEY` or `ED_INDEXNOW_KEY`, or the shared `INDEXNOW_KEY`) is set, each change is also sent to IndexNow (Bing and others) so search engines pick it up sooner.
 
 If making a product Active works but publishing to the Online Store doesn't, the row shows what Shopify now has (Active, not on the site) with Shopify's reason, instead of flipping back to Draft.
 
@@ -79,6 +79,17 @@ Cancelled, test and $0 orders are left out ($0 orders are Charleston 3D's free c
 
 If a scope is missing, that part of the page says which scope to add and the rest still works.
 
+## Marketing
+
+`#marketing` watches and adjusts search, AI search and Bing for one store at a time (switch at the top). The brands stay separate: each store has its own checks, history, IndexNow key and settings.
+
+- **Health check.** Reads the live site the way a search engine does (no Shopify access needed): home page, one product, one collection, `robots.txt`, `sitemap.xml`, `llms.txt` and the IndexNow key file. Each check is scored under Search (SEO), Location (GEO), Bing, AI assistants or Analytics, and every problem says how to fix it: titles and descriptions, one H1, canonical, Open Graph image, structured data (and that it has no street address or phone), Google and Bing verification, AI crawlers allowed in `robots.txt`, `llms.txt`, a domain that redirects to another one, GA4 and Clarity. Both stores are checked every morning at 11:00 UTC by the Worker's cron; the last 120 days are kept in the `MARKETING` KV namespace, so the page shows a trend per area and what broke or got fixed since the last check. Without the KV binding the check still runs, with no history.
+- **Products and collections.** Every active product and collection with its SEO title, description and photo alt text, flagged when missing, too long, too short or duplicated, with a search preview and a suggested title and description to use. Saving updates Shopify and sends the page to IndexNow.
+- **Site settings.** The live theme's marketing settings (home title, brand description, verification codes, IndexNow key, social profiles, city, region, map position, areas served, GA4 and Clarity IDs), saved straight into the published theme's `settings_data.json`. Only those fields can be changed; street addresses and phone numbers are refused.
+- **Where visitors come from.** Sessions and conversion for the last 90 days by referrer and by UTM source, medium and campaign (the QR codes show up here).
+- **Search queries.** Google (Search Console) and Bing searches, clicks, impressions and position, plus the searches closest to page 1. Needs `GSC_SERVICE_ACCOUNT` and `BING_WEBMASTER_API_KEY`; without them that block says what to add.
+- **UTM link builder and Tools.** Tagged links for the store's own pages, a button to send the whole sitemap to IndexNow, links to the outside tools, and a monthly routine checklist (kept in that browser).
+
 ## Put the console online (Cloudflare)
 
 The console runs as one Cloudflare Worker on Cloudflare's free plan: the pages, the API and the image library (in Workers KV) all live there. You only do steps 1 to 5 once.
@@ -102,7 +113,7 @@ npx wrangler login
 npm run deploy
 ```
 
-This runs the tests, then `wrangler deploy`. The first time, Cloudflare may ask you to choose a `workers.dev` subdomain (any name you like), and wrangler creates the `IMAGES` KV namespace for the image library by itself (if it asks for a name, press Enter to take the suggested one). At the end it prints the console's address, like `https://business-console.<your-subdomain>.workers.dev`.
+This runs the tests, then `wrangler deploy`. The first time, Cloudflare may ask you to choose a `workers.dev` subdomain (any name you like), and wrangler creates the `IMAGES` (image library) and `MARKETING` (health check history) KV namespaces by itself (if it asks for a name, press Enter to take the suggested one). At the end it prints the console's address, like `https://business-console.<your-subdomain>.workers.dev`.
 
 **5. Add the settings (secrets).** Each one is one command; it asks for the value, and you paste it and press Enter. Nothing you type shows on screen, and the value is stored only in Cloudflare, encrypted. Start with the console key (make up a long random password, 16 characters or more):
 
@@ -114,7 +125,7 @@ npx wrangler secret put ED_SHOPIFY_DOMAIN
 npx wrangler secret put ED_ADMIN_TOKEN
 ```
 
-Use `C3D_CLIENT_ID` and `C3D_CLIENT_SECRET` (or the `ED_` pair) instead of the `_ADMIN_TOKEN` if the store's app gives you a Client ID and secret; add the optional ones (`INDEXNOW_KEY`, `ED_HANDLING_DAYS`, `C3D_SITE_URL`, `ED_SITE_URL`) the same way. The full list is in [Connect a store](#connect-a-store). Each secret works straight away.
+Use `C3D_CLIENT_ID` and `C3D_CLIENT_SECRET` (or the `ED_` pair) instead of the `_ADMIN_TOKEN` if the store's app gives you a Client ID and secret; add the optional ones (`C3D_INDEXNOW_KEY`, `ED_INDEXNOW_KEY`, `BING_WEBMASTER_API_KEY`, `GSC_SERVICE_ACCOUNT`, `ED_HANDLING_DAYS`, `C3D_SITE_URL`, `ED_SITE_URL`) the same way. The full list is in [Connect a store](#connect-a-store). Each secret works straight away.
 
 - See which are set: `npx wrangler secret list` (names only, never values)
 - Change one: run `npx wrangler secret put NAME` again
@@ -137,7 +148,7 @@ The Action only deploys code. The console's own secrets (step 5) are set once wi
 
 ### What the free plan allows
 
-Plenty for one person's console: 100,000 requests a day; image library storage up to 1 GB, 1,000 uploads, 1,000 deletes, 1,000 library list loads and 100,000 image reads a day; each image up to 20 MB. A new or deleted image can take up to a minute to show in the list on another device (Workers KV is eventually consistent; the tab you uploaded from shows it at once). Each request gets 10 ms of CPU time on the free plan (time spent waiting for Shopify doesn't count), which covers normal use; if Insights for a very busy store ever fails with a Cloudflare error, Workers Paid ($5 a month) lifts that limit.
+Plenty for one person's console: 100,000 requests a day; image library storage up to 1 GB, 1,000 uploads, 1,000 deletes, 1,000 library list loads and 100,000 image reads a day; each image up to 20 MB. A new or deleted image can take up to a minute to show in the list on another device (Workers KV is eventually consistent; the tab you uploaded from shows it at once). Each request gets 10 ms of CPU time on the free plan (time spent waiting for Shopify doesn't count), which covers normal use; if Insights for a very busy store or a Marketing health check ever fails with a Cloudflare error, Workers Paid ($5 a month) lifts that limit. The daily health check uses 2 KV writes a day.
 
 ## Connect a store
 
@@ -153,7 +164,10 @@ Set each of these as a Worker secret, from the console's folder: `npx wrangler s
 | `ED_SITE_URL` | Optional. Public site address, default `https://elevatedshirts.com` |
 | `CONSOLE_KEY` | **Required.** A long random password, at least 16 characters (there's no lockout on wrong guesses, so make it long). The product list, publishing, the image library list, uploads and Insights are refused until it's set; enter the same value when the console asks for it (kept for that browser tab only). |
 | `ED_HANDLING_DAYS` | Optional. Business days to ship, used in new Elevated Designs listings, like `5-7` (the default) or `3-5`. |
-| `INDEXNOW_KEY` | Optional. An IndexNow key, used for both stores. In each store add a page with handle `indexnow-key` and template `page.indexnow`, paste the same key in Theme settings > Search and AI, and add a URL redirect from `/<key>.txt` to `/pages/indexnow-key`. Pings use `keyLocation=https://<site>/<key>.txt`, because a key under `/pages/` would only cover `/pages/` URLs, not products. |
+| `C3D_INDEXNOW_KEY`, `ED_INDEXNOW_KEY` | Recommended. Each store's own IndexNow key (8 to 128 letters, digits or dashes); the brands never share one. `INDEXNOW_KEY` still works as a fallback for a store without its own. In each store add a page with handle `indexnow-key` and template `page.indexnow`, paste the same key in Theme settings > Search and AI, and add a URL redirect from `/<key>.txt` to `/pages/indexnow-key`. Pings use `keyLocation=https://<site>/<key>.txt`, because a key under `/pages/` would only cover `/pages/` URLs, not products. |
+| `BING_WEBMASTER_API_KEY` | Optional. Shows Bing search queries on Marketing. Bing Webmaster Tools > Settings (gear) > API access > API key. One key covers every site verified in that account. |
+| `GSC_SERVICE_ACCOUNT` | Optional. Shows Google search queries on Marketing: the whole JSON key file of a Google Cloud service account with the Search Console API turned on. Add the account's `client_email` as a user (Restricted is enough) on each Search Console property. |
+| `C3D_GSC_PROPERTY`, `ED_GSC_PROPERTY` | Optional. The Search Console property, when it isn't the domain property `sc-domain:<host>` (for example `https://charleston3d.com/`). |
 
 ### Admin API access scopes
 
@@ -162,7 +176,9 @@ Give each store's app these scopes:
 - `read_products`, `write_products`: list products, make them Active, add or remove the `customizable` tag (`tagsAdd`/`tagsRemove`), and create listings (`productSet` and the image upload through `stagedUploadsCreate`)
 - `read_publications`, `write_publications`: find the Online Store channel and publish to it
 - `read_orders`: sales, best sellers and the forecast
-- `read_reports`: sessions and conversion (ShopifyQL)
+- `read_reports`: sessions and conversion, visits by source and UTM campaign (ShopifyQL)
+- `read_themes`, `write_themes`: Marketing's Site settings (read and save the live theme's search, location and analytics settings)
+- `write_files`: Marketing's photo alt text (`fileUpdate`)
 
 If Elevated Designs answers a listing with "access denied" for the product image, also add `write_files` (the image becomes a Shopify file); Shopify's docs list only `write_products` for `productSet` and staged uploads.
 
@@ -182,7 +198,7 @@ Run `npm install` once first (the API tests use `graphql`, and `wrangler` runs t
 
 - `npm run check`: syntax check of every script
 - `npm test` (`node scripts/test-api.mjs`): the API with Shopify mocked, called through the Worker's own fetch handler with an in-memory Workers KV (same limits as the real one: 25 MiB values, 1024-byte metadata, paged lists) (listing, publishing, unpublishing, customizable, one-click listings, bad input, keys, missing settings, Shopify errors, IndexNow failures, insights maths, the Worker's routes, headers, body and upload limits, and that `dist/` holds only the app). Every GraphQL query and mutation the mock receives, and its variables, is validated against the Admin API 2025-10 schema in `scripts/schema/` (the introspection file from `@shopify/dev-mcp@1.5.0`).
-- `npm run test:ui` (`NODE_PATH=$(npm root -g) node scripts/test-ui.cjs`): Products and Insights in a real browser with `/api/*` mocked; needs Playwright (installed globally or in the project) and python3. Set `SCREENS=<folder>` to save screenshots.
+- `npm run test:ui` (`NODE_PATH=$(npm root -g) node scripts/test-ui.cjs`): Products, Insights, Studio and Marketing in a real browser with `/api/*` mocked; needs Playwright (installed globally or in the project) and python3. Set `SCREENS=<folder>` to save screenshots.
 
 ### API
 
@@ -195,6 +211,11 @@ Run `npm install` once first (the API tests use `graphql`, and `wrangler` runs t
 | `POST /api/listings {store: "ed", imageKey, title, blanks: [{id, colors}], sizes, markup, productType, tags, descriptionHtml, seoTitle, seoDescription}` | List a library design on Elevated Designs (201 new, 200 already listed, 202 `{pending, operationId}` while Shopify is still making a big one) |
 | `POST /api/listings {store: "ed", imageKey, ..., operationId}` | Finish a pending listing (same body plus the operation id from the 202) |
 | `GET /api/insights?store=c3d\|ed&days=90` | Insights |
+| `GET /api/marketing?store=c3d\|ed&part=audit\|catalog\|settings\|traffic\|history` | Marketing: health check (with history), product and collection SEO, theme settings, traffic and search queries |
+| `POST /api/marketing {store, action: "seo", id, seoTitle, seoDescription}` | Save a product's or collection's SEO title and description (and ping IndexNow) |
+| `POST /api/marketing {store, action: "alt", mediaId, alt}` | Save a photo's alt text |
+| `POST /api/marketing {store, action: "settings", values}` | Save marketing settings to the live theme |
+| `POST /api/marketing {store, action: "indexnow", urls?}` | Send pages (or the whole sitemap) to IndexNow with the store's own key |
 | `GET /api/images` | Image library list: `{items: [{key, name, type, size, tags, added}]}` |
 | `GET /api/images/<key>` | The image file (no key needed; keys are unguessable) |
 | `POST /api/images` | Save one image: the raw file as the body, its type in `content-type` (PNG, JPEG, WebP, GIF or SVG, checked against the file), `x-filename`, optional `x-tags`; 20 MB at most |

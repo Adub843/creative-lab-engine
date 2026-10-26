@@ -63,6 +63,7 @@ const PAGES = [
   { name: "Charleston 3D", url: "#c3d", kind: "Page" },
   { name: "Products", url: "#products", kind: "Page" },
   { name: "Insights", url: "#insights", kind: "Page" },
+  { name: "Marketing: SEO, Bing, AI search", url: "#marketing", kind: "Page" },
   { name: "Elevated Designs", url: "#ed", kind: "Page" },
   { name: "Design Studio", url: "#studio", kind: "Page" },
   { name: "Service Map", url: "#map", kind: "Page" },
@@ -148,6 +149,7 @@ const C3D_LINKS = [
   ["Order app", "Shop and custom requests", BRANDS.c3d.app],
   ["Products", "Pick what's on the site and app", "#products/c3d"],
   ["Insights", "Sales, visits, forecast", "#insights/c3d"],
+  ["Marketing", "SEO, Bing, AI search", "#marketing/c3d"],
   ["Shopify admin", "Orders and products", BRANDS.c3d.admin.url],
   ["Theme", "Shopify theme editor", `${BRANDS.c3d.site}/admin/themes`],
   ["Order maker", "hype-chain-maker", "https://hype-chain-maker.netlify.app"],
@@ -160,6 +162,7 @@ const ED_LINKS = [
   ["Shirt app", "Design your own shirt", BRANDS.ed.app],
   ["Products", "Pick what's on the site", "#products/ed"],
   ["Insights", "Sales, visits, forecast", "#insights/ed"],
+  ["Marketing", "SEO, Bing, AI search", "#marketing/ed"],
   ["Orders", "Shopify admin", `${BRANDS.ed.site}/admin/orders`],
   ["List a design", "One click to the store", "#products/ed/list"],
   ["Products", "Shopify admin", `${BRANDS.ed.site}/admin/products`],
@@ -266,6 +269,11 @@ async function insightsPage() {
   return [header("Both stores", "Insights", "Sales, visits and a 30-day forecast from Shopify, with what to do next."), await renderInsights()];
 }
 
+async function marketingPage() {
+  const { renderMarketing } = await import("./marketing.js");
+  return [header("Both stores, one at a time", "Marketing", "Search, local, Bing and AI-assistant health for each site, checked every morning, with the fixes right here."), await renderMarketing()];
+}
+
 async function studioPage() {
   const { renderStudio } = await import("./studio.js");
   return [header("Elevated Designs", "Design Studio", "Browse your whole image library, drag images onto a shirt, and export a print-ready file."), await renderStudio()];
@@ -288,12 +296,13 @@ async function render() {
     studio: studioPage,
     products: productsPage,
     insights: insightsPage,
+    marketing: marketingPage,
   };
   const make = pages[route] ?? dashboard;
   const nodes = await make();
   pendingFilter = null;
   view.replaceChildren(...[nodes].flat().filter(Boolean));
-  document.title = `${{ dashboard: "Dashboard", c3d: "Charleston 3D", ed: "Elevated Designs", map: "Service Map", studio: "Design Studio", products: "Products", insights: "Insights" }[route] ?? "Dashboard"} · Business Console`;
+  document.title = `${{ dashboard: "Dashboard", c3d: "Charleston 3D", ed: "Elevated Designs", map: "Service Map", studio: "Design Studio", products: "Products", insights: "Insights", marketing: "Marketing" }[route] ?? "Dashboard"} · Business Console`;
   view.focus({ preventScroll: true });
   window.scrollTo(0, 0);
 }

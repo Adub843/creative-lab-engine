@@ -1203,6 +1203,124 @@ async function main() {
     assert.match(await page.locator(".route.brand-c3d").textContent(), /set customizable/);
   });
 
+  // ---------- marketing ----------
+  const mkPosts = [];
+  const mkAudit = (store) => ({
+    store, site: store === "ed" ? "https://elevatedshirts.com" : "https://charleston3d.com", checkedAt: "2026-10-26T11:00:00Z",
+    scores: { overall: 82, seo: 90, geo: 100, bing: 60, ai: 85, analytics: 50 },
+    checks: [
+      { area: "seo", id: "domain", level: "fail", title: "elevatedshirts.com redirects to theelevateddesignsllc.com", detail: "https://theelevateddesignsllc.com/", fix: "In Shopify Settings > Domains make elevatedshirts.com the primary domain." },
+      { area: "bing", id: "bing-verify", level: "warn", title: "No Bing verification code", detail: "", fix: "Paste it in Site settings below." },
+      { area: "seo", id: "home-title", level: "pass", title: "Home page title is 54 characters", detail: "", fix: "" },
+    ],
+    pages: [{ kind: "home", url: "https://charleston3d.com/", title: "Charleston3D | 3D Printed Gifts Made in Charleston, SC", description: "Custom 3D printed gifts made in Charleston." }],
+    sitemapCount: 17, history: [{ date: "2026-10-25", scores: { overall: 78, seo: 85, geo: 100, bing: 60, ai: 80, analytics: 50 } }, { date: "2026-10-26", scores: { overall: 82, seo: 90, geo: 100, bing: 60, ai: 85, analytics: 50 } }],
+    previous: { date: "2026-10-25", scores: { overall: 78, seo: 85, geo: 100, bing: 60, ai: 85, analytics: 50 } }, newProblems: ["domain"], fixed: ["h1"], historyAvailable: true,
+    indexNow: { key: "c3dkey12345678", own: true },
+  });
+  const mkCatalog = { summary: { total: 2, ok: 1, noSeoTitle: 1, noSeoDescription: 1, noAlt: 1 }, truncated: false, items: [
+    { kind: "product", id: "gid://shopify/Product/1", title: "Rainbow Row Ornament", url: "https://charleston3d.com/products/rainbow-row-ornament", image: "", seoTitle: "", seoDescription: "", shownTitle: "Rainbow Row Ornament", mediaId: "gid://shopify/MediaImage/9", alt: "",
+      suggestion: { title: "Rainbow Row Ornament, Charleston SC | Charleston3D", description: "A 3D printed Rainbow Row ornament made in Charleston, SC." },
+      issues: [{ field: "title", level: "warn", text: "No SEO title" }, { field: "description", level: "warn", text: "No SEO description" }, { field: "alt", level: "warn", text: "Photo has no alt text" }] },
+    { kind: "collection", id: "gid://shopify/Collection/2", title: "Ornaments", url: "https://charleston3d.com/collections/ornaments", image: "", seoTitle: "Ornaments | Charleston3D", seoDescription: "Handmade 3D printed ornaments from Charleston, SC, personalized with any name.", shownTitle: "Ornaments | Charleston3D", mediaId: null, alt: "",
+      suggestion: { title: "Ornaments, Charleston SC | Charleston3D", description: "x" }, issues: [] },
+  ] };
+  const mkSettings = { theme: { id: "gid://shopify/OnlineStoreTheme/1", name: "Charleston3D" },
+    fields: { home_title: { label: "Home page title", group: "search", max: 70 }, bing_verification: { label: "Bing verification code", group: "search", max: 32 }, city: { label: "City", group: "geo", max: 60 }, ga4_id: { label: "Google Analytics 4 ID", group: "analytics", max: 20 } },
+    settings: { home_title: "Charleston3D | 3D Printed Gifts Made in Charleston, SC", bing_verification: "", city: "Charleston", ga4_id: "" } };
+  const mkTraffic = { shop: { available: true, sources: [{ source: "search", name: "Google", sessions: 30, conversionRate: 3.3 }, { source: "direct", name: "", sessions: 10, conversionRate: null }],
+      campaigns: [{ source: "qr", medium: "print", campaign: "ed-builder", sessions: 4, conversionRate: 0 }] },
+    google: { connected: false, note: "Add GSC_SERVICE_ACCOUNT to see Google searches." },
+    bing: { connected: true, clicks: 3, impressions: 120, start: "2026-09-26", end: "2026-10-25", queries: [{ query: "charleston 3d printing", impressions: 60, clicks: 2, position: 7.5 }], opportunities: [{ query: "charleston 3d printing", position: 7.5 }] } };
+  await page.route("**/api/marketing**", async (route) => {
+    const req = route.request();
+    const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    if (req.headers()["x-console-key"] !== KEY) return json(401, { error: "Wrong or missing console key.", code: "bad_key" });
+    if (req.method() === "GET") {
+      const u = new URL(req.url());
+      const store = u.searchParams.get("store"), part = u.searchParams.get("part");
+      if (part === "audit") return json(200, mkAudit(store));
+      if (part === "catalog") return json(200, mkCatalog);
+      if (part === "settings") return json(200, mkSettings);
+      if (part === "traffic") return json(200, mkTraffic);
+      return json(400, { error: "bad part" });
+    }
+    const b = JSON.parse(req.postData());
+    mkPosts.push(b);
+    if (b.action === "seo") return json(200, { seoTitle: b.seoTitle, seoDescription: b.seoDescription, indexNow: { sent: true } });
+    if (b.action === "alt") return json(200, { alt: b.alt });
+    if (b.action === "settings") return json(200, { settings: { ...mkSettings.settings, ...b.values }, changed: Object.keys(b.values) });
+    if (b.action === "indexnow") return json(200, { store: b.store, indexNow: { sent: true, status: 200, count: 17 } });
+    return json(400, { error: "bad action" });
+  });
+
+  await step("marketing: health check, trend, fixes and the home page search preview", async () => {
+    await page.click('a.nav[data-route="marketing"]');
+    await page.waitForSelector(".checks .check");
+    assert.equal(await page.locator('a.nav[data-route="marketing"]').getAttribute("aria-current"), "page");
+    assert.match(await page.locator(".tile").first().textContent(), /Overall\s*82.*▲ 4 since last check/s);
+    assert.match(await page.locator("h3", { hasText: "to fix or improve" }).textContent(), /2 things/);
+    const first = page.locator(".checks .check").first();
+    assert.match(await first.textContent(), /Fix.*redirects to theelevateddesignsllc\.com.*New.*Settings > Domains/s);
+    assert.match(await page.locator("text=1 new problem since 2026-10-25").textContent(), /new problem/);
+    assert.match(await page.locator(".serp").first().textContent(), /charleston3d\.com.*Charleston3D \| 3D Printed Gifts/s);
+  });
+
+  await step("marketing: edit a product's SEO with the suggestion and save alt text", async () => {
+    await page.waitForSelector(".seo-row");
+    assert.equal(await page.locator(".seo-row").count(), 1, "Needs work shows only items with issues");
+    const row = page.locator(".seo-row").first();
+    await row.locator("summary").click();
+    await row.locator("button", { hasText: "Use suggestion" }).click();
+    assert.match(await row.locator(".serp-title").textContent(), /Rainbow Row Ornament, Charleston SC \| Charleston3D/);
+    await row.locator("button", { hasText: /^Save$/ }).click();
+    await page.waitForSelector("text=Saved and sent to Bing: Rainbow Row Ornament");
+    const seo = mkPosts.find((p) => p.action === "seo");
+    assert.deepEqual([seo.store, seo.id, seo.seoTitle], ["c3d", "gid://shopify/Product/1", "Rainbow Row Ornament, Charleston SC | Charleston3D"]);
+    const row2 = page.locator(".seo-row").first();
+    await row2.locator("summary").click();
+    await row2.locator('input[aria-label^="Alt text"]').fill("Rainbow Row ornament in pastel colors");
+    await row2.locator("button", { hasText: "Save alt text" }).click();
+    await page.waitForSelector("text=Alt text saved: Rainbow Row Ornament");
+    assert.equal(mkPosts.find((p) => p.action === "alt").mediaId, "gid://shopify/MediaImage/9");
+    await page.click('.chip[data-k="all"]');
+    assert.equal(await page.locator(".seo-row").count(), 2);
+  });
+
+  await step("marketing: site settings send only what changed", async () => {
+    await page.fill("#mk-bing_verification", "0123456789ABCDEF0123456789ABCDEF");
+    await page.click("button:has-text('Save to the live site')");
+    await page.waitForSelector("text=Saved 1 setting.");
+    assert.deepEqual(mkPosts.find((p) => p.action === "settings").values, { bing_verification: "0123456789ABCDEF0123456789ABCDEF" });
+  });
+
+  await step("marketing: traffic, QR campaigns and Bing searches", async () => {
+    await page.waitForSelector("td:has-text('ed-builder')");
+    assert.match(await page.locator("text=Closest to page 1").locator("..").textContent(), /charleston 3d printing.*#7\.5/);
+    assert.match(await page.locator("text=Add GSC_SERVICE_ACCOUNT").textContent(), /GSC_SERVICE_ACCOUNT/);
+  });
+
+  await step("marketing: UTM builder only allows the brand's own site", async () => {
+    await page.fill("#utm-campaign", "Holiday Market");
+    assert.equal(await page.locator(".utm-out").textContent(), "https://charleston3d.com/?utm_source=qr&utm_medium=print&utm_campaign=holiday-market");
+    await page.fill("#utm-page", "https://elevatedshirts.com/");
+    assert.match(await page.locator(".utm-out").textContent(), /Use a page on charleston3d\.com/);
+    assert.equal(await page.locator(".utm-out ~ button, button:has-text('Copy link')").first().isDisabled(), true);
+  });
+
+  await step("marketing: switching to Elevated Designs reloads that store; no overflow at 1280 and 390", async () => {
+    await page.click('.seg-btn[data-store="ed"]');
+    await page.waitForSelector(".checks .check");
+    assert.match(await page.locator(".panel").first().textContent(), /elevatedshirts\.com/);
+    await noOverflow("marketing 1280");
+    if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "marketing-1280.png"), fullPage: true }); }
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(150);
+    await noOverflow("marketing 390");
+    if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "marketing-390.png"), fullPage: true }); }
+    await page.setViewportSize({ width: 1280, height: 900 });
+  });
+
   await step("no console errors", async () => {
     assert.deepEqual(errors, []);
   });

@@ -25,3 +25,12 @@ run_worker_first = true
 [[kv_namespaces]]
 binding = "IMAGES"
 
+
+# Each store's daily marketing scores (lib/marketing.mjs), kept for 120 days. Created by the first
+# deploy like IMAGES.
+[[kv_namespaces]]
+binding = "MARKETING"
+
+# Checks both public sites once a day (11:00 UTC, early morning in Charleston) for the Marketing page.
+[triggers]
+crons = ["0 11 * * *"]
