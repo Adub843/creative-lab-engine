@@ -559,7 +559,7 @@ async function main() {
     assert.match(await page.locator("p.big").textContent(), /About \$37,035/, "1 day of sales x 30");
     const visits = page.locator("section", { hasText: "Online store visits" }).locator("details.nums");
     await visits.locator("summary").click();
-    assert.equal(await visits.locator("tbody td").nth(2).textContent(), "8.33", "per-day conversion shown as %");
+    assert.equal(await visits.locator("tbody td").nth(2).textContent(), "8.33%", "per-day conversion shown as %");
     assert.match(await page.locator(".tile", { hasText: "Sessions" }).textContent(), /8\.33% of visits ordered/);
     const svgText = await charts.first().locator("text.axis").allTextContents();
     assert.ok(svgText.some((x) => /^\$[\d,]+$/.test(x)), `axis in USD: ${svgText}`);
@@ -624,8 +624,9 @@ async function main() {
     assert.match(await page.locator(".studio").textContent(), /1 of 1 images\./);
     await page.click('.lib button:has-text("logo.png")');
     await page.waitForSelector(".print-area .layer img");
-    page.once("dialog", (d) => d.accept());
-    await page.locator('.lib button:has-text("logo.png")').click({ button: "right" });
+    await page.getByRole("button", { name: "Delete logo.png" }).click(); // asks inline first, no browser dialog
+    assert.equal(images.size, 1, "nothing deleted before the second click");
+    await page.locator('.lib .lib-confirm button:has-text("Delete")').click();
     await page.waitForSelector(".toast >> text=Image deleted");
     assert.equal(images.size, 0);
     assert.equal(imageCalls.filter((c) => c.method === "DELETE").at(-1).auth, KEY);
@@ -648,8 +649,8 @@ async function main() {
     await page.setInputFiles('.studio input[type="file"]', { name: "late.png", mimeType: "image/png", buffer: PNG });
     await page.waitForSelector('.lib button:has-text("late.png")'); // not in the (stale) list yet, shown anyway
     assert.ok(!staleList.some((i) => i.name === "late.png"));
-    page.once("dialog", (d) => d.accept());
-    await page.locator('.lib button:has-text("old.png")').click({ button: "right" });
+    await page.getByRole("button", { name: "Delete old.png" }).click();
+    await page.locator('.lib .lib-confirm button:has-text("Delete")').click();
     await page.waitForSelector(".toast >> text=Image deleted");
     await page.click('a.nav[data-route="dashboard"]');
     await page.click('a.nav[data-route="studio"]');
@@ -707,6 +708,7 @@ async function main() {
     await page.setViewportSize({ width: 390, height: 844 });
     for (const r of ["dashboard", "c3d", "ed", "products", "insights", "studio", "map"]) {
       const link = page.locator(`a.nav[data-route="${r}"]`);
+      if (!(await link.isVisible())) await page.click("#nav-more"); // the rest of the sections sit behind More
       await link.scrollIntoViewIfNeeded();
       const box = await link.boundingBox();
       assert.ok(box && box.width >= 32 && box.height >= 32, `${r} tap target ${JSON.stringify(box)}`);
@@ -800,7 +802,7 @@ async function main() {
     await page.waitForSelector(".toast >> text=now Active in Shopify");
     await page.waitForFunction(() => document.querySelector('.prow[data-id="gid://shopify/Product/105"] .plive > span')?.textContent === "Off");
     const r = page.locator(".prow", { hasText: "Half Published" });
-    assert.equal(await r.locator(".pill").textContent(), "Active", "status refreshed from Shopify, not rolled back to Draft");
+    assert.equal(await r.locator(".pinfo .pill").textContent(), "Active", "status refreshed from Shopify, not rolled back to Draft");
     assert.equal(await sw("Half Published").getAttribute("aria-checked"), "false");
     assert.match(await toastText(), /isn't on the Online Store yet: Online Store isn't available/);
     PRODUCTS.c3d.pop();
@@ -1203,8 +1205,40 @@ async function main() {
     assert.match(await page.locator(".route.brand-c3d").textContent(), /set customizable/);
   });
 
+  await step("service map: system topology shows every layer, jumps to what a node feeds, and fits at 390", async () => {
+    await page.click('a.nav[data-route="map"]');
+    await page.waitForSelector(".topology .topo-node");
+    const layers = await page.locator(".topo-layer h3").allTextContents();
+    assert.deepEqual(layers, ["Domains and DNS", "What customers use", "Stores (all payments)", "Back office (Cloudflare)", "Code and deploys (GitHub)", "Outside tools", "Planned: home lab"]);
+    assert.match(await page.locator("#topo-dns-c3d").textContent(), /DNS managed at Wix.*→ Charleston3D app · app\. CNAME/s);
+    assert.match(await page.locator("#topo-openclaw").textContent(), /Planned.*Beelink SER9 Pro/s);
+    await page.locator("#topo-gh-console .chip").click();
+    await page.waitForFunction(() => document.activeElement?.id === "topo-console");
+    assert.equal(await page.locator("#topo-console a", { hasText: "Open console" }).getAttribute("href"), "https://business-console.business-console.workers.dev");
+    const ids = await page.locator(".topo-to .chip").count();
+    assert.ok(ids >= 20, "every connection is drawn");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(150);
+    await noOverflow("topology 390");
+    if (SCREENS) await page.locator(".topology").screenshot({ path: path.join(SCREENS, "topology-390.png") });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    if (SCREENS) await page.locator(".topology").screenshot({ path: path.join(SCREENS, "topology-1280.png") });
+  });
+
   // ---------- marketing ----------
   const mkPosts = [];
+  const mkFixes = [{ id: "20261026113000-aaaaaaaa", store: "c3d", source: "auto", kind: "seo", itemKind: "product", target: "gid://shopify/Product/5", title: "Palmetto Keychain", url: "https://charleston3d.com/products/palmetto-keychain", at: "2026-10-26T11:30:00Z",
+    before: { seoTitle: "", seoDescription: "Keychain." }, after: { seoTitle: "Palmetto Keychain, Charleston SC | Charleston3D", seoDescription: "Keychain." } },
+    { id: "20261001113000-bbbbbbbb", store: "c3d", source: "console", kind: "seo", itemKind: "collection", target: "gid://shopify/Collection/2", title: "Ornaments", url: "https://charleston3d.com/collections/ornaments", at: "2026-10-01T15:00:00Z",
+      before: { seoTitle: "", seoDescription: "" }, after: { seoTitle: "Ornaments | Charleston3D", seoDescription: "" } }];
+  const mkDay = (i) => new Date(Date.UTC(2026, 9, 26) - i * 86400000).toISOString().slice(0, 10);
+  const mkGrowth = (store, days) => ({ store, days, site: "https://charleston3d.com",
+    series: Array.from({ length: days }, (_, k) => { const i = days - 1 - k; return { date: mkDay(i), sessions: 20 + (k % 7), visitors: 18, cartAdds: k % 3, checkouts: k % 4 ? 0 : 1, orders: k % 9 ? 0 : 1, revenue: k % 9 ? 0 : 24.5, duration: 40 + (k % 5), bounce: 60,
+      googleClicks: null, googleImpressions: null, bingClicks: k % 2, bingImpressions: 10, ga4Engagement: null, ga4EngagedTime: null, health: i < 2 ? 80 : null }; }),
+    totals: { sessions: { last30: 690, prev30: 600, change: 15 }, cartAdds: { last30: 30, prev30: 30, change: 0 }, checkouts: { last30: 8, prev30: 10, change: -20 }, orders: { last30: 3, prev30: 0, change: null }, revenue: { last30: 73.5, prev30: 0, change: null }, googleClicks: { last30: 0, prev30: 0, change: null }, bingClicks: { last30: 15, prev30: 10, change: 50 } },
+    changes: mkFixes.filter((f) => f.store === store).map((f) => ({ ...f, effect: f.id.startsWith("20261026") ? { days: 0, early: true, beforePerDay: 3, afterPerDay: null, change: null } : { days: 14, early: false, beforePerDay: 2, afterPerDay: 3, change: 50 } })),
+    sources: { shop: { available: true }, google: { connected: false, note: "Connect Google Search Console to chart Google clicks." }, bing: { connected: true }, ga4: { connected: false, note: "Connect Google Analytics to chart time on site and engagement." } } });
+  let mkKeywords = ["3d printing charleston", "charleston souvenirs"];
   const mkAudit = (store) => ({
     store, site: store === "ed" ? "https://elevatedshirts.com" : "https://charleston3d.com", checkedAt: "2026-10-26T11:00:00Z",
     scores: { overall: 82, seo: 90, geo: 100, bing: 60, ai: 85, analytics: 50 },
@@ -1230,7 +1264,7 @@ async function main() {
     settings: { home_title: "Charleston3D | 3D Printed Gifts Made in Charleston, SC", bing_verification: "", city: "Charleston", ga4_id: "" } };
   const mkTraffic = { shop: { available: true, sources: [{ source: "search", name: "Google", sessions: 30, conversionRate: 3.3 }, { source: "direct", name: "", sessions: 10, conversionRate: null }],
       campaigns: [{ source: "qr", medium: "print", campaign: "ed-builder", sessions: 4, conversionRate: 0 }] },
-    google: { connected: false, note: "Add GSC_SERVICE_ACCOUNT to see Google searches." },
+    google: { connected: false, note: "Connect Google Search Console to see Google searches here (see the setup guide)." },
     bing: { connected: true, clicks: 3, impressions: 120, start: "2026-09-26", end: "2026-10-25", queries: [{ query: "charleston 3d printing", impressions: 60, clicks: 2, position: 7.5 }], opportunities: [{ query: "charleston 3d printing", position: 7.5 }] } };
   await page.route("**/api/marketing**", async (route) => {
     const req = route.request();
@@ -1243,6 +1277,15 @@ async function main() {
       if (part === "catalog") return json(200, mkCatalog);
       if (part === "settings") return json(200, mkSettings);
       if (part === "traffic") return json(200, mkTraffic);
+      if (part === "changes") return json(200, { store, auto: true, logAvailable: true, changes: mkFixes.filter((f) => f.store === store) });
+      if (part === "growth") return json(200, mkGrowth(store, Number(u.searchParams.get("days") || 90)));
+      if (part === "google") return json(200, store === "ed" ? { store, connected: false, note: "Connect Google Search Console to see your pages, sitemaps and indexing here (see the setup guide)." } : { store, connected: true,
+        property: "sc-domain:charleston3d.com", start: "2026-09-26", end: "2026-10-24", serviceAccount: "console@proj.iam.gserviceaccount.com",
+        pages: [{ page: "https://charleston3d.com/products/rainbow-row-ornament", clicks: 4, impressions: 120, ctr: 3.3, position: 8.4 }],
+        devices: [{ device: "mobile", clicks: 3, impressions: 90, ctr: 3.3, position: 9 }, { device: "desktop", clicks: 1, impressions: 30, ctr: 3.3, position: 7 }],
+        sitemaps: [], home: { url: "https://charleston3d.com/", verdict: "pass", coverage: "Submitted and indexed", lastCrawl: "2026-10-20T00:00:00Z" } });
+      if (part === "keywords") return json(200, { store, saveAvailable: true, keywords: mkKeywords.map((k, i) => ({ keyword: k, google: i ? null : { clicks: 4, impressions: 120, position: 8.4, page: "https://charleston3d.com/pages/custom", searches: 3 }, googlePrev: null, bing: { clicks: 1, impressions: 9, position: 5, page: "", searches: 1 }, moved: i ? null : 2.1 })),
+        sources: { google: { connected: true }, bing: { connected: true } } });
       return json(400, { error: "bad part" });
     }
     const b = JSON.parse(req.postData());
@@ -1250,7 +1293,20 @@ async function main() {
     if (b.action === "seo") return json(200, { seoTitle: b.seoTitle, seoDescription: b.seoDescription, indexNow: { sent: true } });
     if (b.action === "alt") return json(200, { alt: b.alt });
     if (b.action === "settings") return json(200, { settings: { ...mkSettings.settings, ...b.values }, changed: Object.keys(b.values) });
+    if (b.action === "autofix") {
+      mkFixes.unshift({ id: "20261026120000-cccccccc", store: b.store, source: "auto", kind: "alt", itemKind: "product", target: "gid://shopify/MediaImage/9", title: "Rainbow Row Ornament", url: "https://charleston3d.com/products/rainbow-row-ornament", at: "2026-10-26T12:00:00Z", before: { alt: "" }, after: { alt: "Rainbow Row Ornament from Charleston3D" } });
+      return json(200, { store: b.store, applied: [mkFixes[0]], failed: [], remaining: 0, indexNow: { sent: true } });
+    }
+    if (b.action === "undo") {
+      const c = mkFixes.find((f) => f.id === b.changeId);
+      c.review = { verdict: "undo", by: "you" };
+      mkFixes.unshift({ id: "20261026130000-dddddddd", store: b.store, source: "console", kind: "revert", itemKind: c.itemKind, target: c.target, title: c.title, url: c.url, at: "2026-10-26T13:00:00Z", before: c.after, after: c.before, note: "Undone on the Marketing page." });
+      return json(200, { store: b.store, undone: c.id, entry: mkFixes[0] });
+    }
+    if (b.action === "keywords") { mkKeywords = b.keywords.map((k) => k.toLowerCase()); return json(200, { store: b.store, keywords: mkKeywords }); }
     if (b.action === "indexnow") return json(200, { store: b.store, indexNow: { sent: true, status: 200, count: 17 } });
+    if (b.action === "sitemap") return json(200, { store: b.store, submitted: "https://charleston3d.com/sitemap.xml" });
+    if (b.action === "inspect") return json(200, { store: b.store, url: b.url, verdict: "neutral", coverage: "Discovered - currently not indexed", lastCrawl: null, link: "https://search.google.com/x" });
     return json(400, { error: "bad action" });
   });
 
@@ -1264,6 +1320,59 @@ async function main() {
     assert.match(await first.textContent(), /Fix.*redirects to theelevateddesignsllc\.com.*New.*Settings > Domains/s);
     assert.match(await page.locator("text=1 new problem since 2026-10-25").textContent(), /new problem/);
     assert.match(await page.locator(".serp").first().textContent(), /charleston3d\.com.*Charleston3D \| 3D Printed Gifts/s);
+  });
+
+  await step("marketing: growth tiles and a daily chart with change flags, by metric and days", async () => {
+    const grow = page.locator(".panel", { hasText: "Growth" }).first();
+    await grow.locator(".chart svg").waitFor();
+    assert.match(await grow.locator(".tiles").textContent(), /Visits\s*690.*▲ 15% vs the 30 days before.*Sales\s*\$73\.50.*Bing clicks\s*15/s);
+    assert.ok(!/Google clicks/.test(await grow.locator(".tiles").textContent()), "Google isn't connected, so no Google tile");
+    assert.equal(await grow.locator(".chart .mark").count(), 2, "one flag per day something changed");
+    assert.equal(await grow.locator('.chip[data-k="googleClicks"]').count(), 0);
+    await grow.locator('.chip[data-k="revenue"]').click();
+    assert.equal(await grow.locator('.chip[data-k="revenue"]').getAttribute("aria-pressed"), "true");
+    await grow.locator(".chart").focus();
+    await page.keyboard.press("End");
+    assert.match(await grow.locator(".tip").textContent(), /Oct 26: \$0\.00 · Changed: Palmetto Keychain/);
+    assert.match(await grow.textContent(), /Connect Google Search Console to chart Google clicks/);
+    await grow.locator(".chip", { hasText: "30 days" }).click();
+    await page.waitForFunction(() => [...document.querySelectorAll(".panel")].some((p) => /Growth/.test(p.textContent) && p.querySelector('.chip[aria-pressed="true"]')?.textContent === "Sales" && [...p.querySelectorAll(".chip")].find((c) => c.textContent === "30 days")?.getAttribute("aria-pressed") === "true"));
+    await grow.locator('.chip[data-k="sessions"]').click();
+  });
+
+  await step("marketing: every change is logged with its effect, Apply now runs fixes, and Undo puts the old value back", async () => {
+    const log = page.locator(".panel", { hasText: "Changes and what they did" });
+    await log.locator("a", { hasText: "Palmetto Keychain" }).waitFor();
+    await log.locator("text=Visits to this page").waitFor();
+    assert.match(await log.textContent(), /never changed.*Auto.*Palmetto Keychain.*SEO title: \(empty\) → Palmetto Keychain, Charleston SC \| Charleston3D.*Too early to tell.*You.*Ornaments.*Visits to this page: 2\/day before → 3\/day since \(\+50%\)/s);
+    assert.ok(!/SEO description/.test(await log.locator(".check").first().textContent()), "unchanged fields aren't listed");
+    await log.locator("button", { hasText: "Apply safe fixes now" }).click();
+    assert.equal(mkPosts.filter((p) => p.action === "autofix").length, 0, "the first click only asks");
+    await log.locator("button", { hasText: "Click again to change the live site" }).click();
+    await page.waitForSelector("text=Applied 1 fix");
+    await page.waitForSelector(".panel:has-text('Changes and what they did') >> text=Photo alt text");
+    assert.deepEqual(mkPosts.find((p) => p.action === "autofix"), { store: "c3d", action: "autofix" });
+    const orn = page.locator(".panel:has-text('Changes and what they did') .check", { hasText: "Ornaments" });
+    await orn.locator("button", { hasText: "Undo" }).click();
+    await orn.locator("button", { hasText: "Click again to put it back" }).click();
+    await page.waitForSelector("text=Put back: Ornaments");
+    assert.deepEqual(mkPosts.find((p) => p.action === "undo"), { store: "c3d", action: "undo", changeId: "20261001113000-bbbbbbbb" });
+    await page.waitForSelector(".panel:has-text('Changes and what they did') >> text=You undid this.");
+    const first = page.locator(".panel:has-text('Changes and what they did') .check").first();
+    assert.match(await first.textContent(), /Undone.*Ornaments.*Undone on the Marketing page/s);
+    assert.equal(await first.locator("button", { hasText: "Undo" }).count(), 0, "an undo can't itself be undone from the log");
+  });
+
+  await step("marketing: keywords show Google position and movement, and the list can be changed", async () => {
+    const kw = page.locator(".panel", { hasText: "Keywords" }).first();
+    await kw.locator("td", { hasText: "3d printing charleston" }).waitFor();
+    assert.match(await kw.locator("tbody tr").first().textContent(), /3d printing charleston\s*8\.4\s*▲ 2\.1\s*4\s*120\s*1\s*\/pages\/custom/);
+    await kw.locator("summary", { hasText: "Change the keywords" }).click();
+    await kw.locator("textarea").fill("3d printing charleston\nCustom Ornaments");
+    await kw.locator("button", { hasText: "Save keywords" }).click();
+    await page.waitForSelector("text=Tracking 2 keywords");
+    assert.deepEqual(mkPosts.find((p) => p.action === "keywords").keywords, ["3d printing charleston", "Custom Ornaments"]);
+    await page.locator(".panel:has-text('Keywords') td", { hasText: "custom ornaments" }).waitFor();
   });
 
   await step("marketing: edit a product's SEO with the suggestion and save alt text", async () => {
@@ -1282,7 +1391,8 @@ async function main() {
     await row2.locator('input[aria-label^="Alt text"]').fill("Rainbow Row ornament in pastel colors");
     await row2.locator("button", { hasText: "Save alt text" }).click();
     await page.waitForSelector("text=Alt text saved: Rainbow Row Ornament");
-    assert.equal(mkPosts.find((p) => p.action === "alt").mediaId, "gid://shopify/MediaImage/9");
+    const alt = mkPosts.find((p) => p.action === "alt");
+    assert.deepEqual([alt.mediaId, alt.productId], ["gid://shopify/MediaImage/9", "gid://shopify/Product/1"]);
     await page.click('.chip[data-k="all"]');
     assert.equal(await page.locator(".seo-row").count(), 2);
   });
@@ -1297,7 +1407,7 @@ async function main() {
   await step("marketing: traffic, QR campaigns and Bing searches", async () => {
     await page.waitForSelector("td:has-text('ed-builder')");
     assert.match(await page.locator("text=Closest to page 1").locator("..").textContent(), /charleston 3d printing.*#7\.5/);
-    assert.match(await page.locator("text=Add GSC_SERVICE_ACCOUNT").textContent(), /GSC_SERVICE_ACCOUNT/);
+    assert.match(await page.locator("text=Connect Google Search Console to see Google searches").first().textContent(), /setup guide/);
   });
 
   await step("marketing: UTM builder only allows the brand's own site", async () => {
@@ -1318,6 +1428,122 @@ async function main() {
     await page.waitForTimeout(150);
     await noOverflow("marketing 390");
     if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "marketing-390.png"), fullPage: true }); }
+    await page.setViewportSize({ width: 1280, height: 900 });
+  });
+
+
+  await step("marketing: Search Console pages, home page indexing, sitemap submit and page check", async () => {
+    await page.click('.seg-btn[data-store="c3d"]');
+    await page.locator(".marketing .sr[role=status]", { hasText: "Charleston 3D marketing loaded." }).waitFor({ state: "attached" });
+    assert.equal(await page.locator(".marketing [aria-live]").count(), 0, "one status for the page, no live panels");
+    assert.ok(!(await page.locator("#mk-run").isDisabled()), "Check again is back once everything loaded");
+    await page.locator(".jump a", { hasText: "Google Search Console" }).click();
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "mk-google");
+    assert.match(page.url(), /#marketing/, "jump links don't change the route");
+    const gsc = page.locator("#mk-google");
+    await gsc.locator("table").waitFor();
+    assert.match(await gsc.textContent(), /mobile: 3 clicks \(75%\).*Indexed.*Submitted and indexed.*\/products\/rainbow-row-ornament.*3\.3%.*Google has no sitemap/s);
+    await gsc.locator("button", { hasText: "Submit sitemap to Google" }).click();
+    await gsc.locator("text=Submitted https://charleston3d.com/sitemap.xml.").waitFor();
+    await gsc.locator('input[aria-label="Page address to check"]').fill("https://charleston3d.com/products/rainbow-row-ornament");
+    await gsc.locator("button", { hasText: "Is it in Google?" }).click();
+    await gsc.locator("text=Discovered - currently not indexed").waitFor();
+    assert.deepEqual(mkPosts.slice(-2).map((b) => b.action), ["sitemap", "inspect"]);
+    assert.ok(await gsc.locator("a", { hasText: "Merchant Center" }).count());
+  });
+
+  // ---------- promotions ----------
+  const prPosts = [];
+  const prData = (store) => ({ store, admin: `https://admin.shopify.com/store/${store === "c3d" ? "charleston3d" : "elevated-designs"}`,
+    discounts: { items: [{ id: "gid://shopify/DiscountCodeNode/11", automatic: false, kind: "amount", title: "Market 15", code: "MARKET15", status: "active", summary: "15% off entire order", startsAt: "2026-10-01T00:00:00Z", endsAt: null, used: 4, admin: "https://admin.shopify.com/store/x/discounts/11" }] },
+    giftCards: { error: "Add the read_gift_cards and write_gift_cards scopes to the store's app to use this.", code: "access_denied", scopes: ["read_gift_cards", "write_gift_cards"] },
+    segments: { items: [{ id: "gid://shopify/Segment/7", name: "Email subscribers", query: "email_subscription_status = 'SUBSCRIBED'", admin: "https://admin.shopify.com/store/x/customers/segments/7" }] },
+    campaigns: { items: [] },
+    channels: { items: { installed: ["Online Store", "Google & YouTube"], ads: [{ name: "Google & YouTube", app: "https://apps.shopify.com/google", installed: true }, { name: "TikTok", app: "https://apps.shopify.com/tiktok", installed: false }] } },
+    abandoned: { items: [{ id: "a", createdAt: "2026-10-21T09:55:34Z", url: "https://elevatedshirts.com/checkouts/x/recover", total: { amount: 27.99, currency: "USD" }, customer: null, items: ["1 × Crest Tee"] }] },
+    adminOnly: [{ name: "Shopify Email", why: "Email campaigns.", url: "https://admin.shopify.com/store/x/apps/shopify-email" }, { name: "Marketing automations", why: "Abandoned cart emails.", url: "https://admin.shopify.com/store/x/marketing/automations" }],
+    templates: [{ name: "Loyal: 3+ orders", query: "number_of_orders >= 3" }] });
+  await page.route("**/api/promotions**", async (route) => {
+    const req = route.request();
+    const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    if (req.headers()["x-console-key"] !== KEY) return json(401, { error: "Wrong or missing console key.", code: "bad_key" });
+    if (req.method() === "GET") return json(200, prData(new URL(req.url()).searchParams.get("store")));
+    const b = JSON.parse(req.postData());
+    prPosts.push(b);
+    return json(200, { store: b.store, action: b.action, id: "gid://shopify/DiscountCodeNode/21", logged: true });
+  });
+
+  await step("promotions: discounts, a missing permission, channels, abandoned checkouts and admin-only tools", async () => {
+    await page.click('a.nav[data-route="promote"]');
+    await page.waitForSelector("#promo-discount");
+    assert.equal(await page.locator('a.nav[data-route="promote"]').getAttribute("aria-current"), "page");
+    const disc = page.locator(".panel", { hasText: "Discounts" }).first();
+    assert.match(await disc.locator("tbody").textContent(), /Market 15.*15% off entire order.*MARKET15.*On.*4/s);
+    assert.match(await page.locator(".panel", { hasText: "Gift cards" }).first().textContent(), /needs a permission.*read_gift_cards, write_gift_cards/s);
+    assert.equal(await page.locator("#promo-giftcard").count(), 0, "no gift card form without the scope");
+    assert.match(await page.locator(".panel", { hasText: "Sales channels" }).first().textContent(), /Online Store, Google & YouTube.*Connected.*TikTok.*Add channel/s);
+    assert.match(await page.locator(".panel", { hasText: "Abandoned checkouts" }).first().textContent(), /\$27\.99 left in 1 checkout/);
+    assert.match(await page.locator(".panel", { hasText: "Only in Shopify" }).first().textContent(), /Shopify Email.*Marketing automations/s);
+  });
+
+  await step("promotions: create a code discount, turn one off (two clicks to delete), and add a customer group", async () => {
+    const form = page.locator("#promo-discount");
+    await form.locator("button", { hasText: "Create discount" }).click();
+    await form.locator("text=Name (shown at checkout) is needed.").waitFor();
+    assert.equal(await form.locator('[name="title"]').getAttribute("aria-invalid"), "true");
+    await form.locator('[name="title"]').fill("Holiday market");
+    await form.locator('[name="code"]').fill("no spaces allowed");
+    await form.locator('[name="value"]').fill("20");
+    await form.locator("button", { hasText: "Create discount" }).click();
+    await form.locator("text=Code must be 3 to 40 letters").waitFor();
+    assert.equal(prPosts.length, 0, "nothing is sent until the form is right");
+    await form.locator('[name="code"]').fill("market20");
+    await form.locator('[name="value"]').fill("20");
+    await form.locator('[name="minSubtotal"]').fill("30");
+    await form.locator('[name="segmentId"]').selectOption("gid://shopify/Segment/7");
+    await form.locator("button", { hasText: "Create discount" }).click();
+    await page.waitForFunction(() => document.querySelector("#promo-discount") && !document.querySelector("#promo-discount button[disabled]"));
+    await page.waitForTimeout(200);
+    const made = prPosts.find((b) => b.action === "discount");
+    assert.deepEqual({ ...made, startsAt: undefined }, { store: "c3d", action: "discount", method: "code", type: "percentage", title: "Holiday market", code: "market20", oncePerCustomer: false, value: 20, minSubtotal: 30, segmentId: "gid://shopify/Segment/7", startsAt: undefined });
+    // Automatic hides the code fields; free shipping hides the value.
+    await page.locator('#promo-discount [name="method"]').selectOption("automatic");
+    assert.ok(await page.locator('#promo-discount [name="code"]').isHidden());
+    await page.locator('#promo-discount [name="type"]').selectOption("shipping");
+    assert.ok(await page.locator('#promo-discount [name="value"]').isHidden());
+    const row = page.locator(".panel", { hasText: "Discounts" }).first().locator("tbody tr").first();
+    await row.locator("button", { hasText: "Turn off" }).click();
+    await page.waitForFunction(() => true);
+    await page.waitForTimeout(200);
+    assert.deepEqual(prPosts.find((b) => b.action === "discountStatus"), { store: "c3d", action: "discountStatus", id: "gid://shopify/DiscountCodeNode/11", active: false });
+    const del = page.locator(".panel", { hasText: "Discounts" }).first().locator("tbody tr").first().locator("button", { hasText: "Delete" });
+    await del.click();
+    assert.equal(prPosts.filter((b) => b.action === "discountDelete").length, 0, "the first click only asks");
+    await page.locator("button", { hasText: "Click again to delete" }).click();
+    await page.waitForTimeout(200);
+    assert.equal(prPosts.filter((b) => b.action === "discountDelete").length, 1);
+    const seg = page.locator("#promo-segment");
+    await seg.locator("select").selectOption({ label: "Loyal: 3+ orders" });
+    assert.equal(await seg.locator("textarea").inputValue(), "number_of_orders >= 3");
+    await seg.locator("button", { hasText: "Create group" }).click();
+    await page.waitForTimeout(200);
+    assert.deepEqual(prPosts.find((b) => b.action === "segment"), { store: "c3d", action: "segment", name: "Loyal: 3+ orders", query: "number_of_orders >= 3" });
+  });
+
+  await step("promotions: switching stores, no overflow at 1280 and 390", async () => {
+    await page.click('.seg-btn[data-store="ed"]');
+    await page.waitForSelector("#promo-discount");
+    await page.locator(".promotions .sr[role=status]", { hasText: "Elevated Designs promotions loaded." }).waitFor({ state: "attached" });
+    await noOverflow("promotions 1280");
+    if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "promotions-1280.png"), fullPage: true }); }
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(150);
+    await noOverflow("promotions 390");
+    // The discount table becomes cards, so the actions are on screen without sideways scrolling.
+    const del = page.locator(".panel", { hasText: "Discounts" }).first().locator("button", { hasText: "Delete" }).first();
+    const box = await del.boundingBox();
+    assert.ok(box && box.x + box.width <= 390, `Delete is on screen (${JSON.stringify(box)})`);
+    if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "promotions-390.png"), fullPage: true }); }
     await page.setViewportSize({ width: 1280, height: 900 });
   });
 

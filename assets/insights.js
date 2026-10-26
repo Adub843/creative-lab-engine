@@ -13,6 +13,11 @@ const s = (tag, attrs = {}, ...kids) => {
 };
 const shortDate = (key) => new Date(`${key}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 const num = (n) => (n ?? 0).toLocaleString("en-US");
+// "10:05 AM EDT": the store's own time zone, by its short name rather than "America/New_York".
+const updatedAt = (iso, timeZone) => {
+  const opts = { hour: "numeric", minute: "2-digit", timeZoneName: "short" };
+  try { return new Date(iso).toLocaleTimeString("en-US", { ...opts, timeZone }); } catch { return new Date(iso).toLocaleTimeString("en-US", opts); }
+};
 const orders = (n) => `${num(n)} ${(n ?? 0) === 1 ? "order" : "orders"}`;
 
 function delta(pct, label = "vs previous period") {
@@ -24,8 +29,9 @@ function delta(pct, label = "vs previous period") {
 }
 
 // ---------- chart ----------
-// points: [{ label, value, kind? }]; kind "forecast" draws a lighter, dashed bar.
-function chart({ points, type = "bar", format, title, height = 200 }) {
+// points: [{ label, value, kind?, mark? }]; kind "forecast" draws a lighter, dashed bar, and a
+// mark (text) draws a flagged line on that day, e.g. a marketing change.
+export function chart({ points, type = "bar", format, title, height = 200 }) {
   const box = el("div", { class: "chart", tabindex: "0", role: "img", "aria-label": title });
   const tip = el("div", { class: "tip", hidden: true, "aria-hidden": "true" });
   let active = -1, geom = null;
@@ -43,7 +49,8 @@ function chart({ points, type = "bar", format, title, height = 200 }) {
       const yy = y(nice * t);
       svg.append(s("line", { x1: x0, x2: x1, y1: yy, y2: yy, class: "grid" }), s("text", { x: x0 - 6, y: yy + 4, "text-anchor": "end", class: "axis" }, format(nice * t, true)));
     }
-    const ticks = points.length > 1 ? [0, Math.floor((points.length - 1) / 2), points.length - 1] : [0];
+    // Three day labels when there's room, first and last on a phone.
+    const ticks = points.length > 1 ? (W < 420 ? [0, points.length - 1] : [0, Math.floor((points.length - 1) / 2), points.length - 1]) : [0];
     for (const i of ticks) svg.append(s("text", { x: x0 + step * (i + 0.5), y: H - 6, "text-anchor": i === 0 ? "start" : i === points.length - 1 ? "end" : "middle", class: "axis" }, points[i]?.label ?? ""));
     if (type === "bar") {
       const bw = Math.max(1, Math.min(28, step - 2));
@@ -57,6 +64,11 @@ function chart({ points, type = "bar", format, title, height = 200 }) {
       const d = points.map((p, i) => `${i ? "L" : "M"}${(x0 + step * (i + 0.5)).toFixed(1)} ${y(p.value).toFixed(1)}`).join("");
       svg.append(s("path", { class: "area", d: `${d}L${(x0 + step * (points.length - 0.5)).toFixed(1)} ${y0}L${(x0 + step * 0.5).toFixed(1)} ${y0}Z` }), s("path", { class: "line", d }));
     }
+    points.forEach((p, i) => {
+      if (!p.mark) return;
+      const mx = (x0 + step * (i + 0.5)).toFixed(1);
+      svg.append(s("line", { class: "mark", x1: mx, x2: mx, y1: y1, y2: y0 }), s("path", { class: "mark-flag", d: `M${mx} ${y1}l5 -4v8z` }));
+    });
     const cross = s("line", { class: "cross", y1: y1, y2: y0, x1: -10, x2: -10 });
     const dot = s("circle", { class: "dot", r: 4, cx: -10, cy: -10 });
     svg.append(cross, dot);
@@ -71,7 +83,7 @@ function chart({ points, type = "bar", format, title, height = 200 }) {
     const cx = geom.x0 + geom.step * (i + 0.5);
     geom.cross.setAttribute("x1", cx); geom.cross.setAttribute("x2", cx);
     geom.dot.setAttribute("cx", cx); geom.dot.setAttribute("cy", geom.y(p.value));
-    tip.textContent = `${p.label}${p.kind === "forecast" ? " (forecast)" : ""}: ${format(p.value)}`;
+    tip.textContent = `${p.label}${p.kind === "forecast" ? " (forecast)" : ""}: ${format(p.value)}${p.mark ? ` · ${p.mark}` : ""}`;
     tip.hidden = false;
     tip.style.left = `${Math.min(Math.max(cx, 70), geom.W - 70)}px`;
   }
@@ -100,7 +112,7 @@ function niceMax(v) {
   const p = 10 ** Math.floor(Math.log10(v));
   return [1, 2, 2.5, 5, 10].map((m) => m * p).find((m) => m >= v) ?? v;
 }
-function numbersTable(caption, headers, rows) {
+export function numbersTable(caption, headers, rows) {
   return el("details", { class: "nums" }, el("summary", {}, "Show numbers"),
     el("div", { class: "tbl" }, el("table", {}, el("caption", { class: "sr" }, caption),
       el("thead", {}, el("tr", {}, headers.map((h) => el("th", { scope: "col" }, h)))),
@@ -114,9 +126,10 @@ export async function renderInsights() {
   const days = el("select", { class: "field", id: "ins-days", "aria-label": "Period" },
     [["30", "Last 30 days"], ["90", "Last 90 days"], ["180", "Last 180 days"]].map(([v, l]) => el("option", { value: v, selected: v === state.days }, l)));
   const refresh = el("button", { class: "btn ghost", type: "button", id: "ins-refresh" }, "Refresh");
-  const body = el("div", { class: "stack", style: "gap:16px", "aria-live": "polite" });
+  const body = el("div", { class: "stack", style: "gap:16px" });
+  const status = el("p", { class: "sr", role: "status" });
   const switcher = storeSwitcher(state.store, (k) => { state.store = k; load(); });
-  root.append(el("div", { class: "toolbar" }, switcher, days, refresh), body);
+  root.append(el("div", { class: "toolbar" }, switcher, days, refresh), status, body);
   days.addEventListener("change", () => { state.days = days.value; load(); });
   refresh.addEventListener("click", () => load());
 
@@ -124,13 +137,17 @@ export async function renderInsights() {
     const id = ++state.req;
     const st = STORES[state.store];
     body.setAttribute("aria-busy", "true");
+    refresh.disabled = true;
+    status.textContent = `Loading ${st.name} insights…`;
     body.replaceChildren(el("section", { class: "panel" }, el("p", { class: "muted" }, `Loading ${st.name} insights…`)));
     try {
-      const data = await api(`/api/insights?store=${state.store}&days=${state.days}`, { key: true, reason: "Insights show sales figures, so they need the console key (the CONSOLE_KEY value set for this console)." });
+      const data = await api(`/api/insights?store=${state.store}&days=${state.days}`, { key: true, reason: "Insights show sales figures, so they need your console key (it's in your password manager, and in the console's settings in Cloudflare)." });
       if (id !== state.req) return;
       body.replaceChildren(...view(data));
+      status.textContent = `${st.name} insights loaded.`;
     } catch (e) {
       if (id !== state.req) return;
+      status.textContent = `Couldn't load ${st.name} insights.`;
       const setup = e.code === "not_connected" || e.code === "bad_config";
       const keyed = e.code === "cancelled" || e.code === "key_not_set";
       body.replaceChildren(el("section", { class: "panel" }, el("div", { class: `state state-${setup ? "setup" : "error"}`, role: setup ? null : "alert" },
@@ -140,7 +157,7 @@ export async function renderInsights() {
           setup ? el("a", { class: "btn", href: SETUP_URL, target: "_blank", rel: "noopener" }, "How to connect a store", el("span", { class: "ext", "aria-hidden": "true" }, "↗")) : null,
           el("button", { class: "btn", type: "button", onclick: () => load() }, keyed && e.code === "cancelled" ? "Enter key" : "Try again")))));
     } finally {
-      if (id === state.req) body.setAttribute("aria-busy", "false");
+      if (id === state.req) { body.setAttribute("aria-busy", "false"); refresh.disabled = false; }
     }
   }
 
@@ -150,10 +167,12 @@ export async function renderInsights() {
     const m0 = (v) => money(v, cur, 0);
     const out = [];
 
-    if (d.missingScopes?.length)
-      out.push(el("section", { class: "panel notice" }, el("h2", {}, "Add access to see everything"),
+    // Sales first; what's missing comes after them.
+    const scopeNotice = d.missingScopes?.length
+      ? el("section", { class: "panel notice" }, el("h2", {}, "Add access to see everything"),
         el("p", {}, "Add these scopes to this store's console app, then reinstall it (in Shopify admin under Settings > Apps and sales channels > Develop apps, or in the app's version in the Dev Dashboard):"),
-        el("ul", {}, d.missingScopes.map((m) => el("li", {}, el("code", {}, m.scope), ` for ${m.for}`)))));
+        el("ul", {}, d.missingScopes.map((m) => el("li", {}, el("code", {}, m.scope), ` for ${m.for}`))))
+      : null;
 
     // KPIs
     const p = d.periods;
@@ -164,7 +183,7 @@ export async function renderInsights() {
       el("span", { class: "muted small" }, `${orders(p[n].current.orders)} · ${money(p[n].current.aov, cur)} average`));
     const rc = d.repeatCustomers;
     out.push(el("section", { class: `panel brand-band brand-${d.store}` },
-      el("div", { class: "panel-head" }, el("h2", {}, `${st.name} sales`), el("span", { class: "muted small" }, `Updated ${new Date(d.generatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · ${d.timeZone}`)),
+      el("div", { class: "panel-head" }, el("h2", {}, `${st.name} sales`), el("span", { class: "muted small" }, `Updated ${updatedAt(d.generatedAt, d.timeZone)}`)),
       d.orders.available ? el("div", { class: "tiles" }, tile("7"), tile("30"), tile("90"),
         el("div", { class: "tile" }, el("span", { class: "eyebrow" }, "Repeat customers"),
           el("b", { class: "num" }, rc.rate == null ? "–" : `${rc.rate}%`),
@@ -172,7 +191,8 @@ export async function renderInsights() {
         el("div", { class: "tile" }, el("span", { class: "eyebrow" }, "Sessions"),
           d.sessions.available ? [el("b", { class: "num" }, num(d.sessions.total)), el("span", { class: "muted small" }, d.sessions.conversionRate == null ? "Conversion not reported" : `${d.sessions.conversionRate}% of visits ordered`)]
             : [el("b", {}, "–"), el("span", { class: "muted small" }, d.sessions.note ?? "Not available")]))
-        : el("p", { class: "muted" }, "Sales aren't visible yet: add the read_orders scope (see above).")));
+        : el("p", { class: "muted" }, "Sales aren't visible yet: add the read_orders scope (see below).")));
+    if (scopeNotice) out.push(scopeNotice);
 
     if (d.orders.available) {
       // Daily revenue
@@ -200,7 +220,7 @@ export async function renderInsights() {
       out.push(el("section", { class: `panel brand-${d.store}` },
         el("div", { class: "panel-head" }, el("h2", {}, "Online store visits"), el("span", { class: "muted small" }, `${num(d.sessions.total)} sessions`)),
         chart({ points: d.sessions.series.map((r) => ({ label: shortDate(r.date), value: r.sessions })), type: "line", title: "Daily online store sessions", format: (v) => num(Math.round(v)) }),
-        numbersTable("Daily sessions", ["Day", "Sessions", "Conversion"], d.sessions.series.slice().reverse().map((r) => [shortDate(r.date), num(r.sessions), r.conversionRate == null ? "–" : String(r.conversionRate)]))));
+        numbersTable("Daily sessions", ["Day", "Sessions", "Conversion"], d.sessions.series.slice().reverse().map((r) => [shortDate(r.date), num(r.sessions), r.conversionRate == null ? "–" : `${r.conversionRate}%`]))));
 
     if (d.orders.available) {
       const link = (r) => r.handle ? el("a", { href: `${st.site}/products/${encodeURIComponent(r.handle)}`, target: "_blank", rel: "noopener" }, r.title) : r.title;

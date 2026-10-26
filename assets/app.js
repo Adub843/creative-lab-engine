@@ -1,4 +1,4 @@
-import { BRANDS, STATUS, SERVICES, ROUTES, CLEANUP } from "./data.js";
+import { BRANDS, STATUS, SERVICES, ROUTES, CLEANUP, TOPOLOGY } from "./data.js";
 
 // ---------- helpers ----------
 export const el = (tag, attrs = {}, ...kids) => {
@@ -16,11 +16,16 @@ export const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage blocked */ } },
 };
+// One live region (in index.html) for every toast: screen readers announce a change to a region
+// that's already on the page, not a new node that arrives already filled.
+let toastRegion = document.getElementById("toast"), toastTimer = 0;
 export const toast = (msg) => {
-  document.querySelectorAll(".toast").forEach((old) => old.remove());
-  const t = el("div", { class: "toast", role: "status" }, msg);
-  document.body.append(t);
-  setTimeout(() => t.remove(), 3200);
+  toastRegion ??= el("div", { class: "toast", id: "toast", role: "status", "aria-live": "polite", "aria-atomic": "true" });
+  if (!toastRegion.isConnected) document.body.append(toastRegion);
+  clearTimeout(toastTimer);
+  toastRegion.textContent = msg;
+  toastRegion.classList.add("show");
+  toastTimer = setTimeout(() => { toastRegion.classList.remove("show"); toastRegion.textContent = ""; }, 3200);
 };
 const pill = (cls, txt) => el("span", { class: `pill ${cls}` }, txt);
 const statusPill = (s) => pill(`s-${s.status}`, STATUS[s.status]);
@@ -33,11 +38,11 @@ const byId = (id) => SERVICES.find((s) => s.id === id);
 const count = (fn) => SERVICES.filter(fn).length;
 
 // ---------- drawer ----------
+// A modal <dialog>: the page behind it is inert, Escape closes it, and focus goes back to whatever opened it.
 const drawer = document.getElementById("drawer");
-const scrim = document.getElementById("scrim");
 let lastFocus = null;
 export function openService(s) {
-  lastFocus = document.activeElement;
+  if (!drawer.open) lastFocus = document.activeElement;
   document.getElementById("d-kind").textContent = s.kind;
   document.getElementById("d-title").textContent = s.name;
   document.getElementById("d-tags").replaceChildren(statusPill(s), brandPill(s));
@@ -50,12 +55,28 @@ export function openService(s) {
       el("a", { href: l.url, target: ext(l.url) ? "_blank" : null, rel: "noopener", onclick: ext(l.url) ? null : closeDrawer },
         l.label, el("span", {}, ext(l.url) ? "↗" : "→")))),
   );
-  drawer.hidden = scrim.hidden = false;
+  if (!drawer.open) drawer.showModal();
+  drawer.scrollTop = 0;
   document.getElementById("d-close").focus();
 }
-function closeDrawer() { drawer.hidden = scrim.hidden = true; lastFocus?.focus(); }
+function closeDrawer() { if (drawer.open) drawer.close(); }
+drawer.addEventListener("close", () => { const f = lastFocus; lastFocus = null; if (f?.isConnected) f.focus(); });
 document.getElementById("d-close").addEventListener("click", closeDrawer);
-scrim.addEventListener("click", closeDrawer);
+// A click on the backdrop lands on the <dialog> itself, outside its box.
+drawer.addEventListener("click", (e) => {
+  if (e.target !== drawer) return;
+  const r = drawer.getBoundingClientRect();
+  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) closeDrawer();
+});
+// Keep Tab inside the drawer (wrap at both ends) rather than letting it reach the browser's own controls.
+drawer.addEventListener("keydown", (e) => {
+  if (e.key !== "Tab") return;
+  const f = [...drawer.querySelectorAll("a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex='-1'])")].filter((x) => x.getClientRects().length);
+  if (!f.length) return;
+  const first = f[0], last = f.at(-1);
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
 
 // ---------- jump palette ----------
 const PAGES = [
@@ -64,6 +85,7 @@ const PAGES = [
   { name: "Products", url: "#products", kind: "Page" },
   { name: "Insights", url: "#insights", kind: "Page" },
   { name: "Marketing: SEO, Bing, AI search", url: "#marketing", kind: "Page" },
+  { name: "Promotions: discounts, gift cards, segments", url: "#promote", kind: "Page" },
   { name: "Elevated Designs", url: "#ed", kind: "Page" },
   { name: "Design Studio", url: "#studio", kind: "Page" },
   { name: "Service Map", url: "#map", kind: "Page" },
@@ -76,31 +98,65 @@ function palItems(q) {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   return all.filter((i) => words.every((w) => i.name.toLowerCase().includes(w))).slice(0, 12);
 }
+// A combobox: focus stays in the search box, Up/Down move the active result (aria-activedescendant), Enter opens it.
+let palActive = 0;
+const palOptions = () => [...palList.querySelectorAll('[role="option"]')];
+function palPick(n) {
+  const opts = palOptions();
+  if (!opts.length) { palActive = -1; palQ.removeAttribute("aria-activedescendant"); return; }
+  palActive = (n + opts.length) % opts.length;
+  opts.forEach((o, i) => o.setAttribute("aria-selected", String(i === palActive)));
+  palQ.setAttribute("aria-activedescendant", opts[palActive].id);
+  opts[palActive].scrollIntoView({ block: "nearest" });
+}
 function drawPal() {
   const items = palItems(palQ.value);
-  palList.replaceChildren(...items.map((i, n) => el("li", { role: "option", "aria-selected": String(n === 0) },
-    el("a", { href: i.url, target: ext(i.url) ? "_blank" : null, rel: "noopener", onclick: () => pal.close() },
-      el("span", {}, i.name), el("span", { class: "muted" }, i.kind)))));
-  if (!items.length) palList.append(el("li", { class: "muted" }, "Nothing matches."));
+  palList.replaceChildren(...items.map((i, n) => el("li", { role: "option", id: `pal-opt-${n}`, "aria-selected": "false", onpointermove: () => palActive !== n && palPick(n) },
+    el("a", { href: i.url, tabindex: "-1", target: ext(i.url) ? "_blank" : null, rel: ext(i.url) ? "noopener" : null, onclick: () => pal.close() },
+      el("span", {}, i.name), el("span", { class: "muted" }, ext(i.url) ? `${i.kind} ↗` : i.kind)))));
+  if (!items.length) palList.append(el("li", { class: "muted", role: "presentation" }, "Nothing matches."));
+  palPick(0);
 }
 export function openPalette() { palQ.value = ""; drawPal(); pal.showModal(); palQ.focus(); }
 palQ.addEventListener("input", drawPal);
-palQ.addEventListener("keydown", (e) => { if (e.key === "Enter") palList.querySelector("a")?.click(); });
+palQ.addEventListener("keydown", (e) => {
+  const step = { ArrowDown: 1, ArrowUp: -1 }[e.key];
+  if (step) { e.preventDefault(); palPick(palActive + step); return; }
+  if (e.key === "Enter") { e.preventDefault(); palOptions()[palActive]?.querySelector("a")?.click(); }
+});
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !drawer.hidden) closeDrawer();
-  const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName);
-  if (e.key === "/" && !typing && !pal.open) { e.preventDefault(); openPalette(); }
+  const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
+  if (e.key === "/" && !typing && !pal.open && !document.querySelector("dialog[open]")) { e.preventDefault(); openPalette(); }
 });
 
 // ---------- theme ----------
-const applyTheme = (t) => (t ? document.documentElement.setAttribute("data-theme", t) : document.documentElement.removeAttribute("data-theme"));
+const themeBtn = document.getElementById("theme");
+const darkQuery = matchMedia("(prefers-color-scheme: dark)");
+const isDark = () => document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && darkQuery.matches);
+const applyTheme = (t) => {
+  if (t) document.documentElement.setAttribute("data-theme", t); else document.documentElement.removeAttribute("data-theme");
+  themeBtn.setAttribute("aria-pressed", String(isDark()));
+};
 applyTheme(store.get("bc-theme", null));
-document.getElementById("theme").addEventListener("click", () => {
-  const dark = document.documentElement.dataset.theme === "dark" ||
-    (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
-  const next = dark ? "light" : "dark";
+darkQuery.addEventListener?.("change", () => themeBtn.setAttribute("aria-pressed", String(isDark())));
+themeBtn.addEventListener("click", () => {
+  const next = isDark() ? "light" : "dark";
   applyTheme(next); store.set("bc-theme", next);
 });
+
+// ---------- phone nav: five sections in the bar, the rest behind More ----------
+const side = document.getElementById("side-nav");
+const moreBtn = document.getElementById("nav-more");
+const moreLabel = moreBtn.querySelector(".lbl");
+function setMore(open, { focus = false } = {}) {
+  side.classList.toggle("open", open);
+  moreBtn.setAttribute("aria-expanded", String(open));
+  moreLabel.textContent = open ? "Close" : "More";
+  if (focus) moreBtn.focus();
+}
+moreBtn.addEventListener("click", () => setMore(!side.classList.contains("open")));
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && side.classList.contains("open")) setMore(false, { focus: true }); });
+document.addEventListener("pointerdown", (e) => { if (side.classList.contains("open") && !side.contains(e.target)) setMore(false); });
 
 // ---------- shared widgets ----------
 function serviceCards(list) {
@@ -126,7 +182,7 @@ function todoWidget(key, seed) {
     box.replaceChildren(...items.map((it, i) => el("label", { class: it.d ? "done" : "" },
       el("input", { type: "checkbox", checked: it.d, onchange: () => { it.d = !it.d; save(); } }),
       el("span", {}, it.t),
-      el("button", { class: "x", type: "button", "aria-label": `Remove ${it.t}`, onclick: (e) => { e.preventDefault(); items.splice(i, 1); save(); } }, "×"))));
+      el("button", { class: "x", type: "button", title: "Remove", "aria-label": `Remove ${it.t}`, onclick: (e) => { e.preventDefault(); items.splice(i, 1); save(); } }, "×"))));
   }
   draw();
   return el("div", { class: "stack" }, box, el("div", { class: "add-row" }, input, el("button", { class: "btn", type: "button", onclick: add }, "Add")),
@@ -134,7 +190,8 @@ function todoWidget(key, seed) {
 }
 function quickLinks(brand, links) {
   return el("div", { class: `quick brand-${brand}` }, links.map(([label, sub, url]) =>
-    el("a", { href: url, target: ext(url) ? "_blank" : null, rel: "noopener" }, label, el("small", {}, sub))));
+    el("a", { href: url, target: ext(url) ? "_blank" : null, rel: ext(url) ? "noopener" : null },
+      el("span", {}, label, ext(url) ? el("span", { class: "ext", "aria-hidden": "true" }, " ↗") : null), el("small", {}, sub))));
 }
 async function recentImages(n = 12) {
   const { listImages, imageUrl } = await import("./studio.js");
@@ -150,12 +207,13 @@ const C3D_LINKS = [
   ["Products", "Pick what's on the site and app", "#products/c3d"],
   ["Insights", "Sales, visits, forecast", "#insights/c3d"],
   ["Marketing", "SEO, Bing, AI search", "#marketing/c3d"],
+  ["Promotions", "Discounts, gift cards, segments", "#promote/c3d"],
   ["Shopify admin", "Orders and products", BRANDS.c3d.admin.url],
   ["Theme", "Shopify theme editor", `${BRANDS.c3d.site}/admin/themes`],
-  ["Order maker", "hype-chain-maker", "https://hype-chain-maker.netlify.app"],
-  ["Nameplates", "nameplate-maker", "https://nameplate-maker.netlify.app"],
-  ["File finder", "3d-print-file-finder", "https://3d-print-file-finder.netlify.app"],
-  ["Print trends", "print-trends", "https://print-trends.netlify.app"],
+  ["Order maker", "Print files and order form", "https://hype-chain-maker.netlify.app"],
+  ["Nameplates", "Nameplate designer", "https://nameplate-maker.netlify.app"],
+  ["File finder", "Find 3D print files", "https://3d-print-file-finder.netlify.app"],
+  ["Print trends", "What's selling in 3D prints", "https://print-trends.netlify.app"],
 ];
 const ED_LINKS = [
   ["Website", "elevatedshirts.com · Shopify", BRANDS.ed.site],
@@ -163,9 +221,10 @@ const ED_LINKS = [
   ["Products", "Pick what's on the site", "#products/ed"],
   ["Insights", "Sales, visits, forecast", "#insights/ed"],
   ["Marketing", "SEO, Bing, AI search", "#marketing/ed"],
+  ["Promotions", "Discounts, gift cards, segments", "#promote/ed"],
   ["Orders", "Shopify admin", `${BRANDS.ed.site}/admin/orders`],
   ["List a design", "One click to the store", "#products/ed/list"],
-  ["Products", "Shopify admin", `${BRANDS.ed.site}/admin/products`],
+  ["Shopify products", "Shopify admin", `${BRANDS.ed.site}/admin/products`],
   ["Add a product", "Shopify admin", `${BRANDS.ed.site}/admin/products/new`],
   ["Designs and listings", "Elevated Designs app", "https://charlestonprintdesigns.netlify.app/#/"],
   ["Launch plan", "Elevated Designs app", "https://charlestonprintdesigns.netlify.app/#/plan"],
@@ -176,7 +235,12 @@ const ED_LINKS = [
 ];
 
 // The brand's logo (Aaron's picks, 26 Oct 2026) on its own dark tile, so it reads in both themes.
-const brandLogo = (key) => el("img", { class: `brand-logo logo-${key}`, src: BRANDS[key].logo, alt: "", width: 120, height: 40 });
+// WebP first, the PNG for browsers without it; width/height are the file's own size, so the box is
+// reserved before it loads.
+export const brandPicture = (key, attrs) => el("picture", {},
+  el("source", { type: "image/webp", srcset: BRANDS[key].logo.replace(/\.png$/, ".webp") }),
+  el("img", { src: BRANDS[key].logo, width: BRANDS[key].logoSize[0], height: BRANDS[key].logoSize[1], ...attrs }));
+const brandLogo = (key) => brandPicture(key, { class: `brand-logo logo-${key}`, alt: "" });
 
 function header(eyebrow, title, sub, actions = []) {
   return el("header", { class: "page-head" },
@@ -190,8 +254,8 @@ function dashboard() {
   const imgs = el("div", {}, el("p", { class: "muted" }, "Loading images…"));
   recentImages().then((n) => imgs.replaceChildren(n)).catch(() => imgs.replaceChildren(el("p", { class: "muted" }, "Couldn't load images.")));
   return [
-    header(today, "Dashboard", "Both businesses at a glance. Press / to jump anywhere.",
-      [el("button", { class: "btn", type: "button", onclick: openPalette }, "Jump to… ", el("kbd", {}, "/")),
+    header(today, "Dashboard", ["Both businesses at a glance.", el("span", { class: "kbd-hint" }, " Press / to jump anywhere.")],
+      [el("button", { class: "btn", type: "button", onclick: openPalette }, "Jump to…", el("kbd", { class: "kbd-hint", "aria-hidden": "true" }, "/")),
        el("a", { class: "btn primary", href: "#studio" }, "New design")]),
     el("div", { class: "kpis" },
       el("button", { class: "kpi warn", type: "button", onclick: () => go("map", "attn") }, el("b", {}, String(attn.length)), el("span", {}, "need attention")),
@@ -218,7 +282,7 @@ function brandPage(key, links, extra = []) {
   const b = BRANDS[key];
   const mine = SERVICES.filter((s) => s.brand === key);
   return [
-    b.logo ? el("div", { class: `brand-hero logo-${key}` }, el("img", { src: b.logo, alt: `${b.name} logo`, width: 240, height: 80 })) : null,
+    b.logo ? el("div", { class: `brand-hero logo-${key}` }, brandPicture(key, { alt: `${b.name} logo` })) : null,
     header("Business", b.name, b.tagline, [linkBtn(b.admin, "btn"), b.app ? linkBtn({ label: "Open app", url: b.app }, "btn") : null,
       linkBtn({ label: "View live site", url: b.site }, `btn brand brand-${key}`)]),
     el("section", { class: `panel brand-${key} brand-band` }, el("h2", {}, "Quick actions"), quickLinks(key, links)),
@@ -245,6 +309,7 @@ function mapPage(initial = "all") {
   draw();
   return [
     header("Topology", "Service Map", "Where every site, store and tool lives and how they connect. Click anything to open it."),
+    topologySection(),
     el("section", { class: "stack" }, el("h2", {}, "How each business is routed"),
       ROUTES.map((r) => el("div", { class: `panel route brand-${r.brand} brand-band` }, el("h3", {}, BRANDS[r.brand].name),
         el("div", { class: "chain" }, r.hops.flatMap(([lab, id], i) => {
@@ -257,6 +322,33 @@ function mapPage(initial = "all") {
       el("div", { class: "tbl" }, el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, "What"), el("th", {}, "Why"), el("th", {}, "Suggestion"))),
         el("tbody", {}, CLEANUP.map((c) => el("tr", {}, el("td", {}, c.what), el("td", {}, c.why), el("td", {}, c.fix))))))),
   ];
+}
+
+// ---------- system topology ----------
+// Layer by layer, each node with what it feeds; a "feeds" button jumps to that node and flashes it.
+function topologySection() {
+  const nodes = new Map(TOPOLOGY.flatMap((l) => l.nodes.map((n) => [n.id, n])));
+  const jump = (id) => {
+    const t = document.getElementById(`topo-${id}`);
+    if (!t) return;
+    t.scrollIntoView({ behavior: "smooth", block: "center" });
+    t.focus({ preventScroll: true });
+    t.classList.remove("flash"); void t.offsetWidth; t.classList.add("flash");
+  };
+  const ext = (l) => l.url.startsWith("#") ? el("a", { class: "btn ghost", href: l.url }, l.label)
+    : el("a", { class: "btn ghost", href: l.url, target: "_blank", rel: "noopener" }, l.label, el("span", { class: "ext", "aria-hidden": "true" }, "↗"));
+  const card = (n) => el("article", { class: `topo-node brand-${n.brand}${n.planned ? " planned" : ""}`, id: `topo-${n.id}`, tabindex: "-1" },
+    el("div", { class: "topo-head" }, el("strong", {}, n.name), n.planned ? el("span", { class: "pill b-other" }, "Planned") : null),
+    el("span", { class: "muted small" }, n.where),
+    el("p", { class: "small" }, n.does),
+    n.to.length ? el("div", { class: "topo-to" }, n.to.map(([id, how]) => el("button", { class: "chip", type: "button", onclick: () => jump(id) },
+      "→ ", nodes.get(id)?.name ?? id, el("span", { class: "muted" }, ` · ${how}`)))) : null,
+    n.links.length ? el("div", { class: "row topo-links" }, n.links.map(ext)) : null);
+  return el("section", { class: "stack topology", "aria-labelledby": "topo-h" },
+    el("h2", { id: "topo-h" }, "System topology"),
+    el("p", { class: "muted" }, "Top to bottom: how a customer reaches each brand, where the money goes, what the console runs, where the code lives, and the home-lab pieces still to come. The two brands never share a store, theme or key."),
+    TOPOLOGY.map((l) => el("div", { class: `panel topo-layer${l.planned ? " planned" : ""}` },
+      el("h3", {}, l.layer), el("div", { class: "topo-grid" }, l.nodes.map(card)))));
 }
 
 async function productsPage() {
@@ -274,6 +366,11 @@ async function marketingPage() {
   return [header("Both stores, one at a time", "Marketing", "Search, local, Bing and AI-assistant health for each site, checked every morning, with the fixes right here."), await renderMarketing()];
 }
 
+async function promotePage() {
+  const { renderPromotions } = await import("./promotions.js");
+  return [header("Both stores, one at a time", "Promotions", "Shopify's marketing tools for each store: discounts, gift cards, customer groups, campaigns, sales channels and abandoned checkouts."), await renderPromotions()];
+}
+
 async function studioPage() {
   const { renderStudio } = await import("./studio.js");
   return [header("Elevated Designs", "Design Studio", "Browse your whole image library, drag images onto a shirt, and export a print-ready file."), await renderStudio()];
@@ -283,9 +380,16 @@ async function studioPage() {
 const view = document.getElementById("view");
 let pendingFilter = null;
 export function go(route, filter) { pendingFilter = filter ?? null; location.hash = route; }
+const TITLES = { dashboard: "Dashboard", c3d: "Charleston 3D", ed: "Elevated Designs", map: "Service Map", studio: "Design Studio", products: "Products", insights: "Insights", marketing: "Marketing", promote: "Promotions" };
+// Each render gets a number; a page that finishes after the user has moved on is thrown away.
+let renderSeq = 0;
 async function render() {
+  const seq = ++renderSeq;
   const route = (location.hash.slice(1) || "dashboard").split("/")[0];
-  document.querySelectorAll(".nav").forEach((a) => a.dataset.route === route ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));
+  const known = Object.hasOwn(TITLES, route) ? route : "dashboard";
+  setMore(false);
+  document.querySelectorAll(".nav").forEach((a) => a.dataset.route === known ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));
+  document.title = `${TITLES[known]} · Business Console`;
   const pages = {
     dashboard,
     c3d: () => brandPage("c3d", C3D_LINKS),
@@ -297,14 +401,37 @@ async function render() {
     products: productsPage,
     insights: insightsPage,
     marketing: marketingPage,
+    promote: promotePage,
   };
-  const make = pages[route] ?? dashboard;
-  const nodes = await make();
+  const make = pages[known];
+  let nodes, loading = false;
+  try {
+    nodes = make();
+    if (nodes instanceof Promise) {
+      // A page that loads its code or data first shows its title straight away.
+      loading = true;
+      view.setAttribute("aria-busy", "true");
+      view.replaceChildren(header("Loading", TITLES[known], "Loading this page…"));
+      view.focus({ preventScroll: true });
+      window.scrollTo(0, 0);
+      nodes = await nodes;
+    }
+  } catch (err) {
+    if (seq !== renderSeq) return;
+    console.warn(`The ${TITLES[known]} page didn't load`, err);
+    nodes = el("div", { class: "state state-error", role: "alert" },
+      el("strong", {}, `The ${TITLES[known]} page didn't load`),
+      el("p", {}, "Something went wrong while opening it. Check your connection, then try again. The rest of the console still works."),
+      el("div", { class: "row" }, el("button", { class: "btn", type: "button", onclick: () => render() }, "Try again")));
+    nodes = [header("Couldn't open this page", TITLES[known]), nodes];
+  }
+  if (seq !== renderSeq) return; // the user went somewhere else while this page was loading
   pendingFilter = null;
+  view.removeAttribute("aria-busy");
   view.replaceChildren(...[nodes].flat().filter(Boolean));
-  document.title = `${{ dashboard: "Dashboard", c3d: "Charleston 3D", ed: "Elevated Designs", map: "Service Map", studio: "Design Studio", products: "Products", insights: "Insights", marketing: "Marketing" }[route] ?? "Dashboard"} · Business Console`;
-  view.focus({ preventScroll: true });
-  window.scrollTo(0, 0);
+  if (!loading) window.scrollTo(0, 0);
+  // Don't pull focus away from something the user moved to while the page loaded (a dialog, say).
+  if (!loading || document.activeElement === document.body || document.activeElement === view) view.focus({ preventScroll: true });
 }
 addEventListener("hashchange", render);
 render();

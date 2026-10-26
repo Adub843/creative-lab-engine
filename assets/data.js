@@ -3,7 +3,7 @@
 // 25 Oct 2026: both store sites are Shopify themes on their own stores (no Netlify hosting), and
 // each brand has its own theme repo: Charleston 3D in charleston3d-site, Elevated Designs in
 // elevated-designs-site. Nothing here is shared between the two brands.
-// "probably" in a description means it was inferred from a name or setup, not opened.
+// Descriptions of the small Netlify tools that were never opened go by their names and setup.
 
 const nl = (n) => [
   { label: "Open in Netlify", url: `https://app.netlify.com/projects/${n}` },
@@ -17,7 +17,7 @@ export const BRANDS = {
     tagline: "Personalized 3D printed gifts, sold on a hand-coded Shopify theme with Shopify checkout",
     site: "https://charleston3d.com",
     app: "https://app.charleston3d.com",
-    logo: "assets/brand/c3d-wordmark.png",
+    logo: "assets/brand/c3d-wordmark.png", logoSize: [440, 84],
     admin: { label: "Shopify admin", url: "https://charleston3d.com/admin" },
   },
   ed: {
@@ -25,7 +25,7 @@ export const BRANDS = {
     tagline: "Custom apparel and print designs, sold on a hand-coded Shopify theme with Shopify checkout",
     site: "https://elevatedshirts.com",
     app: "https://design.elevatedshirts.com",
-    logo: "assets/brand/ed-script.png",
+    logo: "assets/brand/ed-script.png", logoSize: [364, 230],
     admin: { label: "Shopify admin", url: "https://elevatedshirts.com/admin" },
   },
   other: { name: "Other projects", tagline: "Video, content and personal apps" },
@@ -33,7 +33,7 @@ export const BRANDS = {
 
 export const STATUS = {
   attn: "Needs attention",
-  blind: "Can't see",
+  blind: "Not connected",
   live: "Live",
   empty: "Never launched",
 };
@@ -43,7 +43,7 @@ export const SERVICES = [
   { id: "c3dsite", name: "charleston3d.com", brand: "c3d", kind: "Website · Shopify theme", status: "attn",
     does: "Charleston 3D's storefront: a hand-coded Shopify theme running on the Charleston3D store. Products, prices and checkout come live from Shopify, so a product switched on in Products shows up at once. No Netlify, no build step.",
     source: "GitHub: Adub843/charleston3d-site, branch claude/shopify-theme (Charleston 3D only)",
-    note: "The coded theme is being finished in Oct 2026; the live theme is still \"Charleston3D Lowcountry\" until it's published. The old Wix plan was canceled on 8 Oct.",
+    note: "The live theme is still \"Charleston3D Lowcountry\". The coded theme replaces it once it's published in Shopify. The old Wix plan was canceled on 8 Oct.",
     links: [{ label: "Products on the site", url: "#products/c3d" }, { label: "Insights", url: "#insights/c3d" },
       { label: "Open live site", url: BRANDS.c3d.site }, { label: "Themes in Shopify", url: `${BRANDS.c3d.site}/admin/themes` }] },
   { id: "c3dshop", name: "Charleston3D store", brand: "c3d", kind: "Store backend · Shopify", status: "live",
@@ -59,21 +59,21 @@ export const SERVICES = [
     does: "3D-print maker tool that exports .3MF files, with an order form and library and orders functions.",
     links: nl("hype-chain-maker") },
   { id: "npm", name: "nameplate-maker", brand: "c3d", kind: "Web app · Netlify", status: "live",
-    does: "Probably a nameplate design tool for printing.", links: nl("nameplate-maker") },
+    does: "Nameplate designer for 3D printing.", links: nl("nameplate-maker") },
   { id: "ff", name: "3d-print-file-finder", brand: "c3d", kind: "Web app · Netlify", status: "live",
-    does: "Probably a tool for finding 3D-print files.", links: nl("3d-print-file-finder") },
+    does: "Finds 3D-print files.", links: nl("3d-print-file-finder") },
   { id: "pt", source: "Your PC: Documents\\print-trends", name: "print-trends", brand: "c3d", kind: "Web app · Netlify", status: "live",
-    does: "Probably tracks what's selling in 3D prints.", links: nl("print-trends") },
+    does: "Tracks what's selling in 3D prints.", links: nl("print-trends") },
   { id: "noz", name: "nozzlelog", brand: "c3d", kind: "Placeholder · Netlify", status: "empty",
-    does: "Created but never launched. Probably meant as a printer log.", links: nlAdmin("nozzlelog") },
+    does: "Created but never launched. Meant as a printer log, going by its name.", links: nlAdmin("nozzlelog") },
   { id: "ll", name: "layerledger-agxn", brand: "c3d", kind: "Placeholder · Netlify", status: "empty",
-    does: "Created but never launched. Probably meant as a print cost ledger.", links: nlAdmin("layerledger-agxn") },
+    does: "Created but never launched. Meant as a print cost ledger, going by its name.", links: nlAdmin("layerledger-agxn") },
 
   // Elevated Designs
-  { id: "edsite", name: "elevatedshirts.com", brand: "ed", kind: "Website · Shopify theme", status: "attn",
+  { id: "edsite", name: "elevatedshirts.com", brand: "ed", kind: "Website · Shopify theme", status: "live",
     does: "Elevated Designs' storefront: its own hand-coded Shopify theme, separate from Charleston 3D, running on the Elevated Designs Shopify store. Products and checkout come live from Shopify.",
     source: "GitHub: Adub843/elevated-designs-site (branch claude/ed-theme)",
-    note: "Being built on branch claude/ed-theme. The store keeps its current theme until you preview and approve the new one.",
+    note: "Live since 26 Oct 2026. The live theme was uploaded, so new commits on claude/ed-theme need a re-upload until Shopify's GitHub sync is connected.",
     links: [{ label: "Products on the site", url: "#products/ed" }, { label: "Insights", url: "#insights/ed" },
       { label: "Open live site", url: BRANDS.ed.site }, { label: "Themes in Shopify", url: `${BRANDS.ed.site}/admin/themes` }] },
   { id: "shop", name: "Elevated Designs store", brand: "ed", kind: "Store backend · Shopify", status: "live",
@@ -125,7 +125,7 @@ export const SERVICES = [
   { id: "oops", source: "Your PC: Documents\\oops-i-bought-a-house", name: "oops-i-bought-a-house", brand: "other", kind: "Web app · Netlify", status: "live",
     does: "Two-page app with identify and vision functions.", links: nl("oops-i-bought-a-house") },
   { id: "pr", name: "partreiver", brand: "other", kind: "Web app · Netlify", status: "attn",
-    does: "Same two functions as oops-i-bought-a-house, byte for byte. Probably a copy.", links: nl("partreiver") },
+    does: "Same two functions as oops-i-bought-a-house, byte for byte, so it looks like a copy.", links: nl("partreiver") },
   { id: "care", name: "carelinked", brand: "other", kind: "Web app · Netlify", status: "live", does: "Static app.", links: nl("carelinked") },
   { id: "pw", name: "penny-wise-app", brand: "other", kind: "Web app · Netlify", status: "live", does: "Budget app.", links: nl("penny-wise-app") },
   { id: "wn", name: "workflow-notes", brand: "other", kind: "Web app · Netlify", status: "attn",
@@ -151,7 +151,7 @@ export const SERVICES = [
     note: "75% of this month's 3,000 credits used by 12 Oct. The cycle runs to 5 Nov.",
     links: [{ label: "Open Netlify", url: "https://app.netlify.com" }] },
   { id: "ts", name: "Tailscale", brand: "other", kind: "Private network · Tailscale", status: "blind",
-    does: "Probably links your computers together. Not connected to the console.",
+    does: "Private network that links your computers. Not connected to the console.",
     links: [{ label: "Open Tailscale machines", url: "https://login.tailscale.com/admin/machines" }] },
 ];
 
@@ -176,4 +176,96 @@ export const CLEANUP = [
   { what: "Elevated Designs app has no online backup", why: "Code and 330 MB of photos live only on your PC and the live site", fix: "Push its code to GitHub and keep photos in cloud storage" },
   { what: "Old Wix site for charleston3d.com", why: "Plan canceled 8 Oct; the domain now points at the Shopify store, where the coded theme runs", fix: "Let the Wix site lapse" },
   { what: "charleston3d-site Astro build on Netlify", why: "Replaced by the Shopify theme; the store sites are no longer hosted on Netlify", fix: "Delete the Netlify site and its build hook once the theme is live" },
+];
+
+// How the whole system fits together, layer by layer (26 Oct 2026). Each node lists what it feeds
+// and how, so the Service Map can draw the chain and every link opens the real thing.
+// "planned" nodes don't exist yet (the OpenClaw node and the home server).
+const CONSOLE_URL = "https://business-console.business-console.workers.dev";
+export const TOPOLOGY = [
+  { layer: "Domains and DNS", nodes: [
+    { id: "dns-c3d", name: "charleston3d.com", where: "DNS managed at Wix", brand: "c3d",
+      does: "Points the root and www at the Charleston3D Shopify store, and app. at GitHub Pages.",
+      to: [["site-c3d", "root and www"], ["app-c3d", "app. CNAME"]],
+      links: [{ label: "Wix domains", url: "https://manage.wix.com/account/domains" }, { label: "Shopify domains", url: `${BRANDS.c3d.site}/admin/settings/domains` }] },
+    { id: "dns-ed", name: "elevatedshirts.com", where: "Primary domain on the Elevated Designs store", brand: "ed",
+      does: "The store's primary domain (SSL on). design. points at GitHub Pages for the shirt app.",
+      to: [["site-ed", "root and www"], ["app-ed", "design. CNAME"]],
+      links: [{ label: "Shopify domains", url: `${BRANDS.ed.site}/admin/settings/domains` }] },
+  ] },
+  { layer: "What customers use", nodes: [
+    { id: "site-c3d", name: "Charleston3D site", where: "Shopify theme", brand: "c3d",
+      does: "Shop plus the Custom tab for custom requests.", to: [["store-c3d", "catalog, cart, checkout"]],
+      links: [{ label: "Open site", url: BRANDS.c3d.site }] },
+    { id: "app-c3d", name: "Charleston3D app", where: "GitHub Pages", brand: "c3d",
+      does: "app.charleston3d.com: shop and the combined request page (photo and 3D file upload).", to: [["store-c3d", "Storefront API, checkout"]],
+      links: [{ label: "Open app", url: BRANDS.c3d.app }] },
+    { id: "site-ed", name: "Elevated Designs site", where: "Shopify theme (live since 26 Oct)", brand: "ed",
+      does: "Shirts in auto-updating collections, with SEO and AI-crawler support built in.", to: [["store-ed", "catalog, cart, checkout"]],
+      links: [{ label: "Open site", url: BRANDS.ed.site }] },
+    { id: "app-ed", name: "Shirt design app", where: "GitHub Pages", brand: "ed",
+      does: "design.elevatedshirts.com: people design a shirt and share it; orders pay through the Elevated Designs checkout.", to: [["store-ed", "cart permalink, checkout"]],
+      links: [{ label: "Open app", url: BRANDS.ed.app }] },
+  ] },
+  { layer: "Stores (all payments)", nodes: [
+    { id: "store-c3d", name: "Charleston3D store", where: "Shopify Basic", brand: "c3d",
+      does: "Catalog, orders, payments and order emails. Custom requests land here as $0 orders.", to: [],
+      links: [BRANDS.c3d.admin, { label: "Orders", url: `${BRANDS.c3d.site}/admin/orders` }] },
+    { id: "store-ed", name: "Elevated Designs store", where: "Shopify Basic", brand: "ed",
+      does: "Catalog, orders and payments. Store email staticupload170@gmail.com.", to: [],
+      links: [BRANDS.ed.admin, { label: "Orders", url: `${BRANDS.ed.site}/admin/orders` }] },
+  ] },
+  { layer: "Back office (Cloudflare)", nodes: [
+    { id: "console", name: "Business Console", where: "Cloudflare Worker, free plan", brand: "other",
+      does: "This console, locked with your console key. Publishes products, lists designs, prices, insights and marketing for both stores, each store on its own.",
+      to: [["store-c3d", "Admin API"], ["store-ed", "Admin API"], ["kv", "reads and writes"], ["search", "Search Console, GA4, Bing, IndexNow"]],
+      links: [{ label: "Open console", url: CONSOLE_URL }, { label: "Cloudflare dashboard", url: "https://dash.cloudflare.com" }] },
+    { id: "kv", name: "Workers KV", where: "Same Cloudflare account", brand: "other",
+      does: "IMAGES (design library), PRICING (price sync state), MARKETING (scores, change log, keywords).", to: [],
+      links: [{ label: "KV in Cloudflare", url: "https://dash.cloudflare.com/?to=/:account/workers/kv/namespaces" }] },
+    { id: "crons", name: "Scheduled jobs", where: "Worker cron triggers (UTC)", brand: "other",
+      does: "11:00 daily health check of both sites. 11:30 daily safe SEO fixes. Every 15 minutes the shirt price sync steps on.",
+      to: [["console", "runs inside the Worker"]], links: [] },
+  ] },
+  { layer: "Code and deploys (GitHub)", nodes: [
+    { id: "gh-console", name: "Business-console", where: "GitHub Actions deploys main to Cloudflare", brand: "other",
+      does: "Console code. Tests run before every deploy.", to: [["console", "wrangler deploy"]],
+      links: [{ label: "Repository", url: "https://github.com/Adub843/Business-console" }, { label: "Actions", url: "https://github.com/Adub843/Business-console/actions" }] },
+    { id: "gh-c3d", name: "charleston3d-site", where: "Shopify GitHub integration", brand: "c3d",
+      does: "Charleston3D theme.", to: [["site-c3d", "theme sync"]],
+      links: [{ label: "Repository", url: "https://github.com/Adub843/charleston3d-site" }] },
+    { id: "gh-c3dapp", name: "charleston3d-app", where: "GitHub Pages", brand: "c3d",
+      does: "Charleston3D order app.", to: [["app-c3d", "Pages"]],
+      links: [{ label: "Repository", url: "https://github.com/Adub843/charleston3d-app" }] },
+    { id: "gh-ed", name: "elevated-designs-site", where: "Theme uploaded to Shopify", brand: "ed",
+      does: "Elevated Designs theme. The live theme was uploaded, so new commits need a re-upload until GitHub sync is connected.", to: [["site-ed", "theme upload"]],
+      links: [{ label: "Repository", url: "https://github.com/Adub843/elevated-designs-site" }] },
+    { id: "gh-edapp", name: "elevated-shirt-app", where: "GitHub Actions to Pages", brand: "ed",
+      does: "Shirt design app.", to: [["app-ed", "Pages"]],
+      links: [{ label: "Repository", url: "https://github.com/Adub843/elevated-shirt-app" }] },
+  ] },
+  { layer: "Outside tools", nodes: [
+    { id: "kittl", name: "Kittl", where: "Design library (about 5,190 images)", brand: "ed",
+      does: "Where shirt art is made. Finished art goes into the console's image library.", to: [["kv", "uploaded to IMAGES"]],
+      links: [{ label: "Open Kittl", url: "https://www.kittl.com" }] },
+    { id: "sheet", name: "Shirt price sheet", where: "Google Sheets", brand: "ed",
+      does: "Blank cost per brand, style and size. The 15-minute sync reprices every Elevated Designs shirt from it.", to: [["console", "read by the price sync"]],
+      links: [{ label: "Open sheet", url: "https://docs.google.com/spreadsheets/d/11G7MyaGqSaz3WCd21etMYc-YebpAbyKzmvE1aqNWpy8/edit" }] },
+    { id: "search", name: "Google and Bing", where: "Search Console, GA4, Bing Webmaster, IndexNow", brand: "other",
+      does: "Search clicks, positions and engagement for the Marketing page; IndexNow tells Bing about changed pages.", to: [],
+      links: [{ label: "Search Console", url: "https://search.google.com/search-console" }, { label: "Google Analytics", url: "https://analytics.google.com" }, { label: "Bing Webmaster", url: "https://www.bing.com/webmasters" }] },
+    { id: "suppliers", name: "Blank suppliers", where: "BulkApparel and ShirtSpace", brand: "ed",
+      does: "Where the blank shirts are bought. Their costs feed the price sheet.", to: [["sheet", "blank costs"]],
+      links: [{ label: "BulkApparel", url: "https://www.bulkapparel.com" }, { label: "ShirtSpace", url: "https://www.shirtspace.com" }] },
+  ] },
+  { layer: "Planned: home lab", planned: true, nodes: [
+    { id: "openclaw", name: "OpenClaw node", where: "Beelink SER9 Pro mini PC, local model", brand: "other", planned: true,
+      does: "Local agents that take over routine work: checking the Marketing page, the price sync and orders through the console's API, with the console key kept on that machine only.",
+      to: [["console", "HTTPS API with the console key"], ["tailnet", "remote access"]], links: [] },
+    { id: "server", name: "Home server", where: "Current PC, after the move", brand: "other", planned: true,
+      does: "Backups of the repos, image library export and business files; file share for the small network.", to: [["tailnet", "remote access"]], links: [] },
+    { id: "tailnet", name: "Tailscale", where: "Private network between your machines", brand: "other", planned: true,
+      does: "Lets the mini PC, the server and your laptop reach each other without opening ports.", to: [],
+      links: [{ label: "Tailscale machines", url: "https://login.tailscale.com/admin/machines" }] },
+  ] },
 ];
