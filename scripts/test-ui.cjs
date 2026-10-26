@@ -1284,6 +1284,9 @@ async function main() {
         pages: [{ page: "https://charleston3d.com/products/rainbow-row-ornament", clicks: 4, impressions: 120, ctr: 3.3, position: 8.4 }],
         devices: [{ device: "mobile", clicks: 3, impressions: 90, ctr: 3.3, position: 9 }, { device: "desktop", clicks: 1, impressions: 30, ctr: 3.3, position: 7 }],
         sitemaps: [], home: { url: "https://charleston3d.com/", verdict: "pass", coverage: "Submitted and indexed", lastCrawl: "2026-10-20T00:00:00Z" } });
+      if (part === "holo") return json(200, store === "ed" ? { store, blog: "news", feed: "https://elevatedshirts.com/blogs/news.atom", posts: [], total: 0, logged: 0, error: null, app: "https://app.tryholo.ai/" }
+        : { store, blog: "news", feed: "https://charleston3d.com/blogs/news.atom", total: 1, logged: 1, error: null, app: "https://app.tryholo.ai/",
+          posts: [{ title: "Rainbow Row ornaments for the holidays", url: "https://charleston3d.com/blogs/news/rainbow-row-ornaments", published: "2026-10-20T14:00:00Z" }] });
       if (part === "keywords") return json(200, { store, saveAvailable: true, keywords: mkKeywords.map((k, i) => ({ keyword: k, google: i ? null : { clicks: 4, impressions: 120, position: 8.4, page: "https://charleston3d.com/pages/custom", searches: 3 }, googlePrev: null, bing: { clicks: 1, impressions: 9, position: 5, page: "", searches: 1 }, moved: i ? null : 2.1 })),
         sources: { google: { connected: true }, bing: { connected: true } } });
       return json(400, { error: "bad part" });
@@ -1450,6 +1453,18 @@ async function main() {
     await gsc.locator("text=Discovered - currently not indexed").waitFor();
     assert.deepEqual(mkPosts.slice(-2).map((b) => b.action), ["sitemap", "inspect"]);
     assert.ok(await gsc.locator("a", { hasText: "Merchant Center" }).count());
+  });
+
+  await step("marketing: Holo panel lists blog posts, and shows setup for a store with none", async () => {
+    const holo = page.locator("#mk-holo");
+    await holo.locator("a", { hasText: "Rainbow Row ornaments for the holidays" }).waitFor();
+    assert.match(await holo.textContent(), /1 post on the news blog\. 1 new, added to the change log\./);
+    assert.ok(await holo.locator('a[href="https://app.tryholo.ai/"]').count(), "Open Holo link");
+    await page.click('.seg-btn[data-store="ed"]');
+    await page.locator(".marketing .sr[role=status]", { hasText: "Elevated Designs marketing loaded." }).waitFor({ state: "attached" });
+    await page.locator("#mk-holo", { hasText: "xzqxnd-er.myshopify.com" }).waitFor();
+    assert.ok(!(await page.locator("#mk-holo").textContent()).includes("charleston3d"), "ED's Holo panel never names the other brand");
+    await page.click('.seg-btn[data-store="c3d"]');
   });
 
   // ---------- promotions ----------
