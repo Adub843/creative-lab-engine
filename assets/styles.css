@@ -331,3 +331,11 @@ code { font-family: var(--f-mono); font-size: 13px; background: var(--sunk); pad
 .vcount { font-family: var(--f-mono); font-size: 13px; padding: 6px 10px; border-radius: 8px; background: var(--ok-soft); color: var(--ok); }
 .vcount.warn { background: var(--warn-soft); color: var(--warn); }
 .vcount.over { background: var(--bad-soft); color: var(--bad); }
+
+/* brand logos */
+.brand-title { display: flex; align-items: center; gap: 10px; }
+.brand-logo { height: 32px; width: auto; max-width: 110px; object-fit: contain; border-radius: 6px; padding: 3px 6px; }
+.brand-hero { display: inline-flex; border-radius: 12px; padding: 10px 16px; margin-bottom: 12px; }
+.brand-hero img { height: 64px; width: auto; max-width: 100%; object-fit: contain; }
+.logo-c3d { background: #15181f; }
+.logo-ed { background: #101a3a; }

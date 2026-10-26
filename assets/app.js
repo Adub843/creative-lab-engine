@@ -145,7 +145,8 @@ async function recentImages(n = 12) {
 // ---------- pages ----------
 const C3D_LINKS = [
   ["Website", "charleston3d.com · Shopify", BRANDS.c3d.site],
-  ["Products", "Pick what's on the site", "#products/c3d"],
+  ["Order app", "Shop and custom requests", BRANDS.c3d.app],
+  ["Products", "Pick what's on the site and app", "#products/c3d"],
   ["Insights", "Sales, visits, forecast", "#insights/c3d"],
   ["Shopify admin", "Orders and products", BRANDS.c3d.admin.url],
   ["Theme", "Shopify theme editor", `${BRANDS.c3d.site}/admin/themes`],
@@ -156,6 +157,7 @@ const C3D_LINKS = [
 ];
 const ED_LINKS = [
   ["Website", "elevatedshirts.com · Shopify", BRANDS.ed.site],
+  ["Shirt app", "Design your own shirt", BRANDS.ed.app],
   ["Products", "Pick what's on the site", "#products/ed"],
   ["Insights", "Sales, visits, forecast", "#insights/ed"],
   ["Orders", "Shopify admin", `${BRANDS.ed.site}/admin/orders`],
@@ -169,6 +171,9 @@ const ED_LINKS = [
   ["Discounts", "Shopify admin", `${BRANDS.ed.site}/admin/discounts`],
   ["Theme", "Shopify theme editor", `${BRANDS.ed.site}/admin/themes`],
 ];
+
+// The brand's logo (Aaron's picks, 26 Oct 2026) on its own dark tile, so it reads in both themes.
+const brandLogo = (key) => el("img", { class: `brand-logo logo-${key}`, src: BRANDS[key].logo, alt: "", width: 120, height: 40 });
 
 function header(eyebrow, title, sub, actions = []) {
   return el("header", { class: "page-head" },
@@ -192,10 +197,10 @@ function dashboard() {
       el("button", { class: "kpi bad", type: "button", onclick: () => go("map", "blind") }, el("b", {}, String(count((s) => s.status === "blind"))), el("span", {}, "not connected"))),
     el("div", { class: "grid-2" },
       el("section", { class: "panel brand-c3d brand-band" },
-        el("div", { class: "panel-head" }, el("h2", {}, "Charleston 3D"), el("a", { class: "btn ghost", href: "#c3d" }, "Open")),
+        el("div", { class: "panel-head" }, el("h2", { class: "brand-title" }, brandLogo("c3d"), "Charleston 3D"), el("a", { class: "btn ghost", href: "#c3d" }, "Open")),
         el("p", { class: "muted" }, BRANDS.c3d.tagline), quickLinks("c3d", C3D_LINKS.slice(0, 4))),
       el("section", { class: "panel brand-ed brand-band" },
-        el("div", { class: "panel-head" }, el("h2", {}, "Elevated Designs"), el("a", { class: "btn ghost", href: "#ed" }, "Open")),
+        el("div", { class: "panel-head" }, el("h2", { class: "brand-title" }, brandLogo("ed"), "Elevated Designs"), el("a", { class: "btn ghost", href: "#ed" }, "Open")),
         el("p", { class: "muted" }, BRANDS.ed.tagline), quickLinks("ed", ED_LINKS.slice(0, 4)))),
     el("div", { class: "grid-2" },
       el("section", { class: "panel" }, el("h2", {}, "Needs you"), alertsList(attn)),
@@ -210,7 +215,9 @@ function brandPage(key, links, extra = []) {
   const b = BRANDS[key];
   const mine = SERVICES.filter((s) => s.brand === key);
   return [
-    header("Business", b.name, b.tagline, [linkBtn(b.admin, "btn"), linkBtn({ label: "View live site", url: b.site }, `btn brand brand-${key}`)]),
+    b.logo ? el("div", { class: `brand-hero logo-${key}` }, el("img", { src: b.logo, alt: `${b.name} logo`, width: 240, height: 80 })) : null,
+    header("Business", b.name, b.tagline, [linkBtn(b.admin, "btn"), b.app ? linkBtn({ label: "Open app", url: b.app }, "btn") : null,
+      linkBtn({ label: "View live site", url: b.site }, `btn brand brand-${key}`)]),
     el("section", { class: `panel brand-${key} brand-band` }, el("h2", {}, "Quick actions"), quickLinks(key, links)),
     ...extra,
     el("section", { class: "panel" }, el("h2", {}, "Needs attention"), alertsList(mine.filter((s) => s.status === "attn"))),
@@ -285,7 +292,7 @@ async function render() {
   const make = pages[route] ?? dashboard;
   const nodes = await make();
   pendingFilter = null;
-  view.replaceChildren(...[nodes].flat());
+  view.replaceChildren(...[nodes].flat().filter(Boolean));
   document.title = `${{ dashboard: "Dashboard", c3d: "Charleston 3D", ed: "Elevated Designs", map: "Service Map", studio: "Design Studio", products: "Products", insights: "Insights" }[route] ?? "Dashboard"} · Business Console`;
   view.focus({ preventScroll: true });
   window.scrollTo(0, 0);
