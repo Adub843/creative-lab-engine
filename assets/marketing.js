@@ -80,13 +80,14 @@ export async function renderMarketing() {
     const [catPanel, catBox] = section("catalog", "Products and collections");
     const [kwPanel, kwBox] = section("keywords", "Keywords", el("span", { class: "muted small" }, "Google and Bing, last 28 days"));
     const [gscPanel, gscBox] = section("google", "Google Search Console", el("span", { class: "muted small" }, "Pages, devices, sitemaps and indexing"));
+    const [holoPanel, holoBox] = section("holo", "Holo AI marketing", el("span", { class: "muted small" }, "Ads, social posts, emails and blog posts"));
     const [setPanel, setBox] = section("settings", "Site settings", el("span", { class: "muted small" }, "Changes the live theme"));
     const [trafPanel, trafBox] = section("traffic", "Where visitors come from", el("span", { class: "muted small" }, "Last 90 days"));
     const [searchPanel, searchBox] = section("searches", "Search queries");
     const utm = utmPanel(s), tools = toolsPanel(s);
     utm.id = "mk-links"; tools.id = "mk-tools";
     panels.push(["links", "Link builder"], ["tools", "Tools"]);
-    body.replaceChildren(auditPanel, growPanel, chgPanel, catPanel, kwPanel, gscPanel, setPanel, trafPanel, searchPanel, utm, tools);
+    body.replaceChildren(auditPanel, growPanel, chgPanel, catPanel, kwPanel, gscPanel, holoPanel, setPanel, trafPanel, searchPanel, utm, tools);
     jump.replaceChildren(...panels.map(([k, t]) => el("a", { href: `#mk-${k}`, onclick: (e) => {
       e.preventDefault(); // the hash is the page's route, so scroll instead
       const target = document.getElementById(`mk-${k}`);
@@ -110,6 +111,7 @@ export async function renderMarketing() {
       catalog: () => fetchPart("catalog").then((c) => live() && catBox.replaceChildren(...catalogView(s, c))).catch((e) => live() && catBox.replaceChildren(errorState(e, "products and collections", () => reload.catalog()))),
       keywords: () => fetchPart("keywords").then((k) => live() && kwBox.replaceChildren(...keywordsView(s, k))).catch((e) => live() && kwBox.replaceChildren(errorState(e, "keywords", () => reload.keywords()))),
       google: () => fetchPart("google").then((g) => live() && gscBox.replaceChildren(...googleView(s, g))).catch((e) => live() && gscBox.replaceChildren(errorState(e, "Search Console", () => reload.google()))),
+      holo: () => fetchPart("holo").then((h) => live() && holoBox.replaceChildren(...holoView(s, h))).catch((e) => live() && holoBox.replaceChildren(errorState(e, "Holo", () => reload.holo()))),
       settings: () => fetchPart("settings").then((c) => live() && setBox.replaceChildren(settingsView(s, c))).catch((e) => live() && setBox.replaceChildren(errorState(e, "the site settings", () => reload.settings()))),
       traffic: () => fetchPart("traffic").then((t) => { if (!live()) return; trafBox.replaceChildren(...trafficView(t)); searchBox.replaceChildren(...queriesView(t)); })
         .catch((e) => { if (!live()) return; trafBox.replaceChildren(errorState(e, "traffic", () => reload.traffic())); searchBox.replaceChildren(el("p", { class: "muted" }, "Needs the store connected first.")); }),
@@ -251,12 +253,12 @@ export async function renderMarketing() {
       const dir = e.change == null ? "flat" : e.change > 0 ? "up" : e.change < 0 ? "down" : "flat";
       return el("span", { class: `small delta ${dir}` }, `${what}: ${e.beforePerDay ?? 0}/day before → ${e.afterPerDay ?? 0}/day since`, e.change == null ? "" : ` (${e.change > 0 ? "+" : ""}${e.change}%)`);
     };
-    const pill = (x) => x.kind === "revert" ? ["Undone", "s-attn"] : x.kind === "promotion" ? ["Promotion", "s-attn"] : x.source === "auto" ? ["Auto", "s-live"] : ["You", "b-other"];
+    const pill = (x) => x.kind === "revert" ? ["Undone", "s-attn"] : x.kind === "promotion" ? ["Promotion", "s-attn"] : x.kind === "article" ? ["Blog post", "s-live"] : x.source === "auto" ? ["Auto", "s-live"] : ["You", "b-other"];
     const row = (x) => {
       const [t, cls] = pill(x);
       const undone = x.review?.verdict === "undo";
       let undo = null;
-      if (c.logAvailable && x.kind !== "revert" && x.kind !== "promotion" && !undone) {
+      if (c.logAvailable && x.kind !== "revert" && x.kind !== "promotion" && x.kind !== "article" && !undone) {
         undo = confirmButton("Undo", "Click again to put it back", async () => {
           try {
             await api("/api/marketing", { method: "POST", key: true, reason: KEY_REASON, body: { store: s, action: "undo", changeId: x.id } });
@@ -525,6 +527,37 @@ export async function renderMarketing() {
     out.push(el("h3", {}, "Check a page"), el("div", { class: "row" }, url, check), res, googleLinks(s));
     return out;
   }
+  // ---------- Holo (tryholo.ai) ----------
+  // Holo publishes blog posts to the store's Shopify blog itself; the console lists them and logs
+  // each new one in the change log. Ads, social posts and emails are made in Holo.
+  const HOLO_SHOP = { c3d: "nu2xws-gy.myshopify.com", ed: "xzqxnd-er.myshopify.com" };
+  function holoView(s, h) {
+    const app = h.app || "https://app.tryholo.ai/";
+    const out = [];
+    if (h.error) out.push(el("div", { class: "state state-setup" }, el("p", {}, h.error)));
+    if (h.posts?.length) {
+      out.push(el("p", { class: "small muted" }, `${num(h.total)} post${h.total === 1 ? "" : "s"} on the ${h.blog} blog.`
+        + (h.logged ? ` ${num(h.logged)} new, added to the change log.` : "")));
+      out.push(el("ul", { class: "plain stack", style: "gap:6px" }, h.posts.map((p) => el("li", {},
+        el("a", { href: p.url, target: "_blank", rel: "noopener" }, p.title),
+        p.published ? el("span", { class: "muted small" }, ` · ${new Date(p.published).toLocaleDateString()}`) : null))));
+    } else if (!h.error) {
+      out.push(el("p", { class: "muted" }, `No blog posts yet. Once Holo publishes to the ${h.blog} blog, they show here and in the change log.`));
+      out.push(el("ol", { class: "small stack", style: "gap:4px" },
+        el("li", {}, "In Holo, open Brand DNA, then Integrations."),
+        el("li", {}, `Choose Shopify and enter ${HOLO_SHOP[s]}.`),
+        el("li", {}, `Install Holo's connector, then pick the "${h.blog}" blog.`)));
+    }
+    out.push(el("div", { class: "links" },
+      ext(app, "Open Holo", ""),
+      ext("https://docs.tryholo.ai/ads/ads-overview", "Ads (Meta)", ""),
+      ext("https://docs.tryholo.ai/socials/socials-calendar", "Social calendar", ""),
+      ext("https://docs.tryholo.ai/emails/emails-overview", "Emails", ""),
+      ext("https://docs.tryholo.ai/seo/create-blog-posts", "Blog posts (SEO)", ""),
+      ext(h.feed, "Blog feed", "")));
+    return out;
+  }
+
   // The other Google tools for a shop. GA4 already feeds the Growth chart.
   function googleLinks(s) {
     const site = STORES[s].site;

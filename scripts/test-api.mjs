@@ -2668,6 +2668,33 @@ test("marketing: Search Console pages, devices, sitemaps, indexing, sitemap subm
   MK.clearGoogleToken();
 });
 
+test("marketing: Holo blog posts come from the store's public blog feed and are logged once", async () => {
+  const feed = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">
+<entry><published>2026-10-20T10:00:00-04:00</published><link rel="alternate" type="text/html" href="https://charleston3d.com/blogs/news/rainbow-row-ornaments"/><title>Rainbow Row ornaments &amp; gifts</title><author><name>Holo</name></author></entry>
+<entry><link rel="alternate" href="https://elevatedshirts.com/blogs/news/other-brand"/><title>Other brand</title></entry></feed>`;
+  const seen = [];
+  const site = { fetch: async (u) => { seen.push(String(u)); return String(u).endsWith(".atom") ? new Response(feed, { status: 200 }) : null; } };
+  const f = mkFetch(qlShopify(), site).fetch;
+  const kv = fakeKV();
+  const ctx = mkCtx(f, {}, { kv, now: () => NOW });
+  const res = await MK.handleMarketing(mkGet({ store: "c3d", part: "holo" }), ctx);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.ok(seen.includes("https://charleston3d.com/blogs/news.atom"));
+  assert.deepEqual(res.body.posts.map((p) => p.title), ["Rainbow Row ornaments & gifts"], "a post on the other brand's site is ignored");
+  assert.equal(res.body.logged, 1);
+  const log = await MK.readChanges(kv, "c3d");
+  assert.equal(log[0].kind, "article");
+  assert.equal(log[0].at, "2026-10-20T14:00:00.000Z");
+  const again = await MK.handleMarketing(mkGet({ store: "c3d", part: "holo" }), ctx);
+  assert.equal(again.body.logged, 0, "a post is logged only once");
+  const custom = await MK.handleMarketing(mkGet({ store: "c3d", part: "holo" }), mkCtx(f, { C3D_HOLO_BLOG: "Journal" }, { kv, now: () => NOW }));
+  assert.equal(custom.body.blog, "journal");
+  const missing = { fetch: async (u) => (String(u).endsWith(".atom") ? new Response("", { status: 404 }) : null) };
+  const none = await MK.handleMarketing(mkGet({ store: "ed", part: "holo" }), mkCtx(mkFetch(qlShopify(), missing).fetch, {}, { kv, now: () => NOW }));
+  assert.match(none.body.error, /no blog at \/blogs\/news/);
+  assert.deepEqual(none.body.posts, []);
+});
+
 // ---------- last: the schema check over everything sent above ----------
 test("every GraphQL string sent matches the Admin API 2025-10 schema, variables included", async () => {
   const S = await import("../lib/shopify.mjs");
