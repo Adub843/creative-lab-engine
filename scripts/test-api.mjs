@@ -304,6 +304,16 @@ test("no Online Store publication is a clear 502", async () => {
   assert.equal(res.body.code, "no_online_store");
 });
 
+test("finds the Online Store by Shopify's real catalog title", async () => {
+  const real = "gid://shopify/Publication/311375364400";
+  const sh = fakeShopify({ publications: [
+    { id: "gid://shopify/Publication/311375397168", catalog: { title: "Channel Catalog 311375397168 for Point of Sale" } },
+    { id: real, catalog: { title: "Channel Catalog 311375364400 for Online Store" } }] });
+  const res = await handleProducts(keyed({ store: "c3d" }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 200);
+  assert.equal(sh.calls.find((c) => c.op === "ConsoleProducts").variables.pub, real);
+});
+
 test("missing read_publications scope says which scope to add", async () => {
   const sh = fakeShopify({ override: { OnlineStorePublication: () => new Response(JSON.stringify({ errors: [{ message: "Access denied for publications field. Required access: `read_publications` access scope.", extensions: { code: "ACCESS_DENIED" } }] }), { status: 200 }) } });
   const res = await handleProducts(keyed({ store: "c3d" }), { env: envOf(), fetch: sh.fetch });
