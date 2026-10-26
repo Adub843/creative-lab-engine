@@ -369,3 +369,14 @@ textarea.field { resize: vertical; font-family: var(--f-body); }
 
 .legend-mark { display: inline-block; width: 10px; height: 10px; border-left: 2px dashed var(--warn); vertical-align: -1px; }
 .notes { margin: 0; padding-left: 18px; }
+.topo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.topo-node { display: grid; gap: 6px; align-content: start; background: var(--brand-soft, var(--surface)); border: 1px solid var(--line); border-left: 4px solid var(--brand, var(--line)); border-radius: 8px; padding: 10px 12px; min-width: 0; outline-offset: 3px; }
+.topo-node p { margin: 0; overflow-wrap: anywhere; }
+.topo-node.planned, .topo-layer.planned .topo-node { border-style: dashed; }
+.topo-head { display: flex; gap: 8px; justify-content: space-between; align-items: center; }
+.topo-to { display: flex; flex-wrap: wrap; gap: 6px; }
+.topo-to .chip { text-align: left; white-space: normal; }
+.topo-links .btn { font-size: 13px; }
+.topo-node.flash { animation: topo-flash 1.2s ease; }
+@keyframes topo-flash { 0%, 40% { box-shadow: 0 0 0 3px var(--brand, var(--accent)); } 100% { box-shadow: none; } }
+@media (prefers-reduced-motion: reduce) { .topo-node.flash { animation: none; box-shadow: 0 0 0 3px var(--brand, var(--accent)); } }

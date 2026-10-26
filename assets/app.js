@@ -1,4 +1,4 @@
-import { BRANDS, STATUS, SERVICES, ROUTES, CLEANUP } from "./data.js";
+import { BRANDS, STATUS, SERVICES, ROUTES, CLEANUP, TOPOLOGY } from "./data.js";
 
 // ---------- helpers ----------
 export const el = (tag, attrs = {}, ...kids) => {
@@ -245,6 +245,7 @@ function mapPage(initial = "all") {
   draw();
   return [
     header("Topology", "Service Map", "Where every site, store and tool lives and how they connect. Click anything to open it."),
+    topologySection(),
     el("section", { class: "stack" }, el("h2", {}, "How each business is routed"),
       ROUTES.map((r) => el("div", { class: `panel route brand-${r.brand} brand-band` }, el("h3", {}, BRANDS[r.brand].name),
         el("div", { class: "chain" }, r.hops.flatMap(([lab, id], i) => {
@@ -257,6 +258,33 @@ function mapPage(initial = "all") {
       el("div", { class: "tbl" }, el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, "What"), el("th", {}, "Why"), el("th", {}, "Suggestion"))),
         el("tbody", {}, CLEANUP.map((c) => el("tr", {}, el("td", {}, c.what), el("td", {}, c.why), el("td", {}, c.fix))))))),
   ];
+}
+
+// ---------- system topology ----------
+// Layer by layer, each node with what it feeds; a "feeds" button jumps to that node and flashes it.
+function topologySection() {
+  const nodes = new Map(TOPOLOGY.flatMap((l) => l.nodes.map((n) => [n.id, n])));
+  const jump = (id) => {
+    const t = document.getElementById(`topo-${id}`);
+    if (!t) return;
+    t.scrollIntoView({ behavior: "smooth", block: "center" });
+    t.focus({ preventScroll: true });
+    t.classList.remove("flash"); void t.offsetWidth; t.classList.add("flash");
+  };
+  const ext = (l) => l.url.startsWith("#") ? el("a", { class: "btn ghost", href: l.url }, l.label)
+    : el("a", { class: "btn ghost", href: l.url, target: "_blank", rel: "noopener" }, l.label, el("span", { class: "ext", "aria-hidden": "true" }, "↗"));
+  const card = (n) => el("article", { class: `topo-node brand-${n.brand}${n.planned ? " planned" : ""}`, id: `topo-${n.id}`, tabindex: "-1" },
+    el("div", { class: "topo-head" }, el("strong", {}, n.name), n.planned ? el("span", { class: "pill b-other" }, "Planned") : null),
+    el("span", { class: "muted small" }, n.where),
+    el("p", { class: "small" }, n.does),
+    n.to.length ? el("div", { class: "topo-to" }, n.to.map(([id, how]) => el("button", { class: "chip", type: "button", onclick: () => jump(id) },
+      "→ ", nodes.get(id)?.name ?? id, el("span", { class: "muted" }, ` · ${how}`)))) : null,
+    n.links.length ? el("div", { class: "row topo-links" }, n.links.map(ext)) : null);
+  return el("section", { class: "stack topology", "aria-labelledby": "topo-h" },
+    el("h2", { id: "topo-h" }, "System topology"),
+    el("p", { class: "muted" }, "Top to bottom: how a customer reaches each brand, where the money goes, what the console runs, where the code lives, and the home-lab pieces still to come. The two brands never share a store, theme or key."),
+    TOPOLOGY.map((l) => el("div", { class: `panel topo-layer${l.planned ? " planned" : ""}` },
+      el("h3", {}, l.layer), el("div", { class: "topo-grid" }, l.nodes.map(card)))));
 }
 
 async function productsPage() {

@@ -1203,6 +1203,26 @@ async function main() {
     assert.match(await page.locator(".route.brand-c3d").textContent(), /set customizable/);
   });
 
+  await step("service map: system topology shows every layer, jumps to what a node feeds, and fits at 390", async () => {
+    await page.click('a.nav[data-route="map"]');
+    await page.waitForSelector(".topology .topo-node");
+    const layers = await page.locator(".topo-layer h3").allTextContents();
+    assert.deepEqual(layers, ["Domains and DNS", "What customers use", "Stores (all payments)", "Back office (Cloudflare)", "Code and deploys (GitHub)", "Outside tools", "Planned: home lab"]);
+    assert.match(await page.locator("#topo-dns-c3d").textContent(), /DNS managed at Wix.*→ Charleston3D app · app\. CNAME/s);
+    assert.match(await page.locator("#topo-openclaw").textContent(), /Planned.*Beelink SER9 Pro/s);
+    await page.locator("#topo-gh-console .chip").click();
+    await page.waitForFunction(() => document.activeElement?.id === "topo-console");
+    assert.equal(await page.locator("#topo-console a", { hasText: "Open console" }).getAttribute("href"), "https://business-console.business-console.workers.dev");
+    const ids = await page.locator(".topo-to .chip").count();
+    assert.ok(ids >= 20, "every connection is drawn");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(150);
+    await noOverflow("topology 390");
+    if (SCREENS) await page.locator(".topology").screenshot({ path: path.join(SCREENS, "topology-390.png") });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    if (SCREENS) await page.locator(".topology").screenshot({ path: path.join(SCREENS, "topology-1280.png") });
+  });
+
   // ---------- marketing ----------
   const mkPosts = [];
   const mkFixes = [{ id: "20261026113000-aaaaaaaa", store: "c3d", source: "auto", kind: "seo", itemKind: "product", target: "gid://shopify/Product/5", title: "Palmetto Keychain", url: "https://charleston3d.com/products/palmetto-keychain", at: "2026-10-26T11:30:00Z",
