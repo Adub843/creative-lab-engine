@@ -861,7 +861,7 @@ test("listings: template has the catalog and a preset: cheapest tee per tier wit
     assert.deepEqual(cheaper, [], `${b.id} is the cheapest ${b.tier} tee`);
   }
   assert.deepEqual(t.defaults.blanks.find((d) => d.id === "gildan-64000").colors, ["Black", "White", "Navy", "Sport Grey"]);
-  assert.deepEqual(t.defaults.blanks[0].colors, ["Black", "White", "J. Navy", "Athletic Heather"]);
+  assert.deepEqual(t.defaults.blanks[0].colors, ["Black", "White", "Navy", "Sport Grey"]);
   assert.equal(listingTemplate(envOf({ ED_HANDLING_DAYS: "3-5" })).handlingDays, "3-5");
   assert.equal(listingTemplate(envOf({ ED_HANDLING_DAYS: "<b>soon</b>" })).handlingDays, "5-7", "odd values fall back");
   assert.equal((await handleListings(get({ store: "ed" }), { env: envOf() })).status, 401);
@@ -907,7 +907,7 @@ test("listings: happy path stages the image, creates Blank x Color x Size, publi
   const row = (v) => [...v.optionValues.map((o) => o.name), v.price, v.sku];
   assert.deepEqual(row(input.variants[0]), ["Gildan 5000 – Heavy Cotton Tee", "White", "S", "13.99", `${IMG_KEY}-gildan-5000-white-S`]);
   assert.deepEqual(row(input.variants[5]), ["Gildan 5000 – Heavy Cotton Tee", "Black", "2XL", "17.99", `${IMG_KEY}-gildan-5000-black-2XL`]);
-  assert.deepEqual(row(input.variants[8]), ["Bella+Canvas 3001 – Unisex Jersey Tee", "Navy", "2XL", "20.99", `${IMG_KEY}-bella-3001-navy-2XL`]);
+  assert.deepEqual(row(input.variants[8]), ["Bella+Canvas 3001 – Unisex Jersey Tee", "Navy", "2XL", "23.99", `${IMG_KEY}-bella-3001-navy-2XL`]);
   assert.ok(input.variants.every((v) => v.optionValues.map((o) => o.optionName).join() === "Blank,Color,Size"));
   assert.equal(new Set(input.variants.map((v) => v.sku)).size, 9, "SKUs unique");
   assert.ok(input.variants.every((v) => v.inventoryItem.tracked === false && v.inventoryPolicy === "CONTINUE"), "print on demand: stock not tracked");
@@ -1180,7 +1180,7 @@ test("the listing template builder (assets/listing.js) fits Shopify's limits and
   assert.ok(l.seoTitle.length <= 60, l.seoTitle);
   assert.ok(l.seoDescription.length <= 155, l.seoDescription);
   assert.match(l.descriptionHtml, /<h3>Choose your shirt<\/h3>/);
-  assert.match(l.descriptionHtml, /<li><strong>Fruit of the Loom 3930R – HD Cotton Tee<\/strong>: 100% cotton, 5 oz, classic fit<\/li>/);
+  assert.match(l.descriptionHtml, /<li><strong>Gildan 5000 – Heavy Cotton Tee<\/strong>: 100% cotton \(heathers are blends\), 5.3 oz, classic fit<\/li>/);
   assert.equal((l.descriptionHtml.match(/<li>/g) ?? []).length, 3, "one line per offered blank");
   assert.match(l.descriptionHtml, /Printed to order/);
   assert.match(l.descriptionHtml, /5-7 business days/);

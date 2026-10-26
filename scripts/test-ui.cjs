@@ -158,6 +158,23 @@ async function main() {
   // builds something the API would refuse fails here.
   const L = await import(path.join(ROOT, "lib/listings.mjs"));
   const TPL = L.listingTemplate(() => undefined);
+  // Expected shirts, colors, counts and prices come from data/blanks.json through the page's own helpers.
+  const LJ = await import(path.join(ROOT, "assets/listing.js"));
+  const CAT = TPL.catalog;
+  const blankOf = (id) => CAT.blanks.find((b) => b.id === id) ?? assert.fail(`${id} isn't in data/blanks.json`);
+  const defaultOf = (tier) => TPL.defaults.blanks.find((d) => blankOf(d.id).tier === tier) ?? assert.fail(`no default ${tier} tee`);
+  const inCatalogOrder = (id, names) => blankOf(id).colors.map((c) => c.name).filter((n) => names.includes(n));
+  const preset = (id) => ({ id, colors: inCatalogOrder(id, LJ.presetColors(blankOf(id))) });
+  const offerOf = (blanks, { sizes = LJ.SIZES, markup = 0 } = {}) => {
+    const p = LJ.variantsFor(CAT, { blanks, sizes, markup }).map((v) => v.price);
+    return { variants: p.length, colors: blanks.reduce((n, b) => n + b.colors.length, 0), lo: Math.min(...p), hi: Math.max(...p) };
+  };
+  const rx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const usd = (n) => rx(`$${n.toFixed(2)}`);
+  const VALUE = defaultOf("value").id, STANDARD = defaultOf("standard").id, PREMIUM = defaultOf("premium").id;
+  const DEFAULTS = TPL.defaults.blanks.map((d) => preset(d.id));
+  const EXTRA = "bella-3001"; // a tee that isn't preset, picked by hand below
+  const BIG = [EXTRA, "comfortcolors-1717", "nextlevel-3600"]; // three more tees: a listing over 100 variants
   const listings = [];
   let listingGets = 0;
   await page.route("**/api/listings**", async (route) => {
@@ -801,13 +818,21 @@ async function main() {
     assert.equal(await page.inputValue("#ls-markup"), "0");
     const picked = await page.locator(".lblank-head input:checked").evaluateAll((i) => i.map((x) => x.dataset.blank));
     assert.deepEqual(picked, TPL.defaults.blanks.map((b) => b.id));
-    assert.equal(picked.length, 3);
-    assert.deepEqual(await page.locator("#ls-colors-gildan-64000 input:checked").evaluateAll((i) => i.map((x) => x.value)), ["White", "Black", "Sport Grey", "Navy"]);
-    assert.equal(await page.locator("#ls-colors-gildan-5000").isHidden(), true, "colors only for offered shirts");
-    assert.match(await page.locator('.lblank[data-blank="gildan-5000"]').textContent(), /Gildan 5000 Heavy Cotton Tee.*Best price.*Classic.*from \$13\.99/s);
-    assert.match(await page.locator("#ls-count").textContent(), /^80 variants of 2,048$/);
-    assert.match(await page.locator("#ls-summary").textContent(), /3 shirts, 12 colors, \$13\.99 to \$\d+\.\d\d/);
-    assert.match(await page.locator("#ls-shirts").textContent(), /still placeholders/);
+    assert.equal(picked.length, Object.keys(CAT.tiers).length, "one tee per tier");
+    for (const d of DEFAULTS) assert.deepEqual(await page.locator(`#ls-colors-${d.id} input:checked`).evaluateAll((i) => i.map((x) => x.value)), d.colors, `${d.id} preset colors`);
+    assert.ok(!picked.includes(EXTRA), `${EXTRA} isn't preset`);
+    assert.equal(await page.locator(`#ls-colors-${EXTRA}`).isHidden(), true, "colors only for offered shirts");
+    for (const id of [VALUE, EXTRA]) {
+      const b = blankOf(id);
+      assert.match(await page.locator(`.lblank[data-blank="${id}"]`).textContent(),
+        new RegExp(`${rx(`${b.brand} ${b.style} ${b.name}`)}.*${rx(CAT.tiers[b.tier])}.*${rx(b.fit)}.*from ${usd(Math.min(...Object.values(b.prices)))}`, "s"));
+    }
+    const def = offerOf(DEFAULTS);
+    assert.ok(def.variants <= TPL.limits.standardVariants, "the preset fits a standard store");
+    assert.equal(await page.locator("#ls-count").textContent(), `${def.variants} variants of 2,048`);
+    assert.match(await page.locator("#ls-summary").textContent(), new RegExp(`^${DEFAULTS.length} shirts, ${def.colors} colors, ${usd(def.lo)} to ${usd(def.hi)}\\.`));
+    if (CAT.pricing.placeholder || CAT.costsAreEstimates) assert.match(await page.locator("#ls-shirts").textContent(), /still placeholders/);
+    else assert.doesNotMatch(await page.locator("#ls-shirts").textContent(), /placeholder/, "real prices carry no placeholder note");
     assert.equal(await page.locator('details.lgroup[data-type="tee"]').evaluate((d) => d.open), true);
     assert.equal(await page.locator('details.lgroup[data-type="hoodie"]').evaluate((d) => d.open), false);
     await page.click(".lmore summary");
@@ -824,21 +849,27 @@ async function main() {
   });
 
   await step("list a design: picking shirts and colors updates the counter, prices and copy; hand edits are kept", async () => {
-    await page.check("#ls-blank-gildan-5000");
-    assert.equal(await page.locator("#ls-colors-gildan-5000").isVisible(), true);
-    assert.deepEqual(await page.locator("#ls-colors-gildan-5000 input:checked").evaluateAll((i) => i.map((x) => x.value)), ["White", "Black", "Sport Grey", "Navy"], "preset colors for a newly picked shirt");
-    assert.match(await page.locator("#ls-count").textContent(), /^112 variants of 2,048\. Over 100: Shopify makes it in the background/);
+    await page.check(`#ls-blank-${EXTRA}`);
+    assert.equal(await page.locator(`#ls-colors-${EXTRA}`).isVisible(), true);
+    assert.deepEqual(await page.locator(`#ls-colors-${EXTRA} input:checked`).evaluateAll((i) => i.map((x) => x.value)), preset(EXTRA).colors, "preset colors for a newly picked shirt");
+    const more = offerOf([...DEFAULTS, preset(EXTRA)]).variants;
+    assert.ok(more > TPL.limits.standardVariants, `${more} variants: over 100 with ${EXTRA}`);
+    assert.match(await page.locator("#ls-count").textContent(), new RegExp(`^${more} variants of 2,048\\. Over 100: Shopify makes it in the background`));
     assert.equal(await page.locator("#ls-count").getAttribute("class"), "vcount warn");
-    await page.uncheck("#ls-blank-gildan-5000");
-    assert.match(await page.locator("#ls-count").textContent(), /^80 variants/);
-    await page.uncheck("#ls-blank-fruit-3930r");
+    await page.uncheck(`#ls-blank-${EXTRA}`);
+    assert.match(await page.locator("#ls-count").textContent(), new RegExp(`^${offerOf(DEFAULTS).variants} variants`));
+    await page.uncheck(`#ls-blank-${VALUE}`);
     await page.uncheck("#ls-color-gildan-h000-sport-grey");
     await page.check("#ls-color-gildan-h000-sand");
-    assert.match(await page.locator("#ls-count").textContent(), /^48 variants/, "2 shirts x 4 colors x 6 sizes");
+    const two = [preset(STANDARD), { id: PREMIUM, colors: inCatalogOrder(PREMIUM, [...preset(PREMIUM).colors.filter((c) => c !== "Sport Grey"), "Sand"]) }];
+    assert.equal(two[1].colors.length, 4, "swapped Sport Grey for Sand");
+    assert.match(await page.locator("#ls-count").textContent(), new RegExp(`^${offerOf(two).variants} variants`), "2 shirts x 4 colors x their sizes");
     await page.fill("#ls-markup", "2");
-    assert.match(await page.locator("#ls-summary").textContent(), /2 shirts, 8 colors, \$16\.99 to \$27\.99/);
+    const marked = offerOf(two, { markup: 2 });
+    assert.match(await page.locator("#ls-summary").textContent(), new RegExp(`^2 shirts, 8 colors, ${usd(marked.lo)} to ${usd(marked.hi)}\\.`));
     await page.click(".lmore summary");
-    assert.ok(!(await page.inputValue("#ls-desc")).includes("Fruit of the Loom"), "description follows the shirts offered");
+    assert.ok(!(await page.inputValue("#ls-desc")).includes(LJ.blankLabel(blankOf(VALUE))), "description follows the shirts offered");
+    assert.ok((await page.inputValue("#ls-desc")).includes(LJ.blankLabel(blankOf(STANDARD))));
     await page.fill("#ls-title", "Lowcountry Sunset Classic Tee");
     assert.match(await page.inputValue("#ls-desc"), /<strong>Lowcountry Sunset Classic<\/strong>/);
     assert.equal(await page.inputValue("#ls-seo-title"), "Lowcountry Sunset Classic Tee | Elevated Designs");
@@ -846,7 +877,7 @@ async function main() {
     await page.fill("#ls-title", "Lowcountry Sunset Tee");
     assert.equal(await page.inputValue("#ls-seo-desc"), "Hand-written SEO description for the Lowcountry Sunset tee.", "kept after a title change");
     await page.uncheck("#ls-size-3XL");
-    assert.match(await page.locator("#ls-count").textContent(), /^40 variants/);
+    assert.match(await page.locator("#ls-count").textContent(), new RegExp(`^${offerOf(two, { sizes: LJ.SIZES.filter((z) => z !== "3XL") }).variants} variants`));
     await page.fill("#ls-tags", "elevated-designs, sunset,  , lowcountry");
   });
 
@@ -864,9 +895,10 @@ async function main() {
     assert.equal(body.imageKey, "mh2k3x-0123abcd");
     assert.equal(body.title, "Lowcountry Sunset Tee");
     assert.equal(body.markup, 2);
-    assert.deepEqual(body.blanks, [{ id: "gildan-64000", colors: ["White", "Black", "Sport Grey", "Navy"] }, { id: "gildan-h000", colors: ["White", "Black", "Navy", "Sand"] }]);
+    const two = [preset(STANDARD), { id: PREMIUM, colors: inCatalogOrder(PREMIUM, [...preset(PREMIUM).colors.filter((c) => c !== "Sport Grey"), "Sand"]) }];
+    assert.deepEqual(body.blanks, two);
     assert.deepEqual(body.sizes, ["XS", "S", "M", "L", "XL", "2XL", "4XL", "5XL"]);
-    assert.equal(body.variants, 40, "server counted the same variants as the sheet");
+    assert.equal(body.variants, offerOf(two, { sizes: body.sizes }).variants, "server counted the same variants as the sheet");
     assert.deepEqual(body.tags, ["elevated-designs", "sunset", "lowcountry"]);
     assert.equal(body.seoDescription, "Hand-written SEO description for the Lowcountry Sunset tee.");
     assert.match(await page.locator("#ls-result").textContent(), /Live on theelevateddesignsllc\.com.*is live/s);
@@ -898,8 +930,10 @@ async function main() {
   await step("list a design: a big listing still being made shows Check again, which finishes it with the operation id", async () => {
     mode.listing = "pending";
     await openSheet("lowcountry");
-    for (const id of ["gildan-5000", "bella-3001", "comfortcolors-1717"]) await page.check(`#ls-blank-${id}`);
-    assert.match(await page.locator("#ls-count").textContent(), /^1[0-9]{2} variants/);
+    for (const id of BIG) await page.check(`#ls-blank-${id}`);
+    const big = offerOf([...DEFAULTS, ...BIG.map(preset)]).variants;
+    assert.ok(big > TPL.limits.standardVariants && big <= TPL.limits.variants, `${big} variants`);
+    assert.match(await page.locator("#ls-count").textContent(), new RegExp(`^${big} variants`));
     const before = listings.length;
     await page.click("#ls-submit");
     await page.waitForSelector("#ls-pending");
@@ -957,7 +991,7 @@ async function main() {
     assert.equal(await page.locator("#ls-submit").isDisabled(), true, "List it is off over the limit");
     await page.locator(".lblank-head input:checked").evaluateAll((is) => is.forEach((i) => i.click()));
     assert.equal(await page.locator(".lblank-head input:checked").count(), 0);
-    await page.check("#ls-blank-gildan-5000");
+    await page.check(`#ls-blank-${VALUE}`);
     await page.click(".lmore summary");
     for (const s of ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"]) await page.uncheck(`#ls-size-${s}`);
     await page.click("#ls-submit");
@@ -972,7 +1006,7 @@ async function main() {
   await step("list a design: closing a listing still being made and opening it again goes back to Check again, never a second List it", async () => {
     mode.listing = "pending";
     await openSheet("palmetto");
-    await page.check("#ls-blank-gildan-5000");
+    await page.check(`#ls-blank-${EXTRA}`);
     const before = listings.length;
     await page.click("#ls-submit");
     await page.waitForSelector("#ls-pending");
@@ -999,18 +1033,19 @@ async function main() {
     const before = listings.length;
     await page.click(".lmore summary");
     for (const s of ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"]) await page.uncheck(`#ls-size-${s}`);
-    await page.check("#ls-size-5XL"); // only the value tee (fruit-3930r) has 5XL among the defaults
-    assert.match(await page.locator("#ls-count").textContent(), /^4 variants/);
+    await page.check("#ls-size-5XL");
+    const with5 = DEFAULTS.filter((d) => blankOf(d.id).sizes.includes("5XL")), without5 = DEFAULTS.filter((d) => !with5.includes(d));
+    assert.deepEqual(with5.map((d) => d.id), [VALUE], "only the value tee has 5XL among the defaults");
+    assert.match(await page.locator("#ls-count").textContent(), new RegExp(`^${with5[0].colors.length} variants`));
     await page.click("#ls-submit");
     await page.waitForSelector("#ls-error:not([hidden]) >> text=comes in none of the chosen sizes");
-    assert.equal(await page.evaluate(() => document.activeElement?.id), "ls-blank-gildan-64000");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), `ls-blank-${without5[0].id}`, "focus on the first shirt with no chosen size");
     assert.equal(listings.length, before, "nothing sent");
-    await page.uncheck("#ls-blank-gildan-64000");
-    await page.uncheck("#ls-blank-gildan-h000");
+    for (const d of without5) await page.uncheck(`#ls-blank-${d.id}`);
     await page.click("#ls-submit");
     await page.waitForSelector("#ls-result");
     assert.equal(listings.at(-1).refused, undefined, `server would refuse: ${listings.at(-1).refused}`);
-    assert.equal(listings.at(-1).variants, 4);
+    assert.equal(listings.at(-1).variants, with5[0].colors.length);
     await page.click("#ls-done");
     PRODUCTS.ed.pop();
   });
@@ -1025,9 +1060,10 @@ async function main() {
     }
     assert.equal(listings.length, before, "nothing sent for a bad markup");
     await page.fill("#ls-markup", "-10");
-    assert.match(await page.locator("#ls-summary").textContent(), /\$3\.99 to /, "13.99 - 10");
+    const lo = offerOf(DEFAULTS).lo;
+    assert.match(await page.locator("#ls-summary").textContent(), new RegExp(`${usd(lo - 10)} to `), `${lo} - 10`);
     await page.fill("#ls-markup", "0.1");
-    assert.match(await page.locator("#ls-summary").textContent(), /\$14\.09 to /, "no float noise");
+    assert.match(await page.locator("#ls-summary").textContent(), new RegExp(`, ${usd(Math.round((lo + 0.1) * 100) / 100)} to `), "no float noise");
     await page.click("#ls-submit");
     await page.waitForSelector("#ls-result");
     assert.equal(listings.at(-1).markup, 0.1);
@@ -1081,11 +1117,11 @@ async function main() {
     assert.equal(await page.evaluate(() => document.activeElement?.id), "ls-markup");
     // Tab to a shirt not yet offered and pick it with Space
     let at = null;
-    for (let i = 0; i < 30 && at !== "ls-blank-gildan-5000"; i++) { await page.keyboard.press("Tab"); at = await page.evaluate(() => document.activeElement?.id); }
-    assert.equal(at, "ls-blank-gildan-5000", "Tab reaches each shirt");
+    for (let i = 0; i < 200 && at !== `ls-blank-${EXTRA}`; i++) { await page.keyboard.press("Tab"); at = await page.evaluate(() => document.activeElement?.id); }
+    assert.equal(at, `ls-blank-${EXTRA}`, "Tab reaches each shirt");
     await page.keyboard.press("Space");
-    assert.equal(await page.locator("#ls-blank-gildan-5000").isChecked(), true);
-    assert.match(await page.locator("#ls-count").textContent(), /^112 variants/);
+    assert.equal(await page.locator(`#ls-blank-${EXTRA}`).isChecked(), true);
+    assert.match(await page.locator("#ls-count").textContent(), new RegExp(`^${offerOf([...DEFAULTS, preset(EXTRA)]).variants} variants`));
     let reached = false;
     for (let i = 0; i < 300 && !reached; i++) { await page.keyboard.press("Tab"); reached = await page.evaluate(() => document.activeElement?.id === "ls-submit"); }
     assert.ok(reached, "List it reachable by Tab");
