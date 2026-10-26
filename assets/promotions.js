@@ -4,6 +4,7 @@
 // Email, automations, Flow, ad channel setup) is linked into the store's admin.
 import { el, toast } from "./app.js";
 import { SETUP_URL, STORES, api, initialStore, money, storeSwitcher } from "./api.js";
+import { confirmButton } from "./confirm.js";
 
 const KEY_REASON = "Promotions read and change the store, so they need the console key (the CONSOLE_KEY value set for this console).";
 const ext = (href, label, cls = "btn") => el("a", { class: cls, href, target: "_blank", rel: "noopener" }, label, el("span", { class: "ext", "aria-hidden": "true" }, "↗"));
@@ -11,18 +12,26 @@ const num = (n) => (n ?? 0).toLocaleString("en-US");
 const day = (iso) => (iso ? new Date(iso).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" }) : "–");
 const STATUS = { active: ["On", "s-live"], scheduled: ["Scheduled", "s-attn"], expired: ["Ended", "b-other"] };
 const post = (body) => api("/api/promotions", { method: "POST", key: true, reason: KEY_REASON, body });
-// A button that asks for a second click before it acts (no browser dialogs).
-function confirmButton(label, ask, act) {
-  const b = el("button", { class: "btn ghost", type: "button" }, label);
-  let armed = false, timer = null;
-  b.addEventListener("click", async () => {
-    if (!armed) { armed = true; b.textContent = ask; timer = setTimeout(() => { armed = false; b.textContent = label; }, 4000); return; }
-    clearTimeout(timer); armed = false; b.disabled = true;
-    try { await act(); } finally { b.disabled = false; b.textContent = label; }
-  });
-  return b;
-}
 const field = (label, input, hint) => el("label", { class: "stack", style: "gap:4px" }, el("span", { class: "small muted" }, label), input, hint ? el("span", { class: "muted small" }, hint) : null);
+// Checks a form's visible fields in our own words, next to the button, instead of the browser's
+// bubbles. Returns true when everything is fine; otherwise marks and focuses the first bad field.
+function checkForm(form, msg) {
+  let first = null;
+  for (const f of form.querySelectorAll("input, select, textarea")) {
+    const hidden = f.closest("[hidden]");
+    f.removeAttribute("aria-invalid");
+    if (hidden || f.checkValidity()) continue;
+    f.setAttribute("aria-invalid", "true");
+    if (!first) first = f;
+  }
+  if (!first) { msg.textContent = ""; return true; }
+  const name = first.closest("label")?.querySelector("span")?.textContent ?? "This field";
+  const v = first.validity;
+  msg.textContent = v.valueMissing ? `${name} is needed.` : v.rangeUnderflow || v.rangeOverflow ? `${name} must be from ${first.min || "0"} to ${first.max}.`
+    : v.tooLong ? `${name} is too long.` : first.dataset.hint ?? `${name} doesn't look right.`;
+  first.focus();
+  return false;
+}
 // datetime-local value -> ISO with the browser's offset, or "".
 const iso = (v) => (v ? new Date(v).toISOString() : "");
 
@@ -39,15 +48,20 @@ export async function renderPromotions() {
   const body = el("div", { class: "stack", style: "gap:16px" });
   const reload = el("button", { class: "btn ghost", type: "button" }, "Refresh");
   reload.addEventListener("click", () => load());
-  root.append(el("div", { class: "toolbar" }, storeSwitcher(state.store, (k) => { state.store = k; load(); }), reload), body);
+  const status = el("p", { class: "sr", role: "status" });
+  root.append(el("div", { class: "toolbar" }, storeSwitcher(state.store, (k) => { state.store = k; load(); }), reload), status, body);
 
   async function load() {
     const id = ++state.req, s = state.store;
     body.replaceChildren(el("p", { class: "muted" }, `Loading ${STORES[s].name} promotions…`));
+    reload.disabled = true;
+    status.textContent = `Loading ${STORES[s].name} promotions…`;
     let d;
     try { d = await api(`/api/promotions?store=${s}`, { key: true, reason: KEY_REASON }); }
     catch (e) {
       if (id !== state.req) return;
+      reload.disabled = false;
+      status.textContent = `Couldn't load ${STORES[s].name} promotions.`;
       const setup = e.code === "not_connected" || e.code === "bad_config";
       body.replaceChildren(el("div", { class: `state state-${setup ? "setup" : "error"}` },
         el("strong", {}, setup ? "This store isn't connected yet" : "Couldn't load promotions"), el("p", {}, e.message),
@@ -67,6 +81,8 @@ export async function renderPromotions() {
         panel("Sales channels", null, ...channelsView(d)),
         panel("Abandoned checkouts", el("span", { class: "muted small" }, "Latest 25"), ...abandonedView(d))),
       panel("Only in Shopify's admin", el("span", { class: "muted small" }, "Shopify doesn't let apps run these"), adminOnlyView(d)));
+    reload.disabled = false;
+    status.textContent = `${STORES[s].name} promotions loaded.`;
   }
 
   // ---------- discounts ----------
@@ -74,7 +90,7 @@ export async function renderPromotions() {
     const out = [];
     if (d.discounts.error) out.push(sectionError(d.discounts, "Discounts"));
     else if (!d.discounts.items.length) out.push(el("p", { class: "muted" }, "No discounts yet. Make the first one below."));
-    else out.push(el("div", { class: "tbl" }, el("table", {},
+    else out.push(el("div", { class: "tbl cards" }, el("table", {},
       el("thead", {}, el("tr", {}, ["Discount", "Code", "Status", "Used", "Runs", ""].map((h) => el("th", { scope: "col" }, h)))),
       el("tbody", {}, d.discounts.items.map((x) => {
         const [t, cls] = STATUS[x.status] ?? [x.status || "–", "b-other"];
@@ -89,22 +105,22 @@ export async function renderPromotions() {
           try { await post({ store: s, action: "discountDelete", id: x.id }); toast(`${x.title} deleted`); load(); } catch (e) { toast(e.message); }
         });
         return el("tr", {},
-          el("td", { class: "wrap" }, el("a", { href: x.admin, target: "_blank", rel: "noopener" }, x.title || "(untitled)"), x.summary ? el("div", { class: "muted small" }, x.summary) : null),
-          el("td", { class: "mono" }, x.automatic ? el("span", { class: "muted" }, "Automatic") : x.code ?? "–"),
-          el("td", {}, el("span", { class: `pill ${cls}` }, t)),
-          el("td", { class: "num" }, num(x.used)),
-          el("td", { class: "small" }, `${day(x.startsAt)} – ${x.endsAt ? day(x.endsAt) : "no end"}`),
-          el("td", {}, el("div", { class: "row" }, x.kind === "app" || x.kind === "bxgy" ? null : toggle, del)));
+          el("td", { class: "wrap lead" }, el("a", { href: x.admin, target: "_blank", rel: "noopener" }, x.title || "(untitled)"), x.summary ? el("div", { class: "muted small" }, x.summary) : null),
+          el("td", { class: "mono", "data-label": "Code" }, x.automatic ? el("span", { class: "muted" }, "Automatic") : x.code ?? "–"),
+          el("td", { "data-label": "Status" }, el("span", { class: `pill ${cls}` }, t)),
+          el("td", { class: "num", "data-label": "Used" }, num(x.used)),
+          el("td", { class: "small", "data-label": "Runs" }, `${day(x.startsAt)} – ${x.endsAt ? day(x.endsAt) : "no end"}`),
+          el("td", { class: "actions" }, el("div", { class: "row" }, x.kind === "app" || x.kind === "bxgy" ? null : toggle, del)));
       })))));
     if (!d.discounts.error || d.discounts.code !== "access_denied") out.push(discountForm(s, d));
     return out;
   }
   function discountForm(s, d) {
-    const form = el("form", { class: "stack fs", id: "promo-discount" });
+    const form = el("form", { class: "stack fs", id: "promo-discount", novalidate: true });
     const method = el("select", { class: "field", name: "method" }, el("option", { value: "code" }, "Code customers type in"), el("option", { value: "automatic" }, "Automatic (no code)"));
     const type = el("select", { class: "field", name: "type" }, el("option", { value: "percentage" }, "Percent off"), el("option", { value: "amount" }, "Dollars off the order"), el("option", { value: "shipping" }, "Free shipping"));
     const title = el("input", { class: "field", name: "title", maxlength: "255", placeholder: "e.g. Holiday market 15% off", required: true });
-    const code = el("input", { class: "field mono", name: "code", maxlength: "40", placeholder: "e.g. MARKET15", autocapitalize: "characters", spellcheck: "false" });
+    const code = el("input", { class: "field mono", name: "code", maxlength: "40", pattern: "[A-Za-z0-9_\\-]{3,40}", "data-hint": "Code must be 3 to 40 letters, numbers, dashes or underscores.", placeholder: "e.g. MARKET15", autocapitalize: "characters", spellcheck: "false" });
     const value = el("input", { class: "field", name: "value", type: "number", min: "0.01", step: "0.01", placeholder: "15" });
     const min = el("input", { class: "field", name: "minSubtotal", type: "number", min: "0.01", step: "0.01", placeholder: "Optional" });
     const starts = el("input", { class: "field", name: "startsAt", type: "datetime-local" });
@@ -121,6 +137,8 @@ export async function renderPromotions() {
       value.closest("label").hidden = type.value === "shipping";
       valueLabel.textContent = type.value === "amount" ? "Dollars off" : "Percent off";
       value.max = type.value === "percentage" ? "100" : "100000";
+      code.required = !auto;
+      value.required = type.value !== "shipping";
     };
     method.addEventListener("change", paint); type.addEventListener("change", paint);
     const save = el("button", { class: "btn brand", type: "submit" }, "Create discount");
@@ -134,6 +152,7 @@ export async function renderPromotions() {
     paint();
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
+      if (!checkForm(form, msg)) return;
       const auto = method.value === "automatic";
       const b = { store: s, action: "discount", method: method.value, type: type.value, title: title.value.trim() };
       if (!auto) { b.code = code.value.trim(); b.oncePerCustomer = once.checked; if (limit.value) b.usageLimit = Number(limit.value); }
@@ -165,7 +184,7 @@ export async function renderPromotions() {
         off);
     })));
     if (g.code === "access_denied") return out;
-    const form = el("form", { class: "stack fs", id: "promo-giftcard" });
+    const form = el("form", { class: "stack fs", id: "promo-giftcard", novalidate: true });
     const amount = el("input", { class: "field", type: "number", min: "1", max: "10000", step: "0.01", required: true, placeholder: "25" });
     const note = el("input", { class: "field", maxlength: "500", placeholder: "e.g. Market raffle prize (only you see this)" });
     const expires = el("input", { class: "field", type: "date" });
@@ -174,6 +193,7 @@ export async function renderPromotions() {
     form.append(el("legend", {}, "New gift card"), el("div", { class: "form-grid" }, field("Amount ($)", amount), field("Expires", expires, "Optional")), field("Note", note), el("div", { class: "row" }, save), msg);
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
+      if (!checkForm(form, msg)) return;
       save.disabled = true; msg.textContent = "Creating…";
       try {
         const r = await post({ store: s, action: "giftcard", amount: Number(amount.value), note: note.value.trim(), ...(expires.value ? { expiresOn: expires.value } : {}) });
@@ -192,20 +212,23 @@ export async function renderPromotions() {
     const out = [];
     const g = d.segments;
     if (g.error) { out.push(sectionError(g, "Customer groups")); return out; }
-    out.push(el("ul", { class: "plain stack", style: "gap:6px" }, g.items.map((x) => el("li", {},
-      el("a", { href: x.admin, target: "_blank", rel: "noopener" }, x.name), el("div", { class: "muted small mono wrap" }, x.query)))));
+    out.push(g.items.length ? el("ul", { class: "plain stack", style: "gap:6px" }, g.items.map((x) => el("li", {},
+      el("a", { href: x.admin, target: "_blank", rel: "noopener" }, x.name), el("div", { class: "muted small mono wrap" }, x.query))))
+      : el("p", { class: "muted" }, "No customer groups yet. Start from a template below."));
     const have = new Set(g.items.map((x) => x.name));
     const name = el("input", { class: "field", maxlength: "255", required: true, placeholder: "e.g. Charleston locals" });
     const query = el("textarea", { class: "field mono", rows: "2", maxlength: "2000", required: true, placeholder: "number_of_orders >= 2" });
-    const pick = el("select", { class: "field" }, el("option", { value: "" }, "Start from a template…"),
+    const pick = el("select", { class: "field" }, el("option", { value: "" }, "Pick one (optional)"),
       (d.templates ?? []).filter((t) => !have.has(t.name)).map((t, i) => el("option", { value: String(i) }, t.name)));
     const usable = (d.templates ?? []).filter((t) => !have.has(t.name));
     pick.addEventListener("change", () => { const t = usable[Number(pick.value)]; if (t) { name.value = t.name; query.value = t.query; } });
     const save = el("button", { class: "btn brand", type: "submit" }, "Create group");
     const msg = el("p", { class: "small", role: "status" });
-    const form = el("form", { class: "stack fs", id: "promo-segment" }, el("legend", {}, "New customer group"), pick, field("Name", name), field("Rule", query, "Shopify's segment rules. Use a group to aim a discount at it, or email it with Shopify Email."), el("div", { class: "row" }, save, msg));
+    const form = el("form", { class: "stack fs", id: "promo-segment", novalidate: true }, el("legend", {}, "New customer group"), field("Start from a template", pick), field("Name", name), field("Rule", query, "Shopify's segment rules. Use a group to aim a discount at it, or email it with Shopify Email."), el("div", { class: "row" }, save, msg));
     form.addEventListener("submit", async (e) => {
-      e.preventDefault(); save.disabled = true; msg.textContent = "Creating…";
+      e.preventDefault();
+      if (!checkForm(form, msg)) return;
+      save.disabled = true; msg.textContent = "Creating…";
       try { await post({ store: s, action: "segment", name: name.value.trim(), query: query.value.trim() }); toast(`Group "${name.value.trim()}" created`); load(); }
       catch (err) { msg.textContent = err.message; save.disabled = false; }
     });
@@ -219,15 +242,15 @@ export async function renderPromotions() {
     if (g.error) return [sectionError(g, "Campaigns")];
     if (!g.items.length) return [el("p", { class: "muted" }, "Nothing yet. Ads from the Google, Meta, TikTok or Pinterest apps and Shopify Email campaigns show up here once they run. For your own links (QR codes, posts), use the UTM link builder on the Marketing page."),
       el("div", { class: "row" }, el("a", { class: "btn ghost", href: `#marketing/${state.store}` }, "Open Marketing"), ext(`${d.admin}/marketing`, "Shopify marketing", "btn ghost"))];
-    return [el("div", { class: "tbl" }, el("table", {},
+    return [el("div", { class: "tbl cards" }, el("table", {},
       el("thead", {}, el("tr", {}, ["Activity", "Channel", "Status", "Started", "Ad spend", "UTM campaign"].map((h) => el("th", { scope: "col" }, h)))),
       el("tbody", {}, g.items.map((a) => el("tr", {},
-        el("td", { class: "wrap" }, a.title, a.app ? el("div", { class: "muted small" }, a.app) : null),
-        el("td", { class: "small" }, [a.channel, a.tactic].filter(Boolean).join(" · ") || a.source || "–"),
-        el("td", {}, el("span", { class: `pill ${a.status === "active" ? "s-live" : "b-other"}` }, a.status || "–")),
-        el("td", { class: "small" }, day(a.createdAt)),
-        el("td", { class: "num" }, a.adSpend ? money(a.adSpend.amount, a.adSpend.currency) : "–"),
-        el("td", { class: "small mono" }, a.utm?.campaign ?? "–"))))))];
+        el("td", { class: "wrap lead" }, a.title, a.app ? el("div", { class: "muted small" }, a.app) : null),
+        el("td", { class: "small", "data-label": "Channel" }, [a.channel, a.tactic].filter(Boolean).join(" · ") || a.source || "–"),
+        el("td", { "data-label": "Status" }, el("span", { class: `pill ${a.status === "active" ? "s-live" : "b-other"}` }, a.status || "–")),
+        el("td", { class: "small", "data-label": "Started" }, day(a.createdAt)),
+        el("td", { class: "num", "data-label": "Ad spend" }, a.adSpend ? money(a.adSpend.amount, a.adSpend.currency) : "–"),
+        el("td", { class: "small mono", "data-label": "UTM campaign" }, a.utm?.campaign ?? "–"))))))];
   }
 
   // ---------- channels ----------
@@ -245,7 +268,7 @@ export async function renderPromotions() {
   function abandonedView(d) {
     const g = d.abandoned;
     if (g.error) return [sectionError(g, "Abandoned checkouts")];
-    if (!g.items.length) return [el("p", { class: "muted" }, "None. Good.")];
+    if (!g.items.length) return [el("p", { class: "muted" }, "No abandoned checkouts right now.")];
     const total = g.items.reduce((a, c) => a + (c.total?.amount ?? 0), 0);
     return [el("p", { class: "small" }, el("strong", {}, money(total)), ` left in ${g.items.length} checkout${g.items.length === 1 ? "" : "s"}. The recovery email is Shopify's abandoned checkout automation (below); each link reopens that cart.`),
       el("ul", { class: "plain stack", style: "gap:6px" }, g.items.slice(0, 10).map((c) => el("li", {},

@@ -386,3 +386,26 @@ textarea.field { resize: vertical; font-family: var(--f-body); }
 .mono { font-family: var(--f-mono); }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 10px 12px; }
 .promotions td .row { flex-wrap: nowrap; }
+
+/* Marketing and Promotions polish */
+.jump { display: flex; flex-wrap: wrap; gap: 6px; position: sticky; top: 0; z-index: 5; background: var(--bg, var(--sunk)); padding: 6px 0; }
+.jump a { font-size: 12.5px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); text-decoration: none; color: inherit; white-space: nowrap; }
+.jump a:hover, .jump a:focus-visible { border-color: var(--brand); }
+.marketing .panel { scroll-margin-top: 48px; }
+.tiles-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (min-width: 1180px) { .tiles-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .tiles-6 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.btn.armed { outline: 2px solid var(--warn); outline-offset: 1px; }
+.field[aria-invalid="true"] { border-color: var(--bad); }
+/* Tables that turn into cards on a phone, each value under its column name. */
+@media (max-width: 640px) {
+  .tbl.cards { overflow: visible; }
+  .tbl.cards table, .tbl.cards tbody, .tbl.cards tr, .tbl.cards td { display: block; width: 100%; }
+  .tbl.cards thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .tbl.cards tr { border-bottom: 1px solid var(--line); padding: 8px 0; }
+  .tbl.cards td { border: 0; padding: 2px 0; text-align: left; }
+  .tbl.cards td[data-label] { display: flex; justify-content: space-between; gap: 12px; }
+  .tbl.cards td[data-label]::before { content: attr(data-label); color: var(--muted); font-size: 12.5px; }
+  .tbl.cards td.actions .row { flex-wrap: wrap; padding-top: 4px; }
+  .promotions td .row { flex-wrap: wrap; }
+}

@@ -1235,7 +1235,7 @@ async function main() {
       googleClicks: null, googleImpressions: null, bingClicks: k % 2, bingImpressions: 10, ga4Engagement: null, ga4EngagedTime: null, health: i < 2 ? 80 : null }; }),
     totals: { sessions: { last30: 690, prev30: 600, change: 15 }, cartAdds: { last30: 30, prev30: 30, change: 0 }, checkouts: { last30: 8, prev30: 10, change: -20 }, orders: { last30: 3, prev30: 0, change: null }, revenue: { last30: 73.5, prev30: 0, change: null }, googleClicks: { last30: 0, prev30: 0, change: null }, bingClicks: { last30: 15, prev30: 10, change: 50 } },
     changes: mkFixes.filter((f) => f.store === store).map((f) => ({ ...f, effect: f.id.startsWith("20261026") ? { days: 0, early: true, beforePerDay: 3, afterPerDay: null, change: null } : { days: 14, early: false, beforePerDay: 2, afterPerDay: 3, change: 50 } })),
-    sources: { shop: { available: true }, google: { connected: false, note: "Add GSC_SERVICE_ACCOUNT to chart Google clicks." }, bing: { connected: true }, ga4: { connected: false, note: "Add C3D_GA4_PROPERTY to chart GA4 engagement." } } });
+    sources: { shop: { available: true }, google: { connected: false, note: "Connect Google Search Console to chart Google clicks." }, bing: { connected: true }, ga4: { connected: false, note: "Connect Google Analytics to chart time on site and engagement." } } });
   let mkKeywords = ["3d printing charleston", "charleston souvenirs"];
   const mkAudit = (store) => ({
     store, site: store === "ed" ? "https://elevatedshirts.com" : "https://charleston3d.com", checkedAt: "2026-10-26T11:00:00Z",
@@ -1262,7 +1262,7 @@ async function main() {
     settings: { home_title: "Charleston3D | 3D Printed Gifts Made in Charleston, SC", bing_verification: "", city: "Charleston", ga4_id: "" } };
   const mkTraffic = { shop: { available: true, sources: [{ source: "search", name: "Google", sessions: 30, conversionRate: 3.3 }, { source: "direct", name: "", sessions: 10, conversionRate: null }],
       campaigns: [{ source: "qr", medium: "print", campaign: "ed-builder", sessions: 4, conversionRate: 0 }] },
-    google: { connected: false, note: "Add GSC_SERVICE_ACCOUNT to see Google searches." },
+    google: { connected: false, note: "Connect Google Search Console to see Google searches here (see the setup guide)." },
     bing: { connected: true, clicks: 3, impressions: 120, start: "2026-09-26", end: "2026-10-25", queries: [{ query: "charleston 3d printing", impressions: 60, clicks: 2, position: 7.5 }], opportunities: [{ query: "charleston 3d printing", position: 7.5 }] } };
   await page.route("**/api/marketing**", async (route) => {
     const req = route.request();
@@ -1277,7 +1277,7 @@ async function main() {
       if (part === "traffic") return json(200, mkTraffic);
       if (part === "changes") return json(200, { store, auto: true, logAvailable: true, changes: mkFixes.filter((f) => f.store === store) });
       if (part === "growth") return json(200, mkGrowth(store, Number(u.searchParams.get("days") || 90)));
-      if (part === "google") return json(200, store === "ed" ? { store, connected: false, note: "Add GSC_SERVICE_ACCOUNT to bring Google Search Console in here." } : { store, connected: true,
+      if (part === "google") return json(200, store === "ed" ? { store, connected: false, note: "Connect Google Search Console to see your pages, sitemaps and indexing here (see the setup guide)." } : { store, connected: true,
         property: "sc-domain:charleston3d.com", start: "2026-09-26", end: "2026-10-24", serviceAccount: "console@proj.iam.gserviceaccount.com",
         pages: [{ page: "https://charleston3d.com/products/rainbow-row-ornament", clicks: 4, impressions: 120, ctr: 3.3, position: 8.4 }],
         devices: [{ device: "mobile", clicks: 3, impressions: 90, ctr: 3.3, position: 9 }, { device: "desktop", clicks: 1, impressions: 30, ctr: 3.3, position: 7 }],
@@ -1332,7 +1332,7 @@ async function main() {
     await grow.locator(".chart").focus();
     await page.keyboard.press("End");
     assert.match(await grow.locator(".tip").textContent(), /Oct 26: \$0\.00 · Changed: Palmetto Keychain/);
-    assert.match(await grow.textContent(), /Add GSC_SERVICE_ACCOUNT to chart Google clicks/);
+    assert.match(await grow.textContent(), /Connect Google Search Console to chart Google clicks/);
     await grow.locator(".chip", { hasText: "30 days" }).click();
     await page.waitForFunction(() => [...document.querySelectorAll(".panel")].some((p) => /Growth/.test(p.textContent) && p.querySelector('.chip[aria-pressed="true"]')?.textContent === "Sales" && [...p.querySelectorAll(".chip")].find((c) => c.textContent === "30 days")?.getAttribute("aria-pressed") === "true"));
     await grow.locator('.chip[data-k="sessions"]').click();
@@ -1345,11 +1345,14 @@ async function main() {
     assert.match(await log.textContent(), /never changed.*Auto.*Palmetto Keychain.*SEO title: \(empty\) → Palmetto Keychain, Charleston SC \| Charleston3D.*Too early to tell.*You.*Ornaments.*Visits to this page: 2\/day before → 3\/day since \(\+50%\)/s);
     assert.ok(!/SEO description/.test(await log.locator(".check").first().textContent()), "unchanged fields aren't listed");
     await log.locator("button", { hasText: "Apply safe fixes now" }).click();
+    assert.equal(mkPosts.filter((p) => p.action === "autofix").length, 0, "the first click only asks");
+    await log.locator("button", { hasText: "Click again to change the live site" }).click();
     await page.waitForSelector("text=Applied 1 fix");
     await page.waitForSelector(".panel:has-text('Changes and what they did') >> text=Photo alt text");
     assert.deepEqual(mkPosts.find((p) => p.action === "autofix"), { store: "c3d", action: "autofix" });
     const orn = page.locator(".panel:has-text('Changes and what they did') .check", { hasText: "Ornaments" });
     await orn.locator("button", { hasText: "Undo" }).click();
+    await orn.locator("button", { hasText: "Click again to put it back" }).click();
     await page.waitForSelector("text=Put back: Ornaments");
     assert.deepEqual(mkPosts.find((p) => p.action === "undo"), { store: "c3d", action: "undo", changeId: "20261001113000-bbbbbbbb" });
     await page.waitForSelector(".panel:has-text('Changes and what they did') >> text=You undid this.");
@@ -1402,7 +1405,7 @@ async function main() {
   await step("marketing: traffic, QR campaigns and Bing searches", async () => {
     await page.waitForSelector("td:has-text('ed-builder')");
     assert.match(await page.locator("text=Closest to page 1").locator("..").textContent(), /charleston 3d printing.*#7\.5/);
-    assert.match(await page.locator("text=Add GSC_SERVICE_ACCOUNT to see Google searches").textContent(), /GSC_SERVICE_ACCOUNT/);
+    assert.match(await page.locator("text=Connect Google Search Console to see Google searches").first().textContent(), /setup guide/);
   });
 
   await step("marketing: UTM builder only allows the brand's own site", async () => {
@@ -1429,7 +1432,13 @@ async function main() {
 
   await step("marketing: Search Console pages, home page indexing, sitemap submit and page check", async () => {
     await page.click('.seg-btn[data-store="c3d"]');
-    const gsc = page.locator(".panel", { hasText: "Google Search Console" }).first();
+    await page.locator(".marketing .sr[role=status]", { hasText: "Charleston 3D marketing loaded." }).waitFor({ state: "attached" });
+    assert.equal(await page.locator(".marketing [aria-live]").count(), 0, "one status for the page, no live panels");
+    assert.ok(!(await page.locator("#mk-run").isDisabled()), "Check again is back once everything loaded");
+    await page.locator(".jump a", { hasText: "Google Search Console" }).click();
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "mk-google");
+    assert.match(page.url(), /#marketing/, "jump links don't change the route");
+    const gsc = page.locator("#mk-google");
     await gsc.locator("table").waitFor();
     assert.match(await gsc.textContent(), /mobile: 3 clicks \(75%\).*Indexed.*Submitted and indexed.*\/products\/rainbow-row-ornament.*3\.3%.*Google has no sitemap/s);
     await gsc.locator("button", { hasText: "Submit sitemap to Google" }).click();
@@ -1477,7 +1486,15 @@ async function main() {
 
   await step("promotions: create a code discount, turn one off (two clicks to delete), and add a customer group", async () => {
     const form = page.locator("#promo-discount");
+    await form.locator("button", { hasText: "Create discount" }).click();
+    await form.locator("text=Name (shown at checkout) is needed.").waitFor();
+    assert.equal(await form.locator('[name="title"]').getAttribute("aria-invalid"), "true");
     await form.locator('[name="title"]').fill("Holiday market");
+    await form.locator('[name="code"]').fill("no spaces allowed");
+    await form.locator('[name="value"]').fill("20");
+    await form.locator("button", { hasText: "Create discount" }).click();
+    await form.locator("text=Code must be 3 to 40 letters").waitFor();
+    assert.equal(prPosts.length, 0, "nothing is sent until the form is right");
     await form.locator('[name="code"]').fill("market20");
     await form.locator('[name="value"]').fill("20");
     await form.locator('[name="minSubtotal"]').fill("30");
@@ -1514,11 +1531,16 @@ async function main() {
   await step("promotions: switching stores, no overflow at 1280 and 390", async () => {
     await page.click('.seg-btn[data-store="ed"]');
     await page.waitForSelector("#promo-discount");
+    await page.locator(".promotions .sr[role=status]", { hasText: "Elevated Designs promotions loaded." }).waitFor({ state: "attached" });
     await noOverflow("promotions 1280");
     if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "promotions-1280.png"), fullPage: true }); }
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(150);
     await noOverflow("promotions 390");
+    // The discount table becomes cards, so the actions are on screen without sideways scrolling.
+    const del = page.locator(".panel", { hasText: "Discounts" }).first().locator("button", { hasText: "Delete" }).first();
+    const box = await del.boundingBox();
+    assert.ok(box && box.x + box.width <= 390, `Delete is on screen (${JSON.stringify(box)})`);
     if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "promotions-390.png"), fullPage: true }); }
     await page.setViewportSize({ width: 1280, height: 900 });
   });

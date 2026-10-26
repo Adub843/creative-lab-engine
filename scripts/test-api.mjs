@@ -1775,7 +1775,7 @@ test("marketing: a broken site lists each problem with a fix", async () => {
   for (const id of ["h1", "home-alt", "ga4", "clarity", "bing-verify", "google-verify", "robots-sitemap"]) assert.equal(levelOf(a, id), "warn", id);
   assert.equal(levelOf(a, "crawl-seo"), "pass", "Googlebot still allowed");
   assert.match(a.checks.find((c) => c.id === "crawl-ai").title, /GPTBot, ClaudeBot, PerplexityBot/);
-  assert.match(a.checks.find((c) => c.id === "indexnow-key").fix, /C3D_INDEXNOW_KEY/);
+  assert.match(a.checks.find((c) => c.id === "indexnow-key").fix, /IndexNow key in the console.s settings/);
   assert.ok(a.checks.filter((c) => c.level !== "pass").every((c) => c.fix || c.detail), "every problem says what's wrong or how to fix it");
   assert.ok(a.scores.overall < 50);
   const down = await MK.auditSite(fakeSite({ down: true }).fetch, { store: "c3d", site: "https://charleston3d.com", key: "c3dkey12345678", clock: () => NOW });
@@ -2099,7 +2099,7 @@ test("marketing: GA4 and Google daily figures come through the service account, 
   assert.equal(res.body.series.find((d) => d.date === dayOf(2)).googleClicks, 3);
   assert.ok(seen.some((u) => u.includes("properties/123456789:runReport")));
   const bad = await MK.handleMarketing(keyed({ store: "ed", part: "growth" }), mkCtx(f, { GSC_SERVICE_ACCOUNT: sa, ED_GA4_PROPERTY: "G-ABC" }, { kv: fakeKV(), now: () => NOW }));
-  assert.match(bad.body.sources.ga4.error, /numeric property id/);
+  assert.match(bad.body.sources.ga4.error, /Property details, not the G- code/);
   MK.clearGoogleToken();
 });
 
@@ -2332,7 +2332,7 @@ test("marketing: Google Search Console with a service account signs a JWT and re
   assert.ok(seen.at(-1).includes(encodeURIComponent("https://elevatedshirts.com/")), "ED reads its own property");
   assert.ok(!JSON.stringify(res.body).includes("PRIVATE KEY"));
   const broken = await MK.handleMarketing(keyed({ store: "c3d", part: "traffic" }), mkCtx(mkFetch(sh).fetch, { GSC_SERVICE_ACCOUNT: "{not json" }));
-  assert.match(broken.body.google.error, /valid JSON/);
+  assert.match(broken.body.google.error, /complete key file/);
   MK.clearGoogleToken();
 });
 
@@ -2645,7 +2645,7 @@ test("marketing: Search Console pages, devices, sitemaps, indexing, sitemap subm
   assert.equal(other.status, 400, "a page on the other brand's site is refused");
   const none = await MK.handleMarketing(mkGet({ store: "ed", part: "google" }), mkCtx(f, {}, { now: () => NOW }));
   assert.equal(none.body.connected, false);
-  assert.match(none.body.note, /GSC_SERVICE_ACCOUNT/);
+  assert.match(none.body.note, /Connect Google Search Console/);
   MK.clearGoogleToken();
 });
 

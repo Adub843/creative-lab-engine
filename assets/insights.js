@@ -44,7 +44,8 @@ export function chart({ points, type = "bar", format, title, height = 200 }) {
       const yy = y(nice * t);
       svg.append(s("line", { x1: x0, x2: x1, y1: yy, y2: yy, class: "grid" }), s("text", { x: x0 - 6, y: yy + 4, "text-anchor": "end", class: "axis" }, format(nice * t, true)));
     }
-    const ticks = points.length > 1 ? [0, Math.floor((points.length - 1) / 2), points.length - 1] : [0];
+    // Three day labels when there's room, first and last on a phone.
+    const ticks = points.length > 1 ? (W < 420 ? [0, points.length - 1] : [0, Math.floor((points.length - 1) / 2), points.length - 1]) : [0];
     for (const i of ticks) svg.append(s("text", { x: x0 + step * (i + 0.5), y: H - 6, "text-anchor": i === 0 ? "start" : i === points.length - 1 ? "end" : "middle", class: "axis" }, points[i]?.label ?? ""));
     if (type === "bar") {
       const bw = Math.max(1, Math.min(28, step - 2));
@@ -120,9 +121,10 @@ export async function renderInsights() {
   const days = el("select", { class: "field", id: "ins-days", "aria-label": "Period" },
     [["30", "Last 30 days"], ["90", "Last 90 days"], ["180", "Last 180 days"]].map(([v, l]) => el("option", { value: v, selected: v === state.days }, l)));
   const refresh = el("button", { class: "btn ghost", type: "button", id: "ins-refresh" }, "Refresh");
-  const body = el("div", { class: "stack", style: "gap:16px", "aria-live": "polite" });
+  const body = el("div", { class: "stack", style: "gap:16px" });
+  const status = el("p", { class: "sr", role: "status" });
   const switcher = storeSwitcher(state.store, (k) => { state.store = k; load(); });
-  root.append(el("div", { class: "toolbar" }, switcher, days, refresh), body);
+  root.append(el("div", { class: "toolbar" }, switcher, days, refresh), status, body);
   days.addEventListener("change", () => { state.days = days.value; load(); });
   refresh.addEventListener("click", () => load());
 
@@ -130,13 +132,17 @@ export async function renderInsights() {
     const id = ++state.req;
     const st = STORES[state.store];
     body.setAttribute("aria-busy", "true");
+    refresh.disabled = true;
+    status.textContent = `Loading ${st.name} insights…`;
     body.replaceChildren(el("section", { class: "panel" }, el("p", { class: "muted" }, `Loading ${st.name} insights…`)));
     try {
       const data = await api(`/api/insights?store=${state.store}&days=${state.days}`, { key: true, reason: "Insights show sales figures, so they need the console key (the CONSOLE_KEY value set for this console)." });
       if (id !== state.req) return;
       body.replaceChildren(...view(data));
+      status.textContent = `${st.name} insights loaded.`;
     } catch (e) {
       if (id !== state.req) return;
+      status.textContent = `Couldn't load ${st.name} insights.`;
       const setup = e.code === "not_connected" || e.code === "bad_config";
       const keyed = e.code === "cancelled" || e.code === "key_not_set";
       body.replaceChildren(el("section", { class: "panel" }, el("div", { class: `state state-${setup ? "setup" : "error"}`, role: setup ? null : "alert" },
@@ -146,7 +152,7 @@ export async function renderInsights() {
           setup ? el("a", { class: "btn", href: SETUP_URL, target: "_blank", rel: "noopener" }, "How to connect a store", el("span", { class: "ext", "aria-hidden": "true" }, "↗")) : null,
           el("button", { class: "btn", type: "button", onclick: () => load() }, keyed && e.code === "cancelled" ? "Enter key" : "Try again")))));
     } finally {
-      if (id === state.req) body.setAttribute("aria-busy", "false");
+      if (id === state.req) { body.setAttribute("aria-busy", "false"); refresh.disabled = false; }
     }
   }
 
