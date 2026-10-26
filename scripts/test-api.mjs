@@ -1523,6 +1523,8 @@ test("worker: a listing reads its design from the same KV image library", async 
     assert.equal(P.identify(idx, {}, { selectedOptions: opt({ Shirt: "Gildan H000 – Hammer Heavyweight Tee", Size: "XL" }) }).blankId, "gildan-h000");
     assert.equal(P.identify(idx, { productType: "T-Shirt", colors: ["Pepper", "Espresso"] }, { selectedOptions: opt({ Color: "Pepper", Size: "S" }) }).blankId, "comfortcolors-1717");
     assert.equal(P.identify(idx, { productType: "T-Shirt", colors: [] }, { selectedOptions: opt({ Size: "S" }) }).blankId, null, "size-only shirts aren't guessed");
+    assert.equal(P.identify(idx, { tags: ["builder-blank"], handle: "gildan-h000", colors: ["White"] }, { sku: "ED-H000-WHITE-S", selectedOptions: opt({ Color: "White", Size: "S" }) }).blankId, "gildan-h000", "a plain blank is named by its handle");
+    assert.equal(P.identify(idx, { tags: [], handle: "gildan-h000", colors: [] }, { sku: "x", selectedOptions: opt({ Size: "S" }) }).blankId, null, "only for builder blanks");
     assert.equal(P.identify(idx, { productType: "T-Shirt", colors: ["Black"] }, { selectedOptions: opt({ Color: "Black", Size: "S" }) }).blankId, null, "a color many blanks sell isn't enough");
   });
 
