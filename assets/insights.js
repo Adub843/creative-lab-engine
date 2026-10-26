@@ -13,6 +13,11 @@ const s = (tag, attrs = {}, ...kids) => {
 };
 const shortDate = (key) => new Date(`${key}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 const num = (n) => (n ?? 0).toLocaleString("en-US");
+// "10:05 AM EDT": the store's own time zone, by its short name rather than "America/New_York".
+const updatedAt = (iso, timeZone) => {
+  const opts = { hour: "numeric", minute: "2-digit", timeZoneName: "short" };
+  try { return new Date(iso).toLocaleTimeString("en-US", { ...opts, timeZone }); } catch { return new Date(iso).toLocaleTimeString("en-US", opts); }
+};
 const orders = (n) => `${num(n)} ${(n ?? 0) === 1 ? "order" : "orders"}`;
 
 function delta(pct, label = "vs previous period") {
@@ -136,7 +141,7 @@ export async function renderInsights() {
     status.textContent = `Loading ${st.name} insights…`;
     body.replaceChildren(el("section", { class: "panel" }, el("p", { class: "muted" }, `Loading ${st.name} insights…`)));
     try {
-      const data = await api(`/api/insights?store=${state.store}&days=${state.days}`, { key: true, reason: "Insights show sales figures, so they need the console key (the CONSOLE_KEY value set for this console)." });
+      const data = await api(`/api/insights?store=${state.store}&days=${state.days}`, { key: true, reason: "Insights show sales figures, so they need your console key (it's in your password manager, and in the console's settings in Cloudflare)." });
       if (id !== state.req) return;
       body.replaceChildren(...view(data));
       status.textContent = `${st.name} insights loaded.`;
@@ -162,10 +167,12 @@ export async function renderInsights() {
     const m0 = (v) => money(v, cur, 0);
     const out = [];
 
-    if (d.missingScopes?.length)
-      out.push(el("section", { class: "panel notice" }, el("h2", {}, "Add access to see everything"),
+    // Sales first; what's missing comes after them.
+    const scopeNotice = d.missingScopes?.length
+      ? el("section", { class: "panel notice" }, el("h2", {}, "Add access to see everything"),
         el("p", {}, "Add these scopes to this store's console app, then reinstall it (in Shopify admin under Settings > Apps and sales channels > Develop apps, or in the app's version in the Dev Dashboard):"),
-        el("ul", {}, d.missingScopes.map((m) => el("li", {}, el("code", {}, m.scope), ` for ${m.for}`)))));
+        el("ul", {}, d.missingScopes.map((m) => el("li", {}, el("code", {}, m.scope), ` for ${m.for}`))))
+      : null;
 
     // KPIs
     const p = d.periods;
@@ -176,7 +183,7 @@ export async function renderInsights() {
       el("span", { class: "muted small" }, `${orders(p[n].current.orders)} · ${money(p[n].current.aov, cur)} average`));
     const rc = d.repeatCustomers;
     out.push(el("section", { class: `panel brand-band brand-${d.store}` },
-      el("div", { class: "panel-head" }, el("h2", {}, `${st.name} sales`), el("span", { class: "muted small" }, `Updated ${new Date(d.generatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · ${d.timeZone}`)),
+      el("div", { class: "panel-head" }, el("h2", {}, `${st.name} sales`), el("span", { class: "muted small" }, `Updated ${updatedAt(d.generatedAt, d.timeZone)}`)),
       d.orders.available ? el("div", { class: "tiles" }, tile("7"), tile("30"), tile("90"),
         el("div", { class: "tile" }, el("span", { class: "eyebrow" }, "Repeat customers"),
           el("b", { class: "num" }, rc.rate == null ? "–" : `${rc.rate}%`),
@@ -184,7 +191,8 @@ export async function renderInsights() {
         el("div", { class: "tile" }, el("span", { class: "eyebrow" }, "Sessions"),
           d.sessions.available ? [el("b", { class: "num" }, num(d.sessions.total)), el("span", { class: "muted small" }, d.sessions.conversionRate == null ? "Conversion not reported" : `${d.sessions.conversionRate}% of visits ordered`)]
             : [el("b", {}, "–"), el("span", { class: "muted small" }, d.sessions.note ?? "Not available")]))
-        : el("p", { class: "muted" }, "Sales aren't visible yet: add the read_orders scope (see above).")));
+        : el("p", { class: "muted" }, "Sales aren't visible yet: add the read_orders scope (see below).")));
+    if (scopeNotice) out.push(scopeNotice);
 
     if (d.orders.available) {
       // Daily revenue
@@ -212,7 +220,7 @@ export async function renderInsights() {
       out.push(el("section", { class: `panel brand-${d.store}` },
         el("div", { class: "panel-head" }, el("h2", {}, "Online store visits"), el("span", { class: "muted small" }, `${num(d.sessions.total)} sessions`)),
         chart({ points: d.sessions.series.map((r) => ({ label: shortDate(r.date), value: r.sessions })), type: "line", title: "Daily online store sessions", format: (v) => num(Math.round(v)) }),
-        numbersTable("Daily sessions", ["Day", "Sessions", "Conversion"], d.sessions.series.slice().reverse().map((r) => [shortDate(r.date), num(r.sessions), r.conversionRate == null ? "–" : String(r.conversionRate)]))));
+        numbersTable("Daily sessions", ["Day", "Sessions", "Conversion"], d.sessions.series.slice().reverse().map((r) => [shortDate(r.date), num(r.sessions), r.conversionRate == null ? "–" : `${r.conversionRate}%`]))));
 
     if (d.orders.available) {
       const link = (r) => r.handle ? el("a", { href: `${st.site}/products/${encodeURIComponent(r.handle)}`, target: "_blank", rel: "noopener" }, r.title) : r.title;

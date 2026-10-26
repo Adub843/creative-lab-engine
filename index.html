@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Business Console</title>
+  <!-- Bricolage Grotesque, IBM Plex Sans and IBM Plex Mono aren't in the repo, and the CSP in worker/app.mjs
+       only allows fonts from fonts.gstatic.com, so these stay on Google Fonts for now. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -11,36 +13,39 @@
 </head>
 <body>
   <div class="app">
-    <nav class="side" aria-label="Console sections">
+    <nav class="side" id="side-nav" aria-label="Console sections">
       <a class="logo" href="#dashboard"><span class="logo-mark" aria-hidden="true">BC</span><span>Business Console</span></a>
-      <a class="nav" href="#dashboard" data-route="dashboard"><span class="ico" aria-hidden="true">▦</span><span>Dashboard</span></a>
-      <a class="nav nav-c3d" href="#c3d" data-route="c3d"><span class="ico" aria-hidden="true">◆</span><span>Charleston 3D</span></a>
-      <a class="nav nav-ed" href="#ed" data-route="ed"><span class="ico" aria-hidden="true">●</span><span>Elevated Designs</span></a>
-      <a class="nav" href="#products" data-route="products"><span class="ico" aria-hidden="true">▤</span><span>Products</span></a>
-      <a class="nav" href="#insights" data-route="insights"><span class="ico" aria-hidden="true">↗</span><span>Insights</span></a>
-      <a class="nav" href="#marketing" data-route="marketing"><span class="ico" aria-hidden="true">◎</span><span>Marketing</span></a>
-      <a class="nav" href="#promote" data-route="promote"><span class="ico" aria-hidden="true">%</span><span>Promotions</span></a>
-      <a class="nav" href="#studio" data-route="studio"><span class="ico" aria-hidden="true">✎</span><span>Design Studio</span></a>
-      <a class="nav" href="#map" data-route="map"><span class="ico" aria-hidden="true">⇄</span><span>Service Map</span></a>
-      <button class="theme" id="theme" type="button" aria-label="Switch light or dark">◐ <span>Theme</span></button>
+      <a class="nav" href="#dashboard" data-route="dashboard"><span class="ico" aria-hidden="true">▦</span><span class="lbl">Dashboard</span></a>
+      <a class="nav nav-c3d nav-extra" href="#c3d" data-route="c3d"><span class="ico" aria-hidden="true">◆</span><span class="lbl">Charleston 3D</span></a>
+      <a class="nav nav-ed nav-extra" href="#ed" data-route="ed"><span class="ico" aria-hidden="true">●</span><span class="lbl">Elevated Designs</span></a>
+      <a class="nav" href="#products" data-route="products"><span class="ico" aria-hidden="true">▤</span><span class="lbl">Products</span></a>
+      <a class="nav" href="#insights" data-route="insights"><span class="ico" aria-hidden="true">↗</span><span class="lbl">Insights</span></a>
+      <a class="nav" href="#marketing" data-route="marketing"><span class="ico" aria-hidden="true">◎</span><span class="lbl">Marketing</span></a>
+      <a class="nav nav-extra" href="#promote" data-route="promote"><span class="ico" aria-hidden="true">%</span><span class="lbl">Promotions</span></a>
+      <a class="nav" href="#studio" data-route="studio"><span class="ico" aria-hidden="true">✎</span><span class="lbl">Design Studio</span></a>
+      <a class="nav nav-extra" href="#map" data-route="map"><span class="ico" aria-hidden="true">⇄</span><span class="lbl">Service Map</span></a>
+      <button class="theme nav-extra" id="theme" type="button" aria-pressed="false" title="Switch between light and dark"><span class="ico" aria-hidden="true">◐</span> <span class="lbl">Dark theme</span></button>
+      <button class="nav-more" id="nav-more" type="button" aria-expanded="false" aria-controls="side-nav"><span class="ico" aria-hidden="true">⋯</span><span class="lbl">More</span></button>
     </nav>
     <main id="view" tabindex="-1"></main>
   </div>
 
-  <div class="scrim" id="scrim" hidden></div>
-  <aside class="drawer" id="drawer" hidden role="dialog" aria-labelledby="d-title">
+  <dialog class="drawer" id="drawer" aria-labelledby="d-title">
     <button class="btn ghost close" id="d-close" type="button">Close</button>
     <span class="eyebrow" id="d-kind"></span>
     <h2 id="d-title"></h2>
     <div class="tags" id="d-tags"></div>
     <div id="d-body" class="stack"></div>
-  </aside>
+  </dialog>
 
   <dialog class="palette" id="palette" aria-label="Jump to anything">
-    <input id="pal-q" type="search" placeholder="Jump to a page, store or site…" autocomplete="off">
-    <ul id="pal-list" role="listbox"></ul>
-    <p class="hint">Press <kbd>/</kbd> anywhere to open this. <kbd>Enter</kbd> opens the top result.</p>
+    <input id="pal-q" type="search" placeholder="Jump to a page, store or site…" autocomplete="off" aria-label="Jump to a page, store or site"
+      role="combobox" aria-expanded="true" aria-controls="pal-list" aria-autocomplete="list">
+    <ul id="pal-list" role="listbox" aria-label="Results"></ul>
+    <p class="hint"><span class="kbd-hint">Press <kbd>/</kbd> anywhere to open this. </span><kbd>↑</kbd> <kbd>↓</kbd> pick a result, <kbd>Enter</kbd> opens it.</p>
   </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <script type="module" src="assets/app.js"></script>
 </body>
