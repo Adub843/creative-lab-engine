@@ -679,7 +679,7 @@ const imgReq = (path, { method = "GET", headers = {}, body } = {}) => new Reques
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
 const EVIL_SVG = `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" onload="alert(document.domain)"><script>alert(1)</script></svg>`;
 
-test("images: list and writes need the key; files are public by unguessable key", async () => {
+test("images: list and writes need the key; private files need the key or a signed link", async () => {
   const blobs = fakeBlobs(), ctx = { blobs, env: envOf() };
   assert.equal((await handleImages(imgReq("/api/images"), ctx)).status, 401, "list needs the key");
   assert.equal((await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png" }, body: PNG }), ctx)).status, 401);
@@ -690,8 +690,27 @@ test("images: list and writes need the key; files are public by unguessable key"
   const list = await handleImages(imgReq("/api/images", { headers: KEYH }), ctx);
   assert.equal(list.status, 200);
   assert.equal((await list.json()).items[0].name, "a.png");
-  const file = await handleImages(imgReq(`/api/images/${item.key}`), ctx);
-  assert.equal(file.status, 200);
+  assert.equal((await handleImages(imgReq(`/api/images/${item.key}`), ctx)).status, 404, "a private image is hidden from strangers");
+  assert.equal((await handleImages(imgReq(`/api/images/${item.key}`, { headers: { "sec-fetch-site": "same-origin" } }), ctx)).status, 404,
+    "a forged browser header doesn't unlock a private image");
+  const { url } = (await (await handleImages(imgReq("/api/images", { headers: KEYH }), ctx)).json()).items[0];
+  assert.match(url, new RegExp(`^/api/images/${item.key}\\?exp=\\d+&sig=[\\w-]+$`), "the keyed list hands out a signed link");
+  assert.equal(item.url?.startsWith(`/api/images/${item.key}?exp=`), true, "the upload response has one too");
+  const file = await handleImages(imgReq(url), ctx);
+  assert.equal(file.status, 200, "the console's own <img> tags load it through the signed link");
+  assert.equal(file.headers.get("cache-control"), "private, max-age=3600", "shared caches never keep a private file");
+  const exp = new URL(url, "https://x").searchParams.get("exp");
+  const tampered = url.replace(/sig=.*/, "sig=" + "A".repeat(43));
+  assert.equal((await handleImages(imgReq(tampered), ctx)).status, 404, "a wrong signature is refused");
+  assert.equal((await handleImages(imgReq(url.replace(`exp=${exp}`, `exp=${Number(exp) + 1}`)), ctx)).status, 404, "changing the expiry breaks the signature");
+  assert.equal((await handleImages(imgReq(url), { blobs, env: envOf({ CONSOLE_KEY: "a-different-long-random-console-key-123" }) })).status, 404,
+    "links stop working when the console key changes");
+  const other = (await (await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", ...KEYH }, body: PNG }), ctx)).json()).item;
+  assert.equal((await handleImages(imgReq(url.replace(item.key, other.key)), ctx)).status, 404, "one image's link doesn't open another");
+  await handleImages(imgReq(`/api/images/${other.key}`, { method: "DELETE", headers: KEYH }), ctx);
+  const realNow = Date.now;
+  try { Date.now = () => realNow() + 3 * 60 * 60 * 1000; assert.equal((await handleImages(imgReq(url), ctx)).status, 404, "an expired link is refused"); }
+  finally { Date.now = realNow; }
   assert.equal(file.headers.get("content-type"), "image/png");
   assert.equal(file.headers.get("x-content-type-options"), "nosniff");
   assert.equal((await handleImages(imgReq(`/api/images/${item.key}`, { method: "DELETE" }), ctx)).status, 401);
@@ -716,11 +735,67 @@ test("images: an SVG with script is never rendered on the console's origin", asy
   const ctx = { blobs: fakeBlobs(), env: envOf() };
   const up = await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/svg+xml", ...KEYH }, body: EVIL_SVG }), ctx);
   assert.equal(up.status, 201);
-  const file = await handleImages(imgReq(`/api/images/${(await up.json()).item.key}`), ctx);
+  const file = await handleImages(imgReq(`/api/images/${(await up.json()).item.key}`, { headers: KEYH }), ctx);
   assert.equal(file.headers.get("content-type"), "image/svg+xml");
   assert.equal(file.headers.get("content-disposition"), "attachment");
   assert.match(file.headers.get("content-security-policy"), /default-src 'none'.*sandbox/);
   assert.equal(file.headers.get("x-content-type-options"), "nosniff");
+});
+
+test("images: the shirt app sees only public images, with CORS for its own origins", async () => {
+  const ctx = { blobs: fakeBlobs(), env: envOf({ BUILDER_ORIGINS: "https://shirts.example.com" }) };
+  const post = (h) => handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", ...KEYH, ...h }, body: PNG }), ctx);
+  const pub = (await (await post({ "x-filename": "pub.png", "x-public": "1", "x-category": "Holidays", "x-kind": "dtf", "x-source": "kittl" })).json()).item;
+  const priv = (await (await post({ "x-filename": "secret.png" })).json()).item;
+  assert.equal(pub.public, true); assert.equal(pub.category, "Holidays"); assert.equal(pub.kind, "dtf"); assert.equal(pub.source, "kittl"); assert.equal(priv.public, false);
+  const app = { origin: "https://shirts.example.com" };
+  const list = await handleImages(imgReq("/api/images?public=1", { headers: app }), ctx);
+  assert.equal(list.status, 200);
+  assert.equal(list.headers.get("access-control-allow-origin"), "https://shirts.example.com");
+  const items = (await list.json()).items;
+  assert.deepEqual(items.map((i) => i.name), ["pub.png"], "only public items are listed");
+  assert.equal(items[0].size, undefined, "public list carries only what the app needs");
+  assert.equal(items[0].url, undefined, "and no signed links");
+  for (const o of ["https://elevatedshirts.com", "https://www.elevatedshirts.com", "https://adub843.github.io"])
+    assert.equal((await handleImages(imgReq("/api/images?public=1", { headers: { origin: o } }), ctx)).headers.get("access-control-allow-origin"), o, o);
+  const file = await handleImages(imgReq(`/api/images/${pub.key}`, { headers: app }), ctx);
+  assert.equal(file.status, 200);
+  assert.equal(file.headers.get("access-control-allow-origin"), "https://shirts.example.com");
+  assert.equal(file.headers.get("cache-control"), "public, max-age=31536000, immutable");
+  assert.equal((await handleImages(imgReq(`/api/images/${priv.key}`, { headers: app }), ctx)).status, 404, "private file hidden from the app");
+  const evil = await handleImages(imgReq("/api/images?public=1", { headers: { origin: "https://evil.example" } }), ctx);
+  assert.equal(evil.headers.get("access-control-allow-origin"), null, "other origins get no CORS");
+  assert.equal((await handleImages(imgReq("/api/images", { headers: app }), ctx)).status, 401, "the full list still needs the key");
+  // flip an existing image public, then private again
+  const patch = (body, h = KEYH) => handleImages(imgReq(`/api/images/${priv.key}`, { method: "PATCH", headers: { "content-type": "application/json", ...h }, body: typeof body === "string" ? body : JSON.stringify(body) }), ctx);
+  assert.equal((await patch({ public: true })).status, 200);
+  assert.equal((await patch({ public: true }, {})).status, 401, "PATCH needs the key");
+  assert.equal((await patch("not json")).status, 400);
+  assert.equal((await patch("null")).status, 400);
+  assert.equal((await (await handleImages(imgReq("/api/images?public=1"), ctx)).json()).items.length, 2);
+  assert.equal((await patch({ public: false, category: "x".repeat(99), kind: "bogus" })).status, 200);
+  const meta = ctx.blobs.m.get(`image:${priv.key}`).metadata;
+  assert.equal(meta.public, false); assert.equal(meta.category.length, 60); assert.equal(meta.kind, undefined);
+  assert.equal(new Uint8Array(ctx.blobs.m.get(`image:${priv.key}`).data).length, PNG.length, "the file itself is kept");
+  assert.equal((await patch({ category: "" })).status, 200);
+  assert.equal(ctx.blobs.m.get(`image:${priv.key}`).metadata.category, undefined, "an empty category clears it");
+  assert.equal((await handleImages(imgReq(`/api/images/zz9-89abcdef`, { method: "PATCH", headers: KEYH, body: "{}" }), ctx)).status, 404);
+  assert.equal((await handleImages(imgReq(`/api/images/${priv.key}`, { method: "POST", headers: { ...app, ...KEYH } }), ctx)).headers.get("access-control-allow-origin"), null, "no CORS on writes");
+});
+
+test("images: the longest name, tags and shirt-app fields still fit Workers KV's 1024-byte metadata", async () => {
+  const ctx = { blobs: fakeBlobs(), env: envOf() };
+  const long = "é".repeat(200);
+  const up = await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", ...KEYH,
+    "x-filename": encodeURIComponent(long).slice(0, 400) + "a".repeat(200), "x-tags": "t".repeat(400), "x-public": "1", "x-category": "c".repeat(99), "x-kind": "dtf", "x-source": "s".repeat(50) }, body: PNG }), ctx);
+  assert.equal(up.status, 201, "saved, not refused by KV");
+  const { item } = await up.json();
+  const stored = ctx.blobs.m.get(`image:${item.key}`).metadata;
+  assert.ok(new TextEncoder().encode(JSON.stringify(stored)).length <= 1024);
+  assert.equal(stored.public, true); assert.equal(stored.category.length, 60); assert.equal(stored.source.length, 20);
+  assert.ok(stored.name.length > 0);
+  const p = await handleImages(imgReq(`/api/images/${item.key}`, { method: "PATCH", headers: KEYH, body: JSON.stringify({ name: "n".repeat(500), tags: "x".repeat(500) }) }), ctx);
+  assert.equal(p.status, 200, "a long PATCH is shortened to fit, not refused");
 });
 
 test("images: odd keys are 404, not a crash", async () => {
@@ -1311,13 +1386,13 @@ test("worker: image library on Workers KV keeps the same API (list, file, upload
   const env = workerEnv({ IMAGES: kv });
   assert.equal((await W.handleRequest(wreq("/api/images"), env)).status, 401, "list needs the key");
   assert.equal((await W.handleRequest(wreq("/api/images", { method: "POST", headers: { "content-type": "image/png" }, body: PNG }), env)).status, 401, "upload needs the key");
-  const keys = [];
+  const keys = [], urls = [];
   for (let i = 0; i < 5; i++) {
     const up = await W.handleRequest(wreq("/api/images", { method: "POST", headers: { "content-type": "image/png", "x-filename": `d${i}.png`, "x-tags": "palmetto", ...KEYH }, body: PNG }), env);
     assert.equal(up.status, 201);
     const { item } = await up.json();
-    assert.deepEqual(Object.keys(item).sort(), ["added", "key", "name", "size", "tags", "type"]);
-    keys.push(item.key);
+    assert.deepEqual(Object.keys(item).sort(), ["added", "key", "name", "public", "size", "tags", "type", "url"]);
+    keys.push(item.key); urls.push(item.url);
   }
   assert.ok([...kv.m.keys()].every((k) => k.startsWith("image:")), "stored under the image: prefix");
   const list = await W.handleRequest(wreq("/api/images", { headers: KEYH }), env);
@@ -1326,8 +1401,9 @@ test("worker: image library on Workers KV keeps the same API (list, file, upload
   assert.deepEqual(new Set(items.map((i) => i.name)), new Set(["d0.png", "d1.png", "d2.png", "d3.png", "d4.png"]));
   assert.ok(items.every((i) => i.type === "image/png" && i.size === PNG.byteLength && i.tags === "palmetto"));
   assert.equal(kv.ops.filter(([op]) => op === "get").length, 0, "listing reads no values, only KV metadata");
-  const file = await W.handleRequest(wreq(`/api/images/${keys[0]}`), env);
-  assert.equal(file.status, 200, "files need no key (unguessable keys)");
+  assert.equal((await W.handleRequest(wreq(`/api/images/${keys[0]}`), env)).status, 404, "a private file needs the key or its signed link");
+  const file = await W.handleRequest(wreq(urls[0]), env);
+  assert.equal(file.status, 200, "the console's <img> tags load it through the signed link");
   assert.equal(file.headers.get("content-type"), "image/png");
   assert.deepEqual(new Uint8Array(await file.arrayBuffer()), PNG);
   assert.equal(file.headers.get("access-control-allow-origin"), null, "no CORS: the console's own pages only");
@@ -1336,6 +1412,13 @@ test("worker: image library on Workers KV keeps the same API (list, file, upload
   assert.equal((await W.handleRequest(wreq(`/api/images/${keys[0]}`), env)).status, 404);
   assert.equal((await W.handleRequest(wreq(`/api/images/${keys[1]}`, { method: "PUT", headers: KEYH, body: PNG }), env)).status, 405);
   assert.equal(kv.m.size, 4);
+  // A public image (for the shirt app) loads for anyone, with CORS only for the app's origins.
+  const pub = (await (await W.handleRequest(wreq("/api/images", { method: "POST", headers: { "content-type": "image/png", "x-public": "1", ...KEYH }, body: PNG }), env)).json()).item;
+  const open = await W.handleRequest(wreq(`/api/images/${pub.key}`, { headers: { origin: "https://elevatedshirts.com" } }), env);
+  assert.equal(open.status, 200);
+  assert.equal(open.headers.get("access-control-allow-origin"), "https://elevatedshirts.com");
+  const plist = await W.handleRequest(wreq("/api/images?public=1"), env);
+  assert.deepEqual((await plist.json()).items.map((i) => i.key), [pub.key]);
 });
 
 test("worker: a KV write that fails (e.g. the free plan's daily limit) is a clear 503, not a crash", async () => {

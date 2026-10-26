@@ -122,6 +122,8 @@ Use `C3D_CLIENT_ID` and `C3D_CLIENT_SECRET` (or the `ED_` pair) instead of the `
 
 Then open the console's address and enter the console key when it asks.
 
+**The shirt app's art library.** In the Studio, images uploaded with **Show new uploads in the shirt builder app** ticked (or switched on later) are public: the Elevated Designs shirt app lists them from `/api/images?public=1` and loads them without the key. Everything else stays private to the console. The app's addresses (elevatedshirts.com, www.elevatedshirts.com and its GitHub Pages test address) are allowed to read the library already; add any other address with `npx wrangler secret put BUILDER_ORIGINS` (comma-separated, like `https://example.com`). To copy Kittl art in: `CONSOLE_URL=<the console's address> CONSOLE_KEY=<the key> node scripts/import-kittl.mjs <manifest.json> [category]`.
+
 **Updating later.** After changing the code, run `npm run deploy` again. Your secrets and images stay as they are.
 
 ### Deploy from GitHub instead (optional)

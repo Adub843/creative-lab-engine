@@ -66,7 +66,8 @@ export async function listImages() {
   return [...cloud, ...local].sort((a, b) => (b.added ?? 0) - (a.added ?? 0));
 }
 
-export const imageUrl = (item) => item.local ? localUrls.get(item.key) : `${API}/${encodeURIComponent(item.key)}`;
+// item.url is a signed link from the API, so private images load in <img> without the key.
+export const imageUrl = (item) => item.local ? localUrls.get(item.key) : item.url ?? `${API}/${encodeURIComponent(item.key)}`;
 
 async function upload(file, tags) {
   try {
