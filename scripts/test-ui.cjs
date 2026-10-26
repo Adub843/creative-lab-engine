@@ -20,7 +20,7 @@ const step = async (name, fn) => {
 };
 
 const product = (store, n, o = {}) => {
-  const site = store === "c3d" ? "https://charleston3d.com" : "https://theelevateddesignsllc.com";
+  const site = store === "c3d" ? "https://charleston3d.com" : "https://elevatedshirts.com";
   const shop = store === "c3d" ? "charleston3d" : "elevated-designs";
   const handle = o.handle ?? `${store}-item-${n}`;
   return { id: `gid://shopify/Product/${store === "c3d" ? 100 + n : 200 + n}`, handle, title: o.title ?? `Item ${n}`, type: o.type ?? "Gift",
@@ -190,13 +190,13 @@ async function main() {
     listings.at(-1).variants = input.variants.length;
     await new Promise((r) => setTimeout(r, 200));
     const handle = input.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    const product = { id: "gid://shopify/Product/555", handle, title: input.title, url: `https://theelevateddesignsllc.com/products/${handle}`, adminUrl: "https://admin.shopify.com/store/elevated-designs/products/555" };
+    const product = { id: "gid://shopify/Product/555", handle, title: input.title, url: `https://elevatedshirts.com/products/${handle}`, adminUrl: "https://admin.shopify.com/store/elevated-designs/products/555" };
     if (mode.listing === "error") return json(422, { error: "Shopify wouldn't create the product: Title has already been taken", code: "shopify_rejected" });
     if (mode.listing === "partly") return json(422, { error: "The product was made in Shopify but isn't on the Online Store yet: Publication not found Press List it again to retry, or publish it in Shopify.", code: "partly_listed", details: { product } });
-    if (mode.listing === "pending" && !body.operationId) return json(202, { store: "ed", pending: true, operationId: "gid://shopify/ProductSetOperation/42", message: "Shopify is still making this listing (it has a lot of variants). Press Check again in a moment to put it on theelevateddesignsllc.com." });
+    if (mode.listing === "pending" && !body.operationId) return json(202, { store: "ed", pending: true, operationId: "gid://shopify/ProductSetOperation/42", message: "Shopify is still making this listing (it has a lot of variants). Press Check again in a moment to put it on elevatedshirts.com." });
     if (mode.listing === "already") return json(200, { store: "ed", alreadyListed: true, republished: false, live: true, product, url: product.url, adminUrl: product.adminUrl, message: `This design is already listed as "${input.title}".` });
     PRODUCTS.ed.push({ ...product, type: input.productType, status: "ACTIVE", live: true, image: null, price: Math.min(...input.variants.map((v) => v.price)), currency: "USD", inventory: null, updatedAt: "2026-10-25T10:00:00Z" });
-    return json(201, { store: "ed", alreadyListed: false, live: true, product, url: product.url, adminUrl: product.adminUrl, indexNow: { sent: true }, message: `"${input.title}" is live on theelevateddesignsllc.com.` });
+    return json(201, { store: "ed", alreadyListed: false, live: true, product, url: product.url, adminUrl: product.adminUrl, indexNow: { sent: true }, message: `"${input.title}" is live on elevatedshirts.com.` });
   });
 
   const rows = () => page.locator(".prow");
@@ -285,7 +285,7 @@ async function main() {
     await page.waitForSelector('.prow:has-text("Lowcountry Tee")');
     assert.equal(await rows().count(), 2);
     assert.match(await page.locator("#prod-title").textContent(), /theelevateddesignsllc\.com/);
-    assert.equal(await page.locator(".prow", { hasText: "Lowcountry" }).locator('a[data-act="view"]').getAttribute("href"), "https://theelevateddesignsllc.com/products/lowcountry-tee");
+    assert.equal(await page.locator(".prow", { hasText: "Lowcountry" }).locator('a[data-act="view"]').getAttribute("href"), "https://elevatedshirts.com/products/lowcountry-tee");
     assert.ok(page.url().endsWith("#products/ed"));
     await sw("Pluff Mud").click();
     await page.waitForFunction(() => document.querySelector('.prow[data-id="gid://shopify/Product/202"] .plive > span')?.textContent === "Live");
@@ -305,7 +305,7 @@ async function main() {
     mode.ed = "empty";
     await page.click(".plist .state-setup button");
     await page.waitForSelector(".plist .state-empty");
-    assert.equal(await page.locator(".plist .state-empty a").getAttribute("href"), "https://theelevateddesignsllc.com/admin/products/new");
+    assert.equal(await page.locator(".plist .state-empty a").getAttribute("href"), "https://elevatedshirts.com/admin/products/new");
     mode.ed = "error";
     await page.click("#prod-refresh");
     await page.waitForSelector(".plist .state-error");
@@ -660,7 +660,7 @@ async function main() {
   });
 
   await step("dashboard and brand pages: store links go to the Shopify sites, not Netlify", async () => {
-    for (const [route, site] of [["dashboard", null], ["c3d", "https://charleston3d.com"], ["ed", "https://theelevateddesignsllc.com"]]) {
+    for (const [route, site] of [["dashboard", null], ["c3d", "https://charleston3d.com"], ["ed", "https://elevatedshirts.com"]]) {
       await page.click(`a.nav[data-route="${route}"]`);
       await page.waitForFunction((r) => document.querySelector(`a.nav[data-route="${r}"]`)?.getAttribute("aria-current") === "page", route);
       const hrefs = await page.locator("#view a[href]").evaluateAll((as) => as.map((a) => ({ t: a.textContent.trim(), h: a.getAttribute("href"), target: a.getAttribute("target") })));
@@ -678,7 +678,7 @@ async function main() {
     await page.waitForSelector("h1:has-text('Dashboard')");
     const quick = await page.locator(".quick a").evaluateAll((as) => as.map((a) => a.getAttribute("href")));
     assert.deepEqual(quick, ["https://charleston3d.com", "#products/c3d", "#insights/c3d", "https://charleston3d.com/admin",
-      "https://theelevateddesignsllc.com", "#products/ed", "#insights/ed", "https://theelevateddesignsllc.com/admin/orders"]);
+      "https://elevatedshirts.com", "#products/ed", "#insights/ed", "https://elevatedshirts.com/admin/orders"]);
   });
 
   await step("dashboard: jump palette, service drawer and theme switch", async () => {
@@ -925,7 +925,7 @@ async function main() {
     assert.deepEqual(body.tags, ["elevated-designs", "sunset", "lowcountry"]);
     assert.equal(body.seoDescription, "Hand-written SEO description for the Lowcountry Sunset tee.");
     assert.match(await page.locator("#ls-result").textContent(), /Live on theelevateddesignsllc\.com.*is live/s);
-    assert.equal(await page.locator("#ls-view").getAttribute("href"), "https://theelevateddesignsllc.com/products/lowcountry-sunset-tee");
+    assert.equal(await page.locator("#ls-view").getAttribute("href"), "https://elevatedshirts.com/products/lowcountry-sunset-tee");
     assert.equal(await page.locator("#ls-view").getAttribute("target"), "_blank");
     assert.equal(await page.locator("#ls-admin").getAttribute("href"), "https://admin.shopify.com/store/elevated-designs/products/555");
     assert.equal(await page.evaluate(() => document.activeElement?.id), "ls-view");
@@ -935,7 +935,7 @@ async function main() {
     await page.waitForSelector('.prow:has-text("Lowcountry Sunset Tee")'); // the product list reloaded
     assert.deepEqual(productGets.slice(gets), ["ed"], "Elevated Designs list reloaded once");
     assert.equal(await card("lowcountry").locator(".pill").textContent(), "Listed");
-    assert.equal(await card("lowcountry").locator('a[data-act="listed-view"]').getAttribute("href"), "https://theelevateddesignsllc.com/products/lowcountry-sunset-tee");
+    assert.equal(await card("lowcountry").locator('a[data-act="listed-view"]').getAttribute("href"), "https://elevatedshirts.com/products/lowcountry-sunset-tee");
   });
 
   await step("list a design: already listed says so with the links", async () => {
@@ -1161,7 +1161,7 @@ async function main() {
     await page.fill("#key-in", KEY);
     await page.click("#key-save");
     await page.waitForSelector("#ls-result");
-    assert.equal(await page.locator("#ls-view").getAttribute("href"), "https://theelevateddesignsllc.com/products/palmetto-moon-tee");
+    assert.equal(await page.locator("#ls-view").getAttribute("href"), "https://elevatedshirts.com/products/palmetto-moon-tee");
     await page.click("#ls-done");
   });
 

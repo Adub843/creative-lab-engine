@@ -21,8 +21,8 @@ export const BRANDS = {
   ed: {
     name: "Elevated Designs",
     tagline: "Custom apparel and print designs, sold on a hand-coded Shopify theme with Shopify checkout",
-    site: "https://theelevateddesignsllc.com",
-    admin: { label: "Shopify admin", url: "https://theelevateddesignsllc.com/admin" },
+    site: "https://elevatedshirts.com",
+    admin: { label: "Shopify admin", url: "https://elevatedshirts.com/admin" },
   },
   other: { name: "Other projects", tagline: "Video, content and personal apps" },
 };
@@ -60,14 +60,14 @@ export const SERVICES = [
     does: "Created but never launched. Probably meant as a print cost ledger.", links: nlAdmin("layerledger-agxn") },
 
   // Elevated Designs
-  { id: "edsite", name: "theelevateddesignsllc.com", brand: "ed", kind: "Website · Shopify theme", status: "attn",
+  { id: "edsite", name: "elevatedshirts.com", brand: "ed", kind: "Website · Shopify theme", status: "attn",
     does: "Elevated Designs' storefront: its own hand-coded Shopify theme, separate from Charleston 3D, running on the Elevated Designs Shopify store. Products and checkout come live from Shopify.",
     source: "GitHub: Adub843/elevated-designs-site (branch claude/ed-theme)",
     note: "Being built on branch claude/ed-theme. The store keeps its current theme until you preview and approve the new one.",
     links: [{ label: "Products on the site", url: "#products/ed" }, { label: "Insights", url: "#insights/ed" },
       { label: "Open live site", url: BRANDS.ed.site }, { label: "Themes in Shopify", url: `${BRANDS.ed.site}/admin/themes` }] },
   { id: "shop", name: "Elevated Designs store", brand: "ed", kind: "Store backend · Shopify", status: "live",
-    does: "Shopify store (Basic plan) that holds the Elevated Designs catalog, hosts theelevateddesignsllc.com and takes payment.",
+    does: "Shopify store (Basic plan) that holds the Elevated Designs catalog, hosts elevatedshirts.com and takes payment.",
     note: "The store's contact email is staticupload170@gmail.com, not the main Gmail.",
     links: [BRANDS.ed.admin, { label: "Open live store", url: BRANDS.ed.site },
       { label: "Products", url: `${BRANDS.ed.site}/admin/products` },

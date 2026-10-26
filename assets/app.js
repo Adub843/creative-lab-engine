@@ -155,7 +155,7 @@ const C3D_LINKS = [
   ["Print trends", "print-trends", "https://print-trends.netlify.app"],
 ];
 const ED_LINKS = [
-  ["Website", "theelevateddesignsllc.com · Shopify", BRANDS.ed.site],
+  ["Website", "elevatedshirts.com · Shopify", BRANDS.ed.site],
   ["Products", "Pick what's on the site", "#products/ed"],
   ["Insights", "Sales, visits, forecast", "#insights/ed"],
   ["Orders", "Shopify admin", `${BRANDS.ed.site}/admin/orders`],

@@ -1,7 +1,7 @@
 // "List a design" on the Elevated Designs Products page: every design in the online image library
 // gets an "Add to Elevated Designs" button. It opens a short sheet filled in from the listing
 // template (assets/listing.js): which blanks (shirts) to offer and in which colors, a markup on
-// the catalog prices, and the copy. One "List it" puts it on theelevateddesignsllc.com, live
+// the catalog prices, and the copy. One "List it" puts it on elevatedshirts.com, live
 // straight away, with Blank, Color and Size options. Elevated Designs only: the server refuses any
 // other store, and Charleston 3D never shows this panel.
 import { el, toast } from "./app.js";

@@ -5,7 +5,7 @@ One place to run Charleston 3D and Elevated Designs: dashboard, brand pages, a m
 ## How it all fits together
 
 - **Charleston 3D** (charleston3d.com): everything 3D printing. Its own hand-coded Shopify theme in `Adub843/charleston3d-site` (branch `claude/shopify-theme`), Charleston 3D only. Products show a "Name to print" field only when this console marks them **Customizable** (the `customizable` tag); free custom requests come in through the theme's Custom request page as $0 orders.
-- **Elevated Designs** (theelevateddesignsllc.com): apparel and prints. Its own Shopify store and its own theme, in `Adub843/elevated-designs-site`. This console lists designs on it in one click (Blank x Color x Size).
+- **Elevated Designs** (elevatedshirts.com): apparel and prints. Its own Shopify store and its own theme, in `Adub843/elevated-designs-site`. This console lists designs on it in one click (Blank x Color x Size).
 - **The shirt app** (built separately) takes customers' shirt designs; its orders pay through the Elevated Designs Shopify checkout.
 - **This console** is private (behind `CONSOLE_KEY`): one page per brand, one image library, publishing and Insights. The two brands never share a request: every call names its store (`c3d` or `ed`) and the server refuses brand-specific actions on the other store.
 
@@ -51,7 +51,7 @@ On the Elevated Designs Products page (also **List a design** on the Elevated De
 2. reads the image from the library and uploads it to Shopify (`stagedUploadsCreate`, then a POST to the staged address);
 3. creates the product with `productSet`: vendor Elevated Designs, Active, three options **Blank** ("Gildan 5000 – Heavy Cotton Tee"), **Color** and **Size**, one variant per shirt, color and size with SKU `<design key>-<blank id>-<color slug>-<size>` (for example `palmetto-moon-gildan-5000-sport-grey-2XL`), stock not tracked (printed to order), description, SEO and tags;
 4. publishes it to the Online Store and pings IndexNow;
-5. shows the live link (`https://theelevateddesignsllc.com/products/<handle>`) and the Shopify admin link.
+5. shows the live link (`https://elevatedshirts.com/products/<handle>`) and the Shopify admin link.
 
 The description has a short intro, a **Choose your shirt** list of the offered blanks with their fabric, weight and fit (from the catalog), the size range, and says the shirt is printed to order and ships in `ED_HANDLING_DAYS` business days. It makes no other claims. SVG designs can't be Shopify product photos; export them as PNG first.
 
@@ -150,7 +150,7 @@ Set each of these as a Worker secret, from the console's folder: `npx wrangler s
 | `ED_SHOPIFY_DOMAIN` | Elevated Designs' `something.myshopify.com` domain |
 | `ED_ADMIN_TOKEN` | Admin API access token for Elevated Designs, **or** `ED_CLIENT_ID` + `ED_CLIENT_SECRET` |
 | `C3D_SITE_URL` | Optional. Public site address, default `https://charleston3d.com` |
-| `ED_SITE_URL` | Optional. Public site address, default `https://theelevateddesignsllc.com` |
+| `ED_SITE_URL` | Optional. Public site address, default `https://elevatedshirts.com` |
 | `CONSOLE_KEY` | **Required.** A long random password, at least 16 characters (there's no lockout on wrong guesses, so make it long). The product list, publishing, the image library list, uploads and Insights are refused until it's set; enter the same value when the console asks for it (kept for that browser tab only). |
 | `ED_HANDLING_DAYS` | Optional. Business days to ship, used in new Elevated Designs listings, like `5-7` (the default) or `3-5`. |
 | `INDEXNOW_KEY` | Optional. An IndexNow key, used for both stores. In each store add a page with handle `indexnow-key` and template `page.indexnow`, paste the same key in Theme settings > Search and AI, and add a URL redirect from `/<key>.txt` to `/pages/indexnow-key`. Pings use `keyLocation=https://<site>/<key>.txt`, because a key under `/pages/` would only cover `/pages/` URLs, not products. |

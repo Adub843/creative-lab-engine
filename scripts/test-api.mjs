@@ -167,7 +167,7 @@ test("unpublish: removes from Online Store only", async () => {
   assert.equal(res.body.live, false);
   assert.equal(res.body.product.status, "ACTIVE");
   assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["OnlineStorePublication", "ConsoleProduct", "ConsoleUnpublish"]);
-  assert.equal(res.body.url, "https://theelevateddesignsllc.com/products/name-ornament");
+  assert.equal(res.body.url, "https://elevatedshirts.com/products/name-ornament");
 });
 
 test("no INDEXNOW_KEY: nothing is pinged", async () => {
@@ -756,7 +756,7 @@ test("images: the shirt app sees only public images, with CORS for its own origi
   assert.deepEqual(items.map((i) => i.name), ["pub.png"], "only public items are listed");
   assert.equal(items[0].size, undefined, "public list carries only what the app needs");
   assert.equal(items[0].url, undefined, "and no signed links");
-  for (const o of ["https://elevatedshirts.com", "https://www.elevatedshirts.com", "https://adub843.github.io"])
+  for (const o of ["https://design.elevatedshirts.com", "https://elevatedshirts.com", "https://www.elevatedshirts.com", "https://adub843.github.io"])
     assert.equal((await handleImages(imgReq("/api/images?public=1", { headers: { origin: o } }), ctx)).headers.get("access-control-allow-origin"), o, o);
   const file = await handleImages(imgReq(`/api/images/${pub.key}`, { headers: app }), ctx);
   assert.equal(file.status, 200);
@@ -957,9 +957,9 @@ test("listings: happy path stages the image, creates Blank x Color x Size, publi
   const res = await handleListings(post(LISTING), await listCtx(sh));
   assert.equal(res.status, 201, JSON.stringify(res.body));
   assert.equal(res.body.alreadyListed, false);
-  assert.equal(res.body.url, "https://theelevateddesignsllc.com/products/lowcountry-sunset-tee");
+  assert.equal(res.body.url, "https://elevatedshirts.com/products/lowcountry-sunset-tee");
   assert.equal(res.body.adminUrl, "https://admin.shopify.com/store/elevated-designs/products/555");
-  assert.match(res.body.message, /is live on theelevateddesignsllc\.com/);
+  assert.match(res.body.message, /is live on elevatedshirts\.com/);
   assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["OnlineStorePublication", "ConsoleListingLookup", "ConsoleStagedUpload", "ConsoleListingCreate", "ConsolePublish"]);
   assert.ok(sh.calls.filter((c) => c.op).every((c) => c.domain === "elevated-designs.myshopify.com"), "only the ED store is touched");
   assert.equal(sh.calls.find((c) => c.op === "ConsoleListingLookup").variables.q, `tag:"design:${IMG_KEY}"`);
@@ -991,8 +991,8 @@ test("listings: happy path stages the image, creates Blank x Color x Size, publi
   assert.ok(input.variants.every((v) => v.inventoryItem.tracked === false && v.inventoryPolicy === "CONTINUE"), "print on demand: stock not tracked");
   assert.deepEqual(input.files, [{ originalSource: `${STAGED_URL}tmp/123/lowcountry-sunset-tee.png`, contentType: "IMAGE", alt: "Lowcountry Sunset Tee", filename: "lowcountry-sunset-tee.png" }]);
   assert.equal(sh.calls.find((c) => c.op === "ConsolePublish").variables.id, "gid://shopify/Product/555");
-  assert.deepEqual(sh.calls.find((c) => c.indexnow).indexnow.urlList, ["https://theelevateddesignsllc.com/products/lowcountry-sunset-tee"]);
-  assert.equal(sh.calls.find((c) => c.indexnow).indexnow.host, "theelevateddesignsllc.com");
+  assert.deepEqual(sh.calls.find((c) => c.indexnow).indexnow.urlList, ["https://elevatedshirts.com/products/lowcountry-sunset-tee"]);
+  assert.equal(sh.calls.find((c) => c.indexnow).indexnow.host, "elevatedshirts.com");
   assert.equal(res.body.indexNow.sent, true);
   noLeak(res);
 });
@@ -1013,7 +1013,7 @@ test("listings: already listed returns the existing product with a link, and cre
   assert.equal(res.body.alreadyListed, true);
   assert.equal(res.body.republished, false);
   assert.match(res.body.message, /already listed as "Lowcountry Sunset Tee"/);
-  assert.equal(res.body.url, "https://theelevateddesignsllc.com/products/lowcountry-sunset-tee");
+  assert.equal(res.body.url, "https://elevatedshirts.com/products/lowcountry-sunset-tee");
   assert.equal(res.body.adminUrl, "https://admin.shopify.com/store/elevated-designs/products/777");
   assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["OnlineStorePublication", "ConsoleListingLookup"]);
   assert.ok(!sh.calls.some((c) => c.upload || c.indexnow));
@@ -1144,7 +1144,7 @@ test("listings: the description check keeps the generated copy and ordinary form
   const { unsafeHtml, listingTemplate } = await import("../lib/listings.mjs");
   const { buildListing } = await import("../assets/listing.js");
   assert.equal(unsafeHtml(buildListing({ name: "sunset_final.png" }, listingTemplate(envOf())).descriptionHtml), false);
-  assert.equal(unsafeHtml("<p>Soft &amp; comfy. <a href=\"https://theelevateddesignsllc.com/pages/faq\">Sizing</a> x < y, on sale</p><!-- note -->"), false);
+  assert.equal(unsafeHtml("<p>Soft &amp; comfy. <a href=\"https://elevatedshirts.com/pages/faq\">Sizing</a> x < y, on sale</p><!-- note -->"), false);
 });
 
 test("listings: stagedUploadsCreate userErrors are 422 and stop before the upload", async () => {
@@ -1215,7 +1215,7 @@ test("listings: over 100 variants runs productSet asynchronously and polls until
   assert.deepEqual(slept, [1000, 1000]);
   assert.equal(sh.calls.find((c) => c.op === "ConsoleListingOperation").variables.id, OPERATION);
   assert.equal(sh.calls.find((c) => c.op === "ConsolePublish").variables.id, "gid://shopify/Product/556");
-  assert.equal(res.body.url, "https://theelevateddesignsllc.com/products/big-tee");
+  assert.equal(res.body.url, "https://elevatedshirts.com/products/big-tee");
 });
 
 test("listings: still running after the wait is 202 with the operation id; asking again with it finishes, without a second product", async () => {
