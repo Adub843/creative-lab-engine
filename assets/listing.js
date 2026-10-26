@@ -112,5 +112,5 @@ export function buildListing(item, tpl) {
   const blanks = tpl.defaults.blanks.map((b) => ({ id: b.id, colors: [...b.colors] }));
   const sizes = [...tpl.defaults.sizes];
   const base = { title, handlingDays: tpl.handlingDays, catalog: tpl.catalog, blanks, sizes };
-  return { title, blanks, sizes, markup: 0, productType: tpl.productType, tags: tagsFor(item, tpl), descriptionHtml: describe(base), ...seoFor(base) };
+  return { title, blanks, sizes, markup: tpl.defaults.markup ?? 0, productType: tpl.productType, tags: tagsFor(item, tpl), descriptionHtml: describe(base), ...seoFor(base) };
 }

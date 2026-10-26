@@ -25,3 +25,12 @@ run_worker_first = true
 [[kv_namespaces]]
 binding = "IMAGES"
 
+
+# Where the shirt price sync got to (lib/pricing.mjs). Created on the first deploy like IMAGES.
+[[kv_namespaces]]
+binding = "PRICING"
+
+# Every 15 minutes the Worker moves the price sync one step on; a new sync only starts when the
+# price sheet changed or the last one is over a day old.
+[triggers]
+crons = ["*/15 * * * *"]

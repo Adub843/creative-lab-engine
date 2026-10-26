@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { handleProducts, clearTokenCache } from "../lib/shopify.mjs";
 import { handleInsights, buildInsights, growthPct, forecast30, linearFit, addDays } from "../lib/insights.mjs";
 import { schemaErrors, variableErrors, checked } from "./schema/validate.mjs";
+import { fileURLToPath } from "node:url";
 
 // Every GraphQL string a fake Shopify receives is checked against the real Admin API 2025-10
 // schema (query fields and arguments, and the variables' input types). Problems are collected
@@ -1292,7 +1293,7 @@ test("build: dist/ holds only index.html and assets/, and wrangler.toml serves j
   const path = await import("node:path");
   const os = await import("node:os");
   const { execFileSync } = await import("node:child_process");
-  const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bc-build-"));
   for (const f of ["index.html", "assets", "lib", "scripts", "worker", "data", "package.json", "README.md", "wrangler.toml"])
     fs.cpSync(path.join(root, f), path.join(tmp, f), { recursive: true });
@@ -1317,10 +1318,10 @@ test("build: dist/ holds only index.html and assets/, and wrangler.toml serves j
   for (const f of hosting) assert.ok(!/netlify/i.test(fs.readFileSync(path.join(root, f), "utf8")), `${f} mentions Netlify`);
 });
 
-test("worker: the entry module exports only the fetch handler (workerd refuses anything else)", async () => {
+test("worker: the entry module exports only the fetch and cron handlers (workerd refuses anything else)", async () => {
   const entry = await import("../worker/index.mjs");
   assert.deepEqual(Object.keys(entry), ["default"]);
-  assert.deepEqual(Object.keys(entry.default), ["fetch"]);
+  assert.deepEqual(Object.keys(entry.default), ["fetch", "scheduled"]);
   const res = await entry.default.fetch(wreq("/api/nope"), workerEnv());
   assert.equal(res.status, 404);
 });
@@ -1489,12 +1490,139 @@ test("worker: a listing reads its design from the same KV image library", async 
   }, sh.fetch);
 });
 
+// ---------- shirt prices from the price sheet ----------
+{
+  const P = await import("../lib/pricing.mjs");
+  const SHEET = [
+    ["id", "brand", "style", "name", "type", "size", "shirtspace_cost", "bulkapparel_cost", "cheapest_cost", "suggested_price", "current_site_price", "your_price", "offer"],
+    ["gildan-64000", "Gildan", "64000", "Softstyle Tee", "T-shirts", "S", "2.88", "2.81", "2.81", "13.99", "", "", "yes"],
+    ["gildan-64000", "Gildan", "64000", "Softstyle Tee", "T-shirts", "2XL", "5.92", "5.95", "5.92", "19.99", "", "21.50", "yes"],
+    ["comfortcolors-1717", "Comfort Colors", "1717", "Heavyweight", "T-shirts", "M", "7.38", "6.74", "6.74", "21.99", "27.99", "", "yes"],
+    ["bella-3001", "Bella+Canvas", "3001", "Jersey", "T-shirts", "S", "5.73", "4.55", "4.55", "17.99", "", "", "yes"],
+    ["fruit-3930r", "Fruit", "3930R", "HD", "T-shirts", "S", "", "", "", "9.99", "", "", "no"],
+  ];
+
+  test("pricing: sheet rows become blank+size prices; your_price wins; offer=no is left out", () => {
+    const t = P.tableFromSheet(SHEET);
+    assert.equal(t.get("gildan-64000|S"), 13.99);
+    assert.equal(t.get("gildan-64000|2XL"), 21.5);
+    assert.equal(t.get("fruit-3930r|S"), undefined);
+    assert.throws(() => P.tableFromSheet([["name", "price"]]), /needs id, size/);
+    assert.equal(P.tableHash(t), P.tableHash(P.tableFromSheet(SHEET)));
+    assert.notEqual(P.tableHash(t), P.tableHash(P.tableFromSheet(SHEET.slice(0, 2))));
+    assert.ok(P.tableFromCatalog().get("gildan-64000|S") > 0, "bundled prices cover the catalog");
+  });
+
+  test("pricing: a variant's blank comes from its SKU, a Style option, or colors only one blank sells", () => {
+    const idx = P.blankIndex();
+    const opt = (o) => Object.entries(o).map(([name, value]) => ({ name, value }));
+    assert.deepEqual(P.identify(idx, {}, { sku: "lcc-gildan-64000-navy-S", selectedOptions: opt({ Size: "S" }) }), { blankId: "gildan-64000", size: "S" });
+    assert.equal(P.identify(idx, {}, { sku: "x-gildan-5000b-white-M", selectedOptions: opt({ Size: "M" }) }).blankId, "gildan-5000b");
+    assert.equal(P.identify(idx, {}, { sku: "ED-01-CC-PEPPER-S", selectedOptions: opt({ Style: "Comfort Colors 1717", Color: "Pepper", Size: "S" }) }).blankId, "comfortcolors-1717");
+    assert.equal(P.identify(idx, {}, { selectedOptions: opt({ Shirt: "Gildan H000 – Hammer Heavyweight Tee", Size: "XL" }) }).blankId, "gildan-h000");
+    assert.equal(P.identify(idx, { productType: "T-Shirt", colors: ["Pepper", "Espresso"] }, { selectedOptions: opt({ Color: "Pepper", Size: "S" }) }).blankId, "comfortcolors-1717");
+    assert.equal(P.identify(idx, { productType: "T-Shirt", colors: [] }, { selectedOptions: opt({ Size: "S" }) }).blankId, null, "size-only shirts aren't guessed");
+    assert.equal(P.identify(idx, { productType: "T-Shirt", colors: ["Black"] }, { selectedOptions: opt({ Color: "Black", Size: "S" }) }).blankId, null, "a color many blanks sell isn't enough");
+  });
+
+  test("pricing: plan adds the design markup, blanks get the sheet price, other brands and unknowns are left alone", () => {
+    const t = P.tableFromSheet(SHEET);
+    const lines = [
+      { id: "gid://shopify/Product/1", handle: "design", vendor: "Elevated Designs Originals", productType: "T-Shirt", tags: [] },
+      { id: "gid://shopify/ProductVariant/11", __parentId: "gid://shopify/Product/1", sku: "ED-01-CC-PEPPER-M", price: "28.99", selectedOptions: [{ name: "Style", value: "Comfort Colors 1717" }, { name: "Color", value: "Pepper" }, { name: "Size", value: "M" }] },
+      { id: "gid://shopify/ProductVariant/12", __parentId: "gid://shopify/Product/1", sku: "ED-01-BC-BLACK-S", price: "27.99", selectedOptions: [{ name: "Style", value: "Bella+Canvas 3001" }, { name: "Color", value: "Black" }, { name: "Size", value: "S" }] },
+      { id: "gid://shopify/Product/2", handle: "blank", vendor: "Elevated Designs", productType: "T-Shirt", tags: ["builder-blank"] },
+      { id: "gid://shopify/ProductVariant/21", __parentId: "gid://shopify/Product/2", sku: "gildan-64000-white-S", price: "13.99", selectedOptions: [{ name: "Size", value: "S" }] },
+      { id: "gid://shopify/ProductVariant/22", __parentId: "gid://shopify/Product/2", sku: "gildan-64000-white-2XL", price: "19.99", selectedOptions: [{ name: "Size", value: "2XL" }] },
+      { id: "gid://shopify/Product/3", handle: "ornament", vendor: "Charleston 3D Prints", productType: "3D Printed Ornament", tags: [] },
+      { id: "gid://shopify/ProductVariant/31", __parentId: "gid://shopify/Product/3", sku: "", price: "14.00", selectedOptions: [{ name: "Size", value: "S" }] },
+      { id: "gid://shopify/Product/4", handle: "old-size-only", vendor: "Elevated Designs", productType: "T-Shirt", tags: [] },
+      { id: "gid://shopify/ProductVariant/41", __parentId: "gid://shopify/Product/4", sku: null, price: "29.99", selectedOptions: [{ name: "Size", value: "S" }] },
+    ];
+    const { updates, report } = P.planChanges(lines, t, { markup: 10 });
+    assert.deepEqual(updates, [
+      { productId: "gid://shopify/Product/1", variants: [{ id: "gid://shopify/ProductVariant/11", price: "31.99" }, { id: "gid://shopify/ProductVariant/12", price: "27.99" }].filter((v) => v.price !== "27.99") },
+      { productId: "gid://shopify/Product/2", variants: [{ id: "gid://shopify/ProductVariant/22", price: "21.50" }] },
+    ]);
+    assert.equal(report.unchanged, 2);
+    assert.equal(report.skipped.not_a_shirt, 1);
+    assert.equal(report.skipped.unknown_shirt, 1);
+    assert.deepEqual(report.unknown, ["old-size-only"]);
+  });
+
+  test("pricing: the sync runs query -> upload + bulk update -> done, and skips when nothing changed", async () => {
+    const kvData = new Map();
+    const kv = { get: async (k) => (kvData.has(k) ? JSON.parse(kvData.get(k)) : null), put: async (k, v) => { kvData.set(k, v); } };
+    const calls = [];
+    let status = "RUNNING";
+    const JSONL = [
+      { id: "gid://shopify/Product/1", handle: "design", vendor: "Elevated Designs", productType: "T-Shirt", tags: [] },
+      { id: "gid://shopify/ProductVariant/11", __parentId: "gid://shopify/Product/1", sku: "a-gildan-64000-navy-S", title: "S", price: "29.99", selectedOptions: [{ name: "Size", value: "S" }] },
+    ].map((l) => JSON.stringify(l)).join("\n");
+    const fetchImpl = async (url, init = {}) => {
+      const u = String(url);
+      if (u === "https://bulk.example/out.jsonl") return new Response(JSONL, { status: 200 });
+      if (u.startsWith(STAGED_URL)) { calls.push({ upload: await init.body.get("file").text() }); return new Response("", { status: 201 }); }
+      const { query, variables } = JSON.parse(init.body);
+      checkGraphql(query, variables);
+      const op = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1];
+      calls.push({ op, variables });
+      const data = {
+        ConsolePricingQuery: { bulkOperationRunQuery: { bulkOperation: { id: "gid://shopify/BulkOperation/1", status: "CREATED" }, userErrors: [] } },
+        ConsolePricingStatus: { node: { id: variables.id, status, errorCode: null, objectCount: "2", url: "https://bulk.example/out.jsonl", partialDataUrl: null } },
+        ConsolePricingStage: { stagedUploadsCreate: { stagedTargets: [{ url: STAGED_URL, resourceUrl: null, parameters: [{ name: "key", value: "tmp/prices.jsonl" }] }], userErrors: [] } },
+        ConsolePricingApply: { bulkOperationRunMutation: { bulkOperation: { id: "gid://shopify/BulkOperation/2", status: "CREATED" }, userErrors: [] } },
+      }[op];
+      return new Response(JSON.stringify({ data }), { status: 200 });
+    };
+    const env = envOf({ DESIGN_MARKUP: "10" });
+    const client = (await import("../lib/shopify.mjs")).adminClient({ name: "Elevated Designs", domain: "elevated-designs.myshopify.com", token: "shpat_x", prefix: "ED" }, fetchImpl);
+    let s = await P.step({ client, kv, env, fetchImpl });
+    assert.equal(s.phase, "querying");
+    assert.equal(s.source, "bundled");
+    s = await P.step({ client, kv, env, fetchImpl });
+    assert.equal(s.phase, "querying", "waits while Shopify is still running");
+    status = "COMPLETED";
+    s = await P.step({ client, kv, env, fetchImpl });
+    assert.equal(s.phase, "applying");
+    assert.equal(s.report.changed, 1);
+    const up = calls.find((c) => c.upload);
+    assert.deepEqual(JSON.parse(up.upload.trim()), { productId: "gid://shopify/Product/1", variants: [{ id: "gid://shopify/ProductVariant/11", price: "23.99" }] });
+    const apply = calls.find((c) => c.op === "ConsolePricingApply").variables;
+    assert.equal(apply.path, "tmp/prices.jsonl");
+    // The bulk query and the per-line mutation travel as strings: check them against the schema too.
+    checkGraphql(calls.find((c) => c.op === "ConsolePricingQuery").variables.query, {});
+    checkGraphql(apply.mutation, { productId: "gid://shopify/Product/1", variants: [{ id: "gid://shopify/ProductVariant/11", price: "23.99" }] });
+    s = await P.step({ client, kv, env, fetchImpl });
+    assert.equal(s.phase, "idle");
+    assert.ok(s.finishedAt);
+    const before = calls.length;
+    s = await P.step({ client, kv, env, fetchImpl });
+    assert.equal(s.phase, "idle", "same prices and a fresh sync: nothing new starts");
+    assert.equal(calls.length, before);
+  });
+
+  test("pricing: route needs the key, is ED only, and reports where the sync is", async () => {
+    const kv = { get: async () => ({ phase: "idle", report: { changed: 3 } }), put: async () => {} };
+    const r0 = await P.handlePricing({ method: "GET", query: new URLSearchParams("store=ed"), header: () => null }, { env: envOf(), kv, fetch });
+    assert.equal(r0.status, 401);
+    const hdr = (k) => (k === "x-console-key" ? ENV.CONSOLE_KEY : null);
+    const r1 = await P.handlePricing({ method: "GET", query: new URLSearchParams("store=c3d"), header: hdr }, { env: envOf(), kv, fetch });
+    assert.equal(r1.status, 400);
+    const r2 = await P.handlePricing({ method: "GET", query: new URLSearchParams("store=ed"), header: hdr }, { env: envOf(), kv, fetch });
+    assert.equal(r2.status, 200);
+    assert.equal(r2.body.markup, 10);
+    assert.equal(r2.body.report.changed, 3);
+  });
+}
+
 // ---------- last: the schema check over everything sent above ----------
 test("every GraphQL string sent matches the Admin API 2025-10 schema, variables included", async () => {
   const S = await import("../lib/shopify.mjs");
   const L = await import("../lib/listings.mjs");
+  const P = await import("../lib/pricing.mjs");
   const I = await import("../lib/insights.mjs");
-  const ops = [...[S, L].flatMap((m) => Object.entries(m).filter(([k, v]) => /_(QUERY|MUTATION)$/.test(k) && typeof v === "string").map(([, v]) => v)),
+  const ops = [...[S, L, P].flatMap((m) => Object.entries(m).filter(([k, v]) => /_(QUERY|MUTATION)$/.test(k) && typeof v === "string").map(([, v]) => v)),
     I.ordersQuery(true), I.ordersQuery(false), I.SHOP_QUERY, I.SESSIONS_QUERY];
   const sent = new Set(checked()); // before the loop below adds the rest
   for (const q of ops) assert.deepEqual(schemaErrors(q), [], q.slice(0, 80));

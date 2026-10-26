@@ -7,6 +7,7 @@
 // Bindings (see wrangler.toml and the README):
 //   ASSETS   the static files in dist/
 //   IMAGES   Workers KV namespace holding the image library (lib/kv-store.mjs)
+//   PRICING  Workers KV namespace holding where the shirt price sync got to (lib/pricing.mjs)
 // Secrets (set with `npx wrangler secret put NAME`, never in code): CONSOLE_KEY, the Shopify
 // domains and tokens (C3D_*, ED_*), and optionally INDEXNOW_KEY, ED_HANDLING_DAYS, *_SITE_URL.
 import { handleProducts, HttpError } from "../lib/shopify.mjs";
@@ -14,6 +15,7 @@ import { handleInsights } from "../lib/insights.mjs";
 import { handleListings, libraryReader } from "../lib/listings.mjs";
 import { handleImages } from "../lib/images.mjs";
 import { kvBlobStore } from "../lib/kv-store.mjs";
+import { handlePricing, scheduledPricing } from "../lib/pricing.mjs";
 
 // The app pages: only its own scripts, Shopify's CDN for product photos, never framed.
 export const SITE_HEADERS = {
@@ -76,6 +78,7 @@ const imageStore = (env) => {
 const products = jsonRoute(handleProducts);
 const insights = jsonRoute(handleInsights);
 const listings = jsonRoute(handleListings);
+const pricing = jsonRoute(handlePricing);
 
 export async function handleRequest(req, env) {
   const { pathname } = new URL(req.url);
@@ -87,6 +90,7 @@ export async function handleRequest(req, env) {
       const readImage = async (key) => libraryReader({ blobs: imageStore(env), env: envReader(env) })(key);
       return await listings(req, env, { readImage });
     }
+    if (pathname === "/api/pricing") return await pricing(req, env, { kv: env?.PRICING ?? null });
     if (pathname === "/api/images" || pathname.startsWith("/api/images/"))
       return await handleImages(req, { blobs: imageStore(env), env: envReader(env) });
     if (pathname === "/api" || pathname.startsWith("/api/")) return json({ error: "Not found" }, 404);
@@ -101,4 +105,13 @@ export async function handleRequest(req, env) {
   const out = new Response(res.body, res);
   for (const [k, v] of Object.entries(SITE_HEADERS)) out.headers.set(k, v);
   return out;
+}
+
+// The cron (wrangler.toml [triggers]): moves the shirt price sync one step on. See lib/pricing.mjs.
+export async function handleScheduled(env) {
+  try {
+    await scheduledPricing({ env: envReader(env), kv: env?.PRICING ?? null, fetchImpl: (input, init) => fetch(input, init) });
+  } catch (e) {
+    console.error("price sync", e?.code ?? e?.name, e?.message);
+  }
 }
