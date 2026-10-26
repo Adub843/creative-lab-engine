@@ -1539,14 +1539,21 @@ test("worker: a listing reads its design from the same KV image library", async 
       { id: "gid://shopify/ProductVariant/31", __parentId: "gid://shopify/Product/3", sku: "", price: "14.00", selectedOptions: [{ name: "Size", value: "S" }] },
       { id: "gid://shopify/Product/4", handle: "old-size-only", vendor: "Elevated Designs", productType: "T-Shirt", tags: [] },
       { id: "gid://shopify/ProductVariant/41", __parentId: "gid://shopify/Product/4", sku: null, price: "29.99", selectedOptions: [{ name: "Size", value: "S" }] },
+      { id: "gid://shopify/Product/5", handle: "line-tee", vendor: "Over-Engineered Co.", productType: "T-Shirt", tags: ["Elevated Designs", "brand:b27"] },
+      { id: "gid://shopify/ProductVariant/51", __parentId: "gid://shopify/Product/5", sku: "B27-01-CC-IVORY-M", price: "27.99", selectedOptions: [{ name: "Style", value: "Comfort Colors 1717" }, { name: "Color", value: "Ivory" }, { name: "Size", value: "M" }] },
+      { id: "gid://shopify/Product/6", handle: "c3d-tee", vendor: "Charleston 3D Prints", productType: "T-Shirt", tags: ["Elevated Designs"] },
+      { id: "gid://shopify/ProductVariant/61", __parentId: "gid://shopify/Product/6", sku: "", price: "20.00", selectedOptions: [{ name: "Style", value: "Comfort Colors 1717" }, { name: "Size", value: "M" }] },
+      { id: "gid://shopify/Product/7", handle: "other-brand", vendor: "Someone Else", productType: "T-Shirt", tags: [] },
+      { id: "gid://shopify/ProductVariant/71", __parentId: "gid://shopify/Product/7", sku: "", price: "20.00", selectedOptions: [{ name: "Style", value: "Comfort Colors 1717" }, { name: "Size", value: "M" }] },
     ];
     const { updates, report } = P.planChanges(lines, t, { markup: 10 });
     assert.deepEqual(updates, [
       { productId: "gid://shopify/Product/1", variants: [{ id: "gid://shopify/ProductVariant/11", price: "31.99" }, { id: "gid://shopify/ProductVariant/12", price: "27.99" }].filter((v) => v.price !== "27.99") },
       { productId: "gid://shopify/Product/2", variants: [{ id: "gid://shopify/ProductVariant/22", price: "21.50" }] },
+      { productId: "gid://shopify/Product/5", variants: [{ id: "gid://shopify/ProductVariant/51", price: "31.99" }] },
     ]);
     assert.equal(report.unchanged, 2);
-    assert.equal(report.skipped.not_a_shirt, 1);
+    assert.equal(report.skipped.not_a_shirt, 3, "C3D and untagged other brands stay untouched");
     assert.equal(report.skipped.unknown_shirt, 1);
     assert.deepEqual(report.unknown, ["old-size-only"]);
   });
