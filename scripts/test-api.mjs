@@ -768,7 +768,7 @@ test("images: the shirt app sees only public images, with CORS for its own origi
   assert.deepEqual(items.map((i) => i.name), ["pub.png"], "only public items are listed");
   assert.equal(items[0].size, undefined, "public list carries only what the app needs");
   assert.equal(items[0].url, undefined, "and no signed links");
-  for (const o of ["https://design.elevatedshirts.com", "https://elevatedshirts.com", "https://www.elevatedshirts.com", "https://adub843.github.io"])
+  for (const o of ["https://design.elevatedshirts.com", "https://elevatedshirts.com", "https://www.elevatedshirts.com", "https://epix3d.com", "https://www.epix3d.com", "https://adub843.github.io"])
     assert.equal((await handleImages(imgReq("/api/images?public=1", { headers: { origin: o } }), ctx)).headers.get("access-control-allow-origin"), o, o);
   const file = await handleImages(imgReq(`/api/images/${pub.key}`, { headers: app }), ctx);
   assert.equal(file.status, 200);
