@@ -1277,6 +1277,11 @@ async function main() {
       if (part === "traffic") return json(200, mkTraffic);
       if (part === "changes") return json(200, { store, auto: true, logAvailable: true, changes: mkFixes.filter((f) => f.store === store) });
       if (part === "growth") return json(200, mkGrowth(store, Number(u.searchParams.get("days") || 90)));
+      if (part === "google") return json(200, store === "ed" ? { store, connected: false, note: "Add GSC_SERVICE_ACCOUNT to bring Google Search Console in here." } : { store, connected: true,
+        property: "sc-domain:charleston3d.com", start: "2026-09-26", end: "2026-10-24", serviceAccount: "console@proj.iam.gserviceaccount.com",
+        pages: [{ page: "https://charleston3d.com/products/rainbow-row-ornament", clicks: 4, impressions: 120, ctr: 3.3, position: 8.4 }],
+        devices: [{ device: "mobile", clicks: 3, impressions: 90, ctr: 3.3, position: 9 }, { device: "desktop", clicks: 1, impressions: 30, ctr: 3.3, position: 7 }],
+        sitemaps: [], home: { url: "https://charleston3d.com/", verdict: "pass", coverage: "Submitted and indexed", lastCrawl: "2026-10-20T00:00:00Z" } });
       if (part === "keywords") return json(200, { store, saveAvailable: true, keywords: mkKeywords.map((k, i) => ({ keyword: k, google: i ? null : { clicks: 4, impressions: 120, position: 8.4, page: "https://charleston3d.com/pages/custom", searches: 3 }, googlePrev: null, bing: { clicks: 1, impressions: 9, position: 5, page: "", searches: 1 }, moved: i ? null : 2.1 })),
         sources: { google: { connected: true }, bing: { connected: true } } });
       return json(400, { error: "bad part" });
@@ -1298,6 +1303,8 @@ async function main() {
     }
     if (b.action === "keywords") { mkKeywords = b.keywords.map((k) => k.toLowerCase()); return json(200, { store: b.store, keywords: mkKeywords }); }
     if (b.action === "indexnow") return json(200, { store: b.store, indexNow: { sent: true, status: 200, count: 17 } });
+    if (b.action === "sitemap") return json(200, { store: b.store, submitted: "https://charleston3d.com/sitemap.xml" });
+    if (b.action === "inspect") return json(200, { store: b.store, url: b.url, verdict: "neutral", coverage: "Discovered - currently not indexed", lastCrawl: null, link: "https://search.google.com/x" });
     return json(400, { error: "bad action" });
   });
 
@@ -1416,6 +1423,103 @@ async function main() {
     await page.waitForTimeout(150);
     await noOverflow("marketing 390");
     if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "marketing-390.png"), fullPage: true }); }
+    await page.setViewportSize({ width: 1280, height: 900 });
+  });
+
+
+  await step("marketing: Search Console pages, home page indexing, sitemap submit and page check", async () => {
+    await page.click('.seg-btn[data-store="c3d"]');
+    const gsc = page.locator(".panel", { hasText: "Google Search Console" }).first();
+    await gsc.locator("table").waitFor();
+    assert.match(await gsc.textContent(), /mobile: 3 clicks \(75%\).*Indexed.*Submitted and indexed.*\/products\/rainbow-row-ornament.*3\.3%.*Google has no sitemap/s);
+    await gsc.locator("button", { hasText: "Submit sitemap to Google" }).click();
+    await gsc.locator("text=Submitted https://charleston3d.com/sitemap.xml.").waitFor();
+    await gsc.locator('input[aria-label="Page address to check"]').fill("https://charleston3d.com/products/rainbow-row-ornament");
+    await gsc.locator("button", { hasText: "Is it in Google?" }).click();
+    await gsc.locator("text=Discovered - currently not indexed").waitFor();
+    assert.deepEqual(mkPosts.slice(-2).map((b) => b.action), ["sitemap", "inspect"]);
+    assert.ok(await gsc.locator("a", { hasText: "Merchant Center" }).count());
+  });
+
+  // ---------- promotions ----------
+  const prPosts = [];
+  const prData = (store) => ({ store, admin: `https://admin.shopify.com/store/${store === "c3d" ? "charleston3d" : "elevated-designs"}`,
+    discounts: { items: [{ id: "gid://shopify/DiscountCodeNode/11", automatic: false, kind: "amount", title: "Market 15", code: "MARKET15", status: "active", summary: "15% off entire order", startsAt: "2026-10-01T00:00:00Z", endsAt: null, used: 4, admin: "https://admin.shopify.com/store/x/discounts/11" }] },
+    giftCards: { error: "Add the read_gift_cards and write_gift_cards scopes to the store's app to use this.", code: "access_denied", scopes: ["read_gift_cards", "write_gift_cards"] },
+    segments: { items: [{ id: "gid://shopify/Segment/7", name: "Email subscribers", query: "email_subscription_status = 'SUBSCRIBED'", admin: "https://admin.shopify.com/store/x/customers/segments/7" }] },
+    campaigns: { items: [] },
+    channels: { items: { installed: ["Online Store", "Google & YouTube"], ads: [{ name: "Google & YouTube", app: "https://apps.shopify.com/google", installed: true }, { name: "TikTok", app: "https://apps.shopify.com/tiktok", installed: false }] } },
+    abandoned: { items: [{ id: "a", createdAt: "2026-10-21T09:55:34Z", url: "https://elevatedshirts.com/checkouts/x/recover", total: { amount: 27.99, currency: "USD" }, customer: null, items: ["1 × Crest Tee"] }] },
+    adminOnly: [{ name: "Shopify Email", why: "Email campaigns.", url: "https://admin.shopify.com/store/x/apps/shopify-email" }, { name: "Marketing automations", why: "Abandoned cart emails.", url: "https://admin.shopify.com/store/x/marketing/automations" }],
+    templates: [{ name: "Loyal: 3+ orders", query: "number_of_orders >= 3" }] });
+  await page.route("**/api/promotions**", async (route) => {
+    const req = route.request();
+    const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    if (req.headers()["x-console-key"] !== KEY) return json(401, { error: "Wrong or missing console key.", code: "bad_key" });
+    if (req.method() === "GET") return json(200, prData(new URL(req.url()).searchParams.get("store")));
+    const b = JSON.parse(req.postData());
+    prPosts.push(b);
+    return json(200, { store: b.store, action: b.action, id: "gid://shopify/DiscountCodeNode/21", logged: true });
+  });
+
+  await step("promotions: discounts, a missing permission, channels, abandoned checkouts and admin-only tools", async () => {
+    await page.click('a.nav[data-route="promote"]');
+    await page.waitForSelector("#promo-discount");
+    assert.equal(await page.locator('a.nav[data-route="promote"]').getAttribute("aria-current"), "page");
+    const disc = page.locator(".panel", { hasText: "Discounts" }).first();
+    assert.match(await disc.locator("tbody").textContent(), /Market 15.*15% off entire order.*MARKET15.*On.*4/s);
+    assert.match(await page.locator(".panel", { hasText: "Gift cards" }).first().textContent(), /needs a permission.*read_gift_cards, write_gift_cards/s);
+    assert.equal(await page.locator("#promo-giftcard").count(), 0, "no gift card form without the scope");
+    assert.match(await page.locator(".panel", { hasText: "Sales channels" }).first().textContent(), /Online Store, Google & YouTube.*Connected.*TikTok.*Add channel/s);
+    assert.match(await page.locator(".panel", { hasText: "Abandoned checkouts" }).first().textContent(), /\$27\.99 left in 1 checkout/);
+    assert.match(await page.locator(".panel", { hasText: "Only in Shopify" }).first().textContent(), /Shopify Email.*Marketing automations/s);
+  });
+
+  await step("promotions: create a code discount, turn one off (two clicks to delete), and add a customer group", async () => {
+    const form = page.locator("#promo-discount");
+    await form.locator('[name="title"]').fill("Holiday market");
+    await form.locator('[name="code"]').fill("market20");
+    await form.locator('[name="value"]').fill("20");
+    await form.locator('[name="minSubtotal"]').fill("30");
+    await form.locator('[name="segmentId"]').selectOption("gid://shopify/Segment/7");
+    await form.locator("button", { hasText: "Create discount" }).click();
+    await page.waitForFunction(() => document.querySelector("#promo-discount") && !document.querySelector("#promo-discount button[disabled]"));
+    await page.waitForTimeout(200);
+    const made = prPosts.find((b) => b.action === "discount");
+    assert.deepEqual({ ...made, startsAt: undefined }, { store: "c3d", action: "discount", method: "code", type: "percentage", title: "Holiday market", code: "market20", oncePerCustomer: false, value: 20, minSubtotal: 30, segmentId: "gid://shopify/Segment/7", startsAt: undefined });
+    // Automatic hides the code fields; free shipping hides the value.
+    await page.locator('#promo-discount [name="method"]').selectOption("automatic");
+    assert.ok(await page.locator('#promo-discount [name="code"]').isHidden());
+    await page.locator('#promo-discount [name="type"]').selectOption("shipping");
+    assert.ok(await page.locator('#promo-discount [name="value"]').isHidden());
+    const row = page.locator(".panel", { hasText: "Discounts" }).first().locator("tbody tr").first();
+    await row.locator("button", { hasText: "Turn off" }).click();
+    await page.waitForFunction(() => true);
+    await page.waitForTimeout(200);
+    assert.deepEqual(prPosts.find((b) => b.action === "discountStatus"), { store: "c3d", action: "discountStatus", id: "gid://shopify/DiscountCodeNode/11", active: false });
+    const del = page.locator(".panel", { hasText: "Discounts" }).first().locator("tbody tr").first().locator("button", { hasText: "Delete" });
+    await del.click();
+    assert.equal(prPosts.filter((b) => b.action === "discountDelete").length, 0, "the first click only asks");
+    await page.locator("button", { hasText: "Click again to delete" }).click();
+    await page.waitForTimeout(200);
+    assert.equal(prPosts.filter((b) => b.action === "discountDelete").length, 1);
+    const seg = page.locator("#promo-segment");
+    await seg.locator("select").selectOption({ label: "Loyal: 3+ orders" });
+    assert.equal(await seg.locator("textarea").inputValue(), "number_of_orders >= 3");
+    await seg.locator("button", { hasText: "Create group" }).click();
+    await page.waitForTimeout(200);
+    assert.deepEqual(prPosts.find((b) => b.action === "segment"), { store: "c3d", action: "segment", name: "Loyal: 3+ orders", query: "number_of_orders >= 3" });
+  });
+
+  await step("promotions: switching stores, no overflow at 1280 and 390", async () => {
+    await page.click('.seg-btn[data-store="ed"]');
+    await page.waitForSelector("#promo-discount");
+    await noOverflow("promotions 1280");
+    if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "promotions-1280.png"), fullPage: true }); }
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(150);
+    await noOverflow("promotions 390");
+    if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "promotions-390.png"), fullPage: true }); }
     await page.setViewportSize({ width: 1280, height: 900 });
   });
 

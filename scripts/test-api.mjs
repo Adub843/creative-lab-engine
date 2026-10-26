@@ -2310,7 +2310,7 @@ test("marketing: Google Search Console with a service account signs a JWT and re
       assert.ok(await crypto.subtle.verify("RSASSA-PKCS1-v1_5", pair.publicKey, dec(sig), new TextEncoder().encode(`${h}.${p}`)), "JWT signature verifies");
       const claims = JSON.parse(dec(p).toString());
       assert.equal(claims.iss, "console@proj.iam.gserviceaccount.com");
-      assert.equal(claims.scope, "https://www.googleapis.com/auth/webmasters.readonly https://www.googleapis.com/auth/analytics.readonly");
+      assert.equal(claims.scope, "https://www.googleapis.com/auth/webmasters https://www.googleapis.com/auth/analytics.readonly");
       seen.push("token");
       return new Response(JSON.stringify({ access_token: "ya29.test", expires_in: 3600 }), { status: 200 });
     }
@@ -2419,6 +2419,236 @@ test("wrangler.toml: MARKETING and PRICING KV bindings, the daily audit cron and
   assert.equal(W2.AUTOFIX_CRON, "30 11 * * *");
 });
 
+// ---------- promotions ----------
+const PR = await import("../lib/promotions.mjs");
+const PROMO_OVERRIDE = (opts = {}) => {
+  const ue = (extra = {}) => ({ userErrors: opts.reject ? [{ field: ["code"], message: "Code must be unique." }] : [], ...extra });
+  const deny = () => new Response(JSON.stringify({ errors: [{ message: "Access denied for giftCards field. Required access: `read_gift_cards` access scope.", extensions: { code: "ACCESS_DENIED" } }] }), { status: 200 });
+  return {
+    PromoDiscounts: (v, data) => data({ discountNodes: { nodes: [
+      { id: "gid://shopify/DiscountCodeNode/11", discount: { __typename: "DiscountCodeBasic", title: "Market 15", status: "ACTIVE", startsAt: "2026-10-01T00:00:00Z", endsAt: null, asyncUsageCount: 4, summary: "15% off entire order", codes: { nodes: [{ code: "MARKET15" }] } } },
+      { id: "gid://shopify/DiscountAutomaticNode/12", discount: { __typename: "DiscountAutomaticFreeShipping", title: "Free shipping over $50", status: "EXPIRED", startsAt: "2026-09-01T00:00:00Z", endsAt: "2026-09-30T00:00:00Z", asyncUsageCount: 9, summary: "Free shipping on orders over $50" } }] } }),
+    PromoGiftCards: (v, data) => (opts.denyGift ? deny() : data({ giftCards: { nodes: [{ id: "gid://shopify/GiftCard/5", lastCharacters: "AB12", enabled: true, expiresOn: null, createdAt: "2026-10-02T00:00:00Z", note: "raffle", balance: { amount: "20.0", currencyCode: "USD" }, initialValue: { amount: "25.0" }, customer: null }] } })),
+    PromoSegments: (v, data) => data({ segments: { nodes: [{ id: "gid://shopify/Segment/7", name: "Email subscribers", query: "email_subscription_status = 'SUBSCRIBED'", creationDate: "2026-10-12T02:07:42Z", lastEditDate: "2026-10-12T02:07:42Z" }] } }),
+    PromoCampaigns: (v, data) => data({ marketingActivities: { nodes: [{ id: "gid://shopify/MarketingActivity/3", title: "Fall sale email", status: "ACTIVE", createdAt: "2026-10-10T00:00:00Z", marketingChannelType: "EMAIL", tactic: "NEWSLETTER", sourceAndMedium: "Shopify Email", isExternal: false, utmParameters: { campaign: "fall", source: "shopify", medium: "email" }, app: { title: "Shopify Email" }, adSpend: null }] } }),
+    PromoChannels: (v, data) => data({ publications: { nodes: [{ id: "gid://shopify/Publication/1", catalog: { title: "Channel Catalog 1 for Online Store" } }, { id: "gid://shopify/Publication/2", catalog: { title: "Channel Catalog 2 for Google & YouTube" } }] } }),
+    PromoAbandoned: (v, data) => data({ abandonedCheckouts: { nodes: [{ id: "gid://shopify/AbandonedCheckout/9", createdAt: "2026-10-21T09:55:34Z", abandonedCheckoutUrl: "https://elevatedshirts.com/checkouts/x/recover", totalPriceSet: { shopMoney: { amount: "27.99", currencyCode: "USD" } }, customer: null, lineItems: { nodes: [{ title: "Crest Tee", quantity: 1 }] } }] } }),
+    PromoDiscountCodeBasicCreate: (v, data) => data({ discountCodeBasicCreate: ue({ codeDiscountNode: opts.reject ? null : { id: "gid://shopify/DiscountCodeNode/21" } }) }),
+    PromoDiscountCodeFreeShippingCreate: (v, data) => data({ discountCodeFreeShippingCreate: ue({ codeDiscountNode: { id: "gid://shopify/DiscountCodeNode/22" } }) }),
+    PromoDiscountAutomaticBasicCreate: (v, data) => data({ discountAutomaticBasicCreate: ue({ automaticDiscountNode: { id: "gid://shopify/DiscountAutomaticNode/23" } }) }),
+    PromoDiscountAutomaticFreeShippingCreate: (v, data) => data({ discountAutomaticFreeShippingCreate: ue({ automaticDiscountNode: { id: "gid://shopify/DiscountAutomaticNode/24" } }) }),
+    PromoCodeOn: (v, data) => data({ discountCodeActivate: ue({ codeDiscountNode: { id: v.id } }) }),
+    PromoCodeOff: (v, data) => data({ discountCodeDeactivate: ue({ codeDiscountNode: { id: v.id } }) }),
+    PromoAutoOn: (v, data) => data({ discountAutomaticActivate: ue({ automaticDiscountNode: { id: v.id } }) }),
+    PromoAutoOff: (v, data) => data({ discountAutomaticDeactivate: ue({ automaticDiscountNode: { id: v.id } }) }),
+    PromoCodeDelete: (v, data) => data({ discountCodeDelete: ue({ deletedCodeDiscountId: v.id }) }),
+    PromoAutoDelete: (v, data) => data({ discountAutomaticDelete: ue({ deletedAutomaticDiscountId: v.id }) }),
+    PromoGiftCard: (v, data) => (opts.denyGift ? deny() : data({ giftCardCreate: ue({ giftCard: { id: "gid://shopify/GiftCard/6", lastCharacters: "ZZ99" }, giftCardCode: "abcd efgh ijkl zz99" }) })),
+    PromoGiftCardOff: (v, data) => data({ giftCardDeactivate: ue({ giftCard: { id: v.id, enabled: false } }) }),
+    PromoSegment: (v, data) => data({ segmentCreate: ue({ segment: { id: "gid://shopify/Segment/8", name: v.name } }) }),
+  };
+};
+const promoShopify = (opts = {}) => fakeShopify({ override: PROMO_OVERRIDE(opts) });
+const prCtx = (sh, extra = {}) => ({ env: envOf(), fetch: sh.fetch, now: () => NOW, ...extra });
+
+test("promotions: one read shows every section, with admin links, for the store asked", async () => {
+  const sh = promoShopify();
+  const res = await PR.handlePromotions(keyed({ store: "ed" }), prCtx(sh));
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  noLeak(res);
+  const b = res.body;
+  assert.equal(b.admin, "https://admin.shopify.com/store/elevated-designs");
+  assert.deepEqual(b.discounts.items.map((d) => [d.code, d.automatic, d.kind, d.status, d.used]), [["MARKET15", false, "amount", "active", 4], [null, true, "shipping", "expired", 9]]);
+  assert.equal(b.discounts.items[0].admin, "https://admin.shopify.com/store/elevated-designs/discounts/11");
+  assert.deepEqual(b.giftCards.items[0].balance, { amount: 20, currency: "USD" });
+  assert.equal(b.segments.items[0].admin, "https://admin.shopify.com/store/elevated-designs/customers/segments/7");
+  assert.equal(b.campaigns.items[0].utm.campaign, "fall");
+  assert.deepEqual(b.channels.items.installed, ["Online Store", "Google & YouTube"]);
+  assert.deepEqual(b.channels.items.ads.filter((c) => c.installed).map((c) => c.name), ["Google & YouTube"]);
+  assert.equal(b.abandoned.items[0].total.amount, 27.99);
+  assert.ok(b.adminOnly.some((x) => x.name === "Shopify Email" && x.url.endsWith("/apps/shopify-email")));
+  assert.ok(b.templates.length >= 4);
+  assert.ok(sh.calls.every((c) => !c.domain || c.domain === "elevated-designs.myshopify.com"), "only the Elevated Designs store is read");
+});
+
+test("promotions: a missing scope empties only its own section and names the scope", async () => {
+  const res = await PR.handlePromotions(keyed({ store: "c3d" }), prCtx(promoShopify({ denyGift: true })));
+  assert.equal(res.status, 200);
+  assert.equal(res.body.giftCards.code, "access_denied");
+  assert.deepEqual(res.body.giftCards.scopes, ["read_gift_cards", "write_gift_cards"]);
+  assert.equal(res.body.discounts.items.length, 2);
+  const make = await PR.handlePromotions(post({ store: "c3d", action: "giftcard", amount: 25 }), prCtx(promoShopify({ denyGift: true })));
+  assert.equal(make.status, 502);
+  assert.deepEqual(make.body.details.scopes, ["read_gift_cards", "write_gift_cards"]);
+});
+
+test("promotions: reading and changing need the console key", async () => {
+  const sh = promoShopify();
+  assert.equal((await PR.handlePromotions(get({ store: "ed" }), prCtx(sh))).status, 401);
+  assert.equal((await PR.handlePromotions(post({ store: "ed", action: "segment", name: "x", query: "number_of_orders >= 1" }, { "content-type": "application/json" }), prCtx(sh))).status, 401);
+  assert.equal(sh.calls.filter((c) => c.op).length, 0);
+});
+
+test("promotions: discounts of every kind become the right Shopify input, and are logged", async () => {
+  const sh = promoShopify();
+  const kv = fakeKV();
+  const ctx = prCtx(sh, { kv });
+  const code = await PR.handlePromotions(post({ store: "ed", action: "discount", method: "code", type: "percentage", title: "Market 15", code: "market15", value: 15, minSubtotal: 30, usageLimit: 100, oncePerCustomer: true, endsAt: "2026-12-31T23:59:00-05:00", segmentId: "gid://shopify/Segment/7" }), ctx);
+  assert.equal(code.status, 200, JSON.stringify(code.body));
+  assert.equal(code.body.admin, "https://admin.shopify.com/store/elevated-designs/discounts/21");
+  const d = sh.calls.find((c) => c.op === "PromoDiscountCodeBasicCreate").variables.d;
+  assert.equal(d.code, "MARKET15");
+  assert.deepEqual(d.customerGets, { items: { all: true }, value: { percentage: 0.15 } });
+  assert.deepEqual(d.minimumRequirement, { subtotal: { greaterThanOrEqualToSubtotal: "30.00" } });
+  assert.deepEqual(d.context, { customerSegments: { add: ["gid://shopify/Segment/7"] } });
+  assert.equal(d.startsAt, NOW.toISOString());
+  assert.equal(d.endsAt, "2027-01-01T04:59:00.000Z");
+  assert.equal(d.usageLimit, 100);
+  assert.equal(d.appliesOncePerCustomer, true);
+  assert.deepEqual(d.combinesWith, { shippingDiscounts: true });
+
+  await PR.handlePromotions(post({ store: "ed", action: "discount", method: "code", type: "shipping", title: "Ship free", code: "SHIPFREE" }), ctx);
+  const ship = sh.calls.find((c) => c.op === "PromoDiscountCodeFreeShippingCreate").variables.d;
+  assert.deepEqual(ship.destination, { all: true });
+  assert.equal(ship.customerGets, undefined);
+  assert.deepEqual(ship.context, { all: "ALL" });
+
+  await PR.handlePromotions(post({ store: "ed", action: "discount", method: "automatic", type: "amount", title: "$5 off $40", value: 5, minSubtotal: 40 }), ctx);
+  const auto = sh.calls.find((c) => c.op === "PromoDiscountAutomaticBasicCreate").variables.d;
+  assert.deepEqual(auto.customerGets.value, { discountAmount: { amount: "5.00", appliesOnEachItem: false } });
+  assert.equal(auto.code, undefined);
+  assert.equal(auto.usageLimit, undefined);
+
+  await PR.handlePromotions(post({ store: "ed", action: "discount", method: "automatic", type: "shipping", title: "Free ship over $50", minSubtotal: 50 }), ctx);
+  assert.ok(sh.calls.some((c) => c.op === "PromoDiscountAutomaticFreeShippingCreate"));
+
+  const log = await MK.readChanges(kv, "ed");
+  assert.equal(log.length, 4);
+  assert.ok(log.every((x) => x.kind === "promotion" && x.source === "console" && x.url === "https://elevatedshirts.com"));
+  assert.equal(log[3].after.discount, "15% off orders over $30.00 with code MARKET15");
+  assert.equal((await MK.readChanges(kv, "c3d")).length, 0, "the brands keep separate logs");
+});
+
+test("promotions: turning discounts on and off and deleting picks code or automatic mutations", async () => {
+  const sh = promoShopify();
+  const ctx = prCtx(sh, { kv: fakeKV() });
+  for (const [id, active] of [["gid://shopify/DiscountCodeNode/11", true], ["gid://shopify/DiscountCodeNode/11", false], ["gid://shopify/DiscountAutomaticNode/12", true], ["gid://shopify/DiscountAutomaticNode/12", false]]) {
+    const r = await PR.handlePromotions(post({ store: "c3d", action: "discountStatus", id, active }), ctx);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+  }
+  assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["PromoCodeOn", "PromoCodeOff", "PromoAutoOn", "PromoAutoOff"]);
+  await PR.handlePromotions(post({ store: "c3d", action: "discountDelete", id: "gid://shopify/DiscountCodeNode/11" }), ctx);
+  await PR.handlePromotions(post({ store: "c3d", action: "discountDelete", id: "gid://shopify/DiscountAutomaticNode/12" }), ctx);
+  assert.deepEqual(sh.calls.filter((c) => c.op).slice(-2).map((c) => c.op), ["PromoCodeDelete", "PromoAutoDelete"]);
+});
+
+test("promotions: gift cards and customer groups", async () => {
+  const sh = promoShopify();
+  const kv = fakeKV();
+  const ctx = prCtx(sh, { kv });
+  const g = await PR.handlePromotions(post({ store: "c3d", action: "giftcard", amount: 25, note: "Market raffle", expiresOn: "2027-12-31" }), ctx);
+  assert.equal(g.status, 200, JSON.stringify(g.body));
+  assert.equal(g.body.code, "abcd efgh ijkl zz99");
+  assert.deepEqual(sh.calls.find((c) => c.op === "PromoGiftCard").variables.d, { initialValue: "25.00", note: "Market raffle", expiresOn: "2027-12-31" });
+  const logged = JSON.stringify(await MK.readChanges(kv, "c3d"));
+  assert.ok(!logged.includes("abcd efgh"), "the gift card code is never kept in the log");
+  assert.equal((await PR.handlePromotions(post({ store: "c3d", action: "giftcardDisable", id: "gid://shopify/GiftCard/5" }), ctx)).status, 200);
+  const s = await PR.handlePromotions(post({ store: "c3d", action: "segment", name: "Loyal: 3+ orders", query: "number_of_orders >= 3" }), ctx);
+  assert.equal(s.status, 200);
+  assert.equal(s.body.admin, "https://admin.shopify.com/store/charleston3d/customers/segments/8");
+});
+
+test("promotions: Shopify's refusal comes back as a readable 422", async () => {
+  const r = await PR.handlePromotions(post({ store: "ed", action: "discount", method: "code", type: "percentage", title: "Dup", code: "MARKET15", value: 10 }), prCtx(promoShopify({ reject: true })));
+  assert.equal(r.status, 422);
+  assert.match(r.body.error, /Code must be unique/);
+});
+
+const BAD_PROMOS = [
+  ["unknown action", { action: "email" }],
+  ["bad method", { action: "discount", method: "bogo", type: "percentage", title: "x", code: "ABC", value: 10 }],
+  ["percent over 100", { action: "discount", method: "code", type: "percentage", title: "x", code: "ABC", value: 150 }],
+  ["no value", { action: "discount", method: "code", type: "amount", title: "x", code: "ABC" }],
+  ["value on free shipping", { action: "discount", method: "code", type: "shipping", title: "x", code: "ABC", value: 5 }],
+  ["code with spaces", { action: "discount", method: "code", type: "percentage", title: "x", code: "TEN OFF", value: 10 }],
+  ["code on automatic", { action: "discount", method: "automatic", type: "percentage", title: "x", code: "ABC", value: 10 }],
+  ["no title", { action: "discount", method: "code", type: "percentage", code: "ABC", value: 10 }],
+  ["end before start", { action: "discount", method: "code", type: "percentage", title: "x", code: "ABC", value: 10, startsAt: "2026-12-01T00:00:00Z", endsAt: "2026-11-01T00:00:00Z" }],
+  ["date without zone", { action: "discount", method: "code", type: "percentage", title: "x", code: "ABC", value: 10, endsAt: "2026-12-01T00:00" }],
+  ["bad segment id", { action: "discount", method: "code", type: "percentage", title: "x", code: "ABC", value: 10, segmentId: "7" }],
+  ["extra field", { action: "discount", method: "code", type: "percentage", title: "x", code: "ABC", value: 10, appliesTo: "all" }],
+  ["product id as discount id", { action: "discountStatus", id: PID, active: true }],
+  ["active not boolean", { action: "discountStatus", id: "gid://shopify/DiscountCodeNode/1", active: "yes" }],
+  ["gift card too big", { action: "giftcard", amount: 50000 }],
+  ["gift card expired", { action: "giftcard", amount: 10, expiresOn: "2026-10-01" }],
+  ["segment without rule", { action: "segment", name: "x" }],
+];
+test("promotions: bad input is refused before Shopify is called", async () => {
+  const sh = promoShopify();
+  for (const [why, body] of BAD_PROMOS) {
+    const r = await PR.handlePromotions(post({ store: "ed", ...body }), prCtx(sh));
+    assert.equal(r.status, 400, `${why}: ${JSON.stringify(r.body)}`);
+  }
+  assert.equal(sh.calls.filter((c) => c.op).length, 0);
+});
+
+test("promotions: the worker routes /api/promotions with the marketing log", async () => {
+  const kv = fakeKV();
+  const sh = promoShopify();
+  const res = await withFetch(() => W.handleRequest(wreq("/api/promotions?store=ed", { headers: { "x-console-key": ENV.CONSOLE_KEY } }), workerEnv({ MARKETING: kv })), sh.fetch);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("cache-control"), "no-store");
+  assert.equal((await res.json()).discounts.items.length, 2);
+});
+
+test("marketing: Search Console pages, devices, sitemaps, indexing, sitemap submit and page check", async () => {
+  MK.clearGoogleToken();
+  const pair = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
+  const pkcs8 = Buffer.from(await crypto.subtle.exportKey("pkcs8", pair.privateKey)).toString("base64");
+  const sa = JSON.stringify({ client_email: "console@proj.iam.gserviceaccount.com", private_key: `-----BEGIN PRIVATE KEY-----\n${pkcs8}\n-----END PRIVATE KEY-----\n` });
+  const seen = [];
+  let scope = null;
+  mkFetch.google = async (u, init) => {
+    if (u.startsWith("https://oauth2.googleapis.com/token")) {
+      const jwt = new URLSearchParams(init.body).get("assertion");
+      scope = JSON.parse(Buffer.from(jwt.split(".")[1], "base64url").toString()).scope;
+      return new Response(JSON.stringify({ access_token: "ya29.test", expires_in: 3600 }), { status: 200 });
+    }
+    seen.push(`${init.method} ${u}`);
+    if (u.includes("urlInspection")) {
+      const b = JSON.parse(init.body);
+      assert.equal(b.siteUrl, "sc-domain:charleston3d.com");
+      return new Response(JSON.stringify({ inspectionResult: { inspectionResultLink: "https://search.google.com/x", indexStatusResult: { verdict: "PASS", coverageState: "Submitted and indexed", lastCrawlTime: "2026-10-20T00:00:00Z", googleCanonical: `${b.inspectionUrl}`, userCanonical: `${b.inspectionUrl}` } } }), { status: 200 });
+    }
+    if (u.endsWith("/sitemaps") && init.method === "GET") return new Response(JSON.stringify({ sitemap: [{ path: "https://charleston3d.com/sitemap.xml", lastDownloaded: "2026-10-22T00:00:00Z", errors: "0", warnings: "1", contents: [{ type: "web", submitted: "42" }] }] }), { status: 200 });
+    if (init.method === "PUT") return new Response("", { status: 200 });
+    const dims = JSON.parse(init.body).dimensions;
+    if (dims[0] === "page") return new Response(JSON.stringify({ rows: [{ keys: ["https://charleston3d.com/products/ornament"], clicks: 4, impressions: 120, ctr: 0.0333, position: 8.42 }] }), { status: 200 });
+    return new Response(JSON.stringify({ rows: [{ keys: ["MOBILE"], clicks: 3, impressions: 90, ctr: 0.0333, position: 9 }, { keys: ["DESKTOP"], clicks: 1, impressions: 30, ctr: 0.0333, position: 7 }] }), { status: 200 });
+  };
+  const f = mkFetch(qlShopify()).fetch;
+  const ctx = mkCtx(f, { GSC_SERVICE_ACCOUNT: sa }, { now: () => NOW });
+  const res = await MK.handleMarketing(mkGet({ store: "c3d", part: "google" }), ctx);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(scope.split(" ")[0], "https://www.googleapis.com/auth/webmasters", "full Search Console scope, so sitemaps can be submitted");
+  assert.deepEqual(res.body.pages[0], { page: "https://charleston3d.com/products/ornament", clicks: 4, impressions: 120, ctr: 3.3, position: 8.4 });
+  assert.deepEqual(res.body.devices.map((d) => d.device), ["mobile", "desktop"]);
+  assert.deepEqual(res.body.sitemaps[0], { path: "https://charleston3d.com/sitemap.xml", submitted: null, downloaded: "2026-10-22T00:00:00Z", pending: false, errors: 0, warnings: 1, urls: 42 });
+  assert.equal(res.body.home.verdict, "pass");
+  const sub = await MK.handleMarketing(post({ store: "c3d", action: "sitemap" }), ctx);
+  assert.equal(sub.status, 200, JSON.stringify(sub.body));
+  assert.ok(seen.includes(`PUT https://searchconsole.googleapis.com/webmasters/v3/sites/sc-domain%3Acharleston3d.com/sitemaps/${encodeURIComponent("https://charleston3d.com/sitemap.xml")}`));
+  const ins = await MK.handleMarketing(post({ store: "c3d", action: "inspect", url: "https://charleston3d.com/products/ornament" }), ctx);
+  assert.equal(ins.status, 200);
+  assert.equal(ins.body.coverage, "Submitted and indexed");
+  const other = await MK.handleMarketing(post({ store: "c3d", action: "inspect", url: "https://elevatedshirts.com/" }), ctx);
+  assert.equal(other.status, 400, "a page on the other brand's site is refused");
+  const none = await MK.handleMarketing(mkGet({ store: "ed", part: "google" }), mkCtx(f, {}, { now: () => NOW }));
+  assert.equal(none.body.connected, false);
+  assert.match(none.body.note, /GSC_SERVICE_ACCOUNT/);
+  MK.clearGoogleToken();
+});
+
 // ---------- last: the schema check over everything sent above ----------
 test("every GraphQL string sent matches the Admin API 2025-10 schema, variables included", async () => {
   const S = await import("../lib/shopify.mjs");
@@ -2426,8 +2656,9 @@ test("every GraphQL string sent matches the Admin API 2025-10 schema, variables 
   const P = await import("../lib/pricing.mjs");
   const I = await import("../lib/insights.mjs");
   const M = await import("../lib/marketing.mjs");
-  const ops = [...[S, L, M, P].flatMap((m) => Object.entries(m).filter(([k, v]) => /_(QUERY|MUTATION)$/.test(k) && typeof v === "string").map(([, v]) => v)),
-    I.ordersQuery(true), I.ordersQuery(false), I.SHOP_QUERY, I.SESSIONS_QUERY];
+  const R = await import("../lib/promotions.mjs");
+  const ops = [...[S, L, M, P, R].flatMap((m) => Object.entries(m).filter(([k, v]) => /_(QUERY|MUTATION)$/.test(k) && typeof v === "string").map(([, v]) => v)),
+    ...Object.values(R.MUTATIONS), I.ordersQuery(true), I.ordersQuery(false), I.SHOP_QUERY, I.SESSIONS_QUERY];
   const sent = new Set(checked()); // before the loop below adds the rest
   for (const q of ops) assert.deepEqual(schemaErrors(q), [], q.slice(0, 80));
   const unsent = ops.filter((q) => !sent.has(q)).map((q) => q.slice(0, 60));

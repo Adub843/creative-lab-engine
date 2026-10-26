@@ -8,7 +8,8 @@
 //   ASSETS   the static files in dist/
 //   IMAGES   Workers KV namespace holding the image library (lib/kv-store.mjs)
 //   PRICING  Workers KV namespace holding where the shirt price sync got to (lib/pricing.mjs)
-//   MARKETING  Workers KV namespace holding each store's daily marketing scores (lib/marketing.mjs)
+//   MARKETING  Workers KV namespace holding each store's daily marketing scores and change log
+//              (lib/marketing.mjs, lib/promotions.mjs)
 // Secrets (set with `npx wrangler secret put NAME`, never in code): CONSOLE_KEY, the Shopify
 // domains and tokens (C3D_*, ED_*), and optionally INDEXNOW_KEY, ED_HANDLING_DAYS, *_SITE_URL.
 import { handleProducts, HttpError } from "../lib/shopify.mjs";
@@ -18,6 +19,7 @@ import { handleImages } from "../lib/images.mjs";
 import { kvBlobStore } from "../lib/kv-store.mjs";
 import { handlePricing, scheduledPricing } from "../lib/pricing.mjs";
 import { handleMarketing, runScheduledAudits, runScheduledFixes } from "../lib/marketing.mjs";
+import { handlePromotions } from "../lib/promotions.mjs";
 
 // The app pages: only its own scripts, Shopify's CDN for product photos, never framed.
 export const SITE_HEADERS = {
@@ -82,6 +84,7 @@ const insights = jsonRoute(handleInsights);
 const listings = jsonRoute(handleListings);
 const pricing = jsonRoute(handlePricing);
 const marketing = jsonRoute(handleMarketing);
+const promotions = jsonRoute(handlePromotions);
 const marketingKv = (env) => (env?.MARKETING && typeof env.MARKETING.get === "function" ? env.MARKETING : null);
 
 export async function handleRequest(req, env) {
@@ -90,6 +93,8 @@ export async function handleRequest(req, env) {
     if (pathname === "/api/products") return await products(req, env);
     if (pathname === "/api/insights") return await insights(req, env);
     if (pathname === "/api/marketing") return await marketing(req, env, { kv: marketingKv(env) });
+    // Promotions log their changes in the Marketing change log, so they share its KV.
+    if (pathname === "/api/promotions") return await promotions(req, env, { kv: marketingKv(env) });
     if (pathname === "/api/listings") {
       // The design is read through the image library's own read route, from the same KV namespace.
       const readImage = async (key) => libraryReader({ blobs: imageStore(env), env: envReader(env) })(key);

@@ -70,10 +70,11 @@ export async function renderMarketing() {
     const [chgPanel, chgBox] = section("Changes and what they did", el("span", { class: "muted small" }, "Safe fixes run every morning, 11:30 UTC"));
     const [catPanel, catBox] = section("Products and collections");
     const [kwPanel, kwBox] = section("Keywords", el("span", { class: "muted small" }, "Google and Bing, last 28 days"));
+    const [gscPanel, gscBox] = section("Google Search Console", el("span", { class: "muted small" }, "Pages, devices, sitemaps and indexing"));
     const [setPanel, setBox] = section("Site settings", el("span", { class: "muted small" }, "Changes the live theme"));
     const [trafPanel, trafBox] = section("Where visitors come from", el("span", { class: "muted small" }, "Last 90 days"));
     const [searchPanel, searchBox] = section("Search queries");
-    body.replaceChildren(auditPanel, growPanel, chgPanel, catPanel, kwPanel, setPanel, trafPanel, searchPanel, utmPanel(s), toolsPanel(s));
+    body.replaceChildren(auditPanel, growPanel, chgPanel, catPanel, kwPanel, gscPanel, setPanel, trafPanel, searchPanel, utmPanel(s), toolsPanel(s));
 
     const fetchPart = (part, extra = "") => api(`/api/marketing?store=${s}&part=${part}${extra}`, { key: true, reason: KEY_REASON });
     // The audit first (it can ask for the key once); the others follow with the key in hand.
@@ -89,6 +90,7 @@ export async function renderMarketing() {
           .catch((e) => live() && chgBox.replaceChildren(errorState(e, "the change log", load)));
         fetchPart("catalog").then((c) => live() && catBox.replaceChildren(...catalogView(s, c))).catch((e) => live() && catBox.replaceChildren(errorState(e, "products and collections", load)));
         fetchPart("keywords").then((k) => live() && kwBox.replaceChildren(...keywordsView(s, k))).catch((e) => live() && kwBox.replaceChildren(errorState(e, "keywords", load)));
+        fetchPart("google").then((g) => live() && gscBox.replaceChildren(...googleView(s, g))).catch((e) => live() && gscBox.replaceChildren(errorState(e, "Search Console", load)));
         fetchPart("settings").then((c) => live() && setBox.replaceChildren(settingsView(s, c))).catch((e) => live() && setBox.replaceChildren(errorState(e, "the site settings", load)));
         fetchPart("traffic").then((t) => { if (!live()) return; trafBox.replaceChildren(...trafficView(t)); searchBox.replaceChildren(...queriesView(t)); })
           .catch((e) => { if (!live()) return; trafBox.replaceChildren(errorState(e, "traffic", load)); searchBox.replaceChildren(el("p", { class: "muted" }, "Needs the store connected first.")); });
@@ -219,12 +221,12 @@ export async function renderMarketing() {
       const dir = e.change == null ? "flat" : e.change > 0 ? "up" : e.change < 0 ? "down" : "flat";
       return el("span", { class: `small delta ${dir}` }, `${what}: ${e.beforePerDay ?? 0}/day before → ${e.afterPerDay ?? 0}/day since`, e.change == null ? "" : ` (${e.change > 0 ? "+" : ""}${e.change}%)`);
     };
-    const pill = (x) => x.kind === "revert" ? ["Undone", "s-attn"] : x.source === "auto" ? ["Auto", "s-live"] : ["You", "b-other"];
+    const pill = (x) => x.kind === "revert" ? ["Undone", "s-attn"] : x.kind === "promotion" ? ["Promotion", "s-attn"] : x.source === "auto" ? ["Auto", "s-live"] : ["You", "b-other"];
     const row = (x) => {
       const [t, cls] = pill(x);
       const undone = x.review?.verdict === "undo";
       let undo = null;
-      if (c.logAvailable && x.kind !== "revert" && !undone) {
+      if (c.logAvailable && x.kind !== "revert" && x.kind !== "promotion" && !undone) {
         undo = el("button", { class: "btn ghost", type: "button" }, "Undo");
         undo.addEventListener("click", async () => {
           undo.disabled = true;
@@ -444,6 +446,66 @@ export async function renderMarketing() {
     return [el("div", { class: "grid-2" },
       block("Google", t.google, ext("https://search.google.com/search-console", "Open Search Console", "btn ghost")),
       block("Bing (also feeds ChatGPT search and Copilot)", t.bing, ext("https://www.bing.com/webmasters", "Open Bing Webmaster Tools", "btn ghost")))];
+  }
+
+  // ---------- Google Search Console ----------
+  function googleView(s, g) {
+    const site = STORES[s].site;
+    if (!g.connected) return [el("p", { class: "muted small" }, g.note), googleLinks(s)];
+    if (g.error) return [el("div", { class: "state state-setup" }, el("p", {}, g.error)), googleLinks(s)];
+    const out = [];
+    const total = g.devices.reduce((a, d) => a + d.clicks, 0);
+    out.push(el("p", { class: "small" }, el("span", { class: "muted" }, `${g.property} · ${g.start} to ${g.end}. `),
+      g.devices.length ? g.devices.map((d) => `${d.device}: ${num(d.clicks)} clicks${total ? ` (${Math.round((d.clicks / total) * 100)}%)` : ""}`).join(" · ") : "No clicks yet."));
+    // Is the home page in Google?
+    const h = g.home ?? {};
+    const okIdx = h.verdict === "pass";
+    out.push(el("div", { class: "row", style: "align-items:flex-start" },
+      el("span", { class: `pill ${h.error ? "b-other" : okIdx ? "s-live" : "s-attn"}` }, h.error ? "Unknown" : okIdx ? "Indexed" : "Not indexed"),
+      el("span", { class: "small wrap" }, el("strong", {}, "Home page: "), h.error ?? [h.coverage, h.lastCrawl ? `last crawled ${new Date(h.lastCrawl).toLocaleDateString()}` : null].filter(Boolean).join(", "),
+        h.googleCanonical && h.userCanonical && h.googleCanonical !== h.userCanonical ? el("span", { class: "delta down" }, ` Google picked a different main address: ${h.googleCanonical}`) : null)));
+    // Pages
+    out.push(g.pages.length ? el("div", { class: "tbl" }, el("table", {},
+      el("thead", {}, el("tr", {}, ["Page", "Shown", "Clicks", "Click rate", "Position"].map((x) => el("th", { scope: "col" }, x)))),
+      el("tbody", {}, g.pages.map((p) => el("tr", {}, el("td", { class: "wrap" }, el("a", { href: p.page, target: "_blank", rel: "noopener" }, p.page.replace(site, "") || "/")),
+        el("td", { class: "num" }, num(p.impressions)), el("td", { class: "num" }, num(p.clicks)), el("td", { class: "num" }, `${p.ctr}%`), el("td", { class: "num" }, p.position ?? "–"))))))
+      : el("p", { class: "muted small" }, "No pages in Google results yet. New sites take a few weeks."));
+    // Sitemaps
+    const send = el("button", { class: "btn ghost", type: "button" }, "Submit sitemap to Google");
+    const sent = el("span", { class: "small muted", role: "status" });
+    send.addEventListener("click", async () => {
+      send.disabled = true; sent.textContent = "Sending…";
+      try { const r = await api("/api/marketing", { method: "POST", key: true, reason: KEY_REASON, body: { store: s, action: "sitemap" } }); sent.textContent = `Submitted ${r.submitted}.`; }
+      catch (e) { sent.textContent = e.message; } finally { send.disabled = false; }
+    });
+    out.push(el("h3", {}, "Sitemaps"), g.sitemaps == null ? el("p", { class: "muted small" }, "Couldn't read the sitemaps.")
+      : g.sitemaps.length ? el("ul", { class: "plain stack", style: "gap:4px" }, g.sitemaps.map((m) => el("li", { class: "small wrap" }, el("span", { class: "mono" }, m.path), ` · ${num(m.urls)} pages`,
+        m.downloaded ? ` · read ${new Date(m.downloaded).toLocaleDateString()}` : " · not read yet", m.errors ? el("span", { class: "delta down" }, ` · ${m.errors} errors`) : null, m.warnings ? el("span", { class: "delta flat" }, ` · ${m.warnings} warnings`) : null)))
+      : el("p", { class: "muted small" }, "Google has no sitemap for this site yet. Submit it."), el("div", { class: "row" }, send, sent));
+    // Check any page
+    const url = el("input", { class: "field", id: `gsc-url-${s}`, value: `${site}/`, "aria-label": "Page address to check" });
+    const check = el("button", { class: "btn ghost", type: "button" }, "Is it in Google?");
+    const res = el("p", { class: "small wrap", role: "status" });
+    check.addEventListener("click", async () => {
+      check.disabled = true; res.textContent = "Asking Google…";
+      try {
+        const r = await api("/api/marketing", { method: "POST", key: true, reason: KEY_REASON, body: { store: s, action: "inspect", url: url.value.trim() } });
+        res.replaceChildren(el("span", { class: `pill ${r.verdict === "pass" ? "s-live" : "s-attn"}` }, r.verdict === "pass" ? "Indexed" : "Not indexed"), ` ${r.coverage || ""}`,
+          r.lastCrawl ? ` · last crawled ${new Date(r.lastCrawl).toLocaleDateString()}` : "", r.link ? el("span", {}, " · ", el("a", { href: r.link, target: "_blank", rel: "noopener" }, "open in Search Console")) : null);
+      } catch (e) { res.textContent = e.message; } finally { check.disabled = false; }
+    });
+    out.push(el("h3", {}, "Check a page"), el("div", { class: "row" }, url, check), res, googleLinks(s));
+    return out;
+  }
+  // The other Google tools for a shop. GA4 already feeds the Growth chart.
+  function googleLinks(s) {
+    const site = STORES[s].site;
+    return el("div", { class: "links" },
+      ext("https://search.google.com/search-console", "Search Console", ""),
+      ext("https://merchants.google.com/", "Merchant Center (free product listings, Shopping ads)", ""),
+      ext("https://analytics.google.com/", "Google Analytics (GA4)", ""),
+      ext("https://business.google.com/", "Business Profile (Maps, local search)", ""),
+      ext(`https://pagespeed.web.dev/analysis?url=${encodeURIComponent(`${site}/`)}`, "PageSpeed Insights", ""));
   }
 
   // ---------- UTM link builder ----------

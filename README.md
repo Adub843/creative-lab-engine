@@ -91,6 +91,7 @@ If a scope is missing, that part of the page says which scope to add and the res
 - **Products and collections.** Every active product and collection with its SEO title, description and photo alt text, flagged when missing, too long, too short or duplicated, with a search preview and a suggested title and description to use. Saving updates Shopify and sends the page to IndexNow.
 - **Site settings.** The live theme's marketing settings (home title, brand description, verification codes, IndexNow key, social profiles, city, region, map position, areas served, GA4, Clarity, Meta pixel, TikTok pixel and Pinterest tag IDs; the pixels load only after a visitor allows marketing cookies), saved straight into the published theme's `settings_data.json`. Only those fields can be changed; street addresses and phone numbers are refused.
 - **Where visitors come from.** Sessions and conversion for the last 90 days by referrer and by UTM source, medium and campaign (the QR codes show up here).
+- **Google Search Console.** Top pages (shown, clicks, click rate, position), clicks by device, whether Google has indexed the home page (URL Inspection), the sitemaps Google has with their errors, a **Submit sitemap to Google** button, and **Is it in Google?** for any page on the store's own site. Links to Merchant Center, GA4, Business Profile and PageSpeed Insights. Needs `GSC_SERVICE_ACCOUNT`; submitting a sitemap needs that account to be an **Owner** on the property (reading needs any user).
 - **Search queries.** Google (Search Console) and Bing searches, clicks, impressions and position, plus the searches closest to page 1. Needs `GSC_SERVICE_ACCOUNT` and `BING_WEBMASTER_API_KEY`; without them that block says what to add.
 - **UTM link builder and Tools.** Tagged links for the store's own pages, a button to send the whole sitemap to IndexNow, links to the outside tools, and a monthly routine checklist (kept in that browser).
 
@@ -170,10 +171,25 @@ Set each of these as a Worker secret, from the console's folder: `npx wrangler s
 | `ED_HANDLING_DAYS` | Optional. Business days to ship, used in new Elevated Designs listings, like `5-7` (the default) or `3-5`. |
 | `C3D_INDEXNOW_KEY`, `ED_INDEXNOW_KEY` | Recommended. Each store's own IndexNow key (8 to 128 letters, digits or dashes); the brands never share one. `INDEXNOW_KEY` still works as a fallback for a store without its own. In each store add a page with handle `indexnow-key` and template `page.indexnow`, paste the same key in Theme settings > Search and AI, and add a URL redirect from `/<key>.txt` to `/pages/indexnow-key`. Pings use `keyLocation=https://<site>/<key>.txt`, because a key under `/pages/` would only cover `/pages/` URLs, not products. |
 | `BING_WEBMASTER_API_KEY` | Optional. Shows Bing search queries on Marketing. Bing Webmaster Tools > Settings (gear) > API access > API key. One key covers every site verified in that account. |
-| `GSC_SERVICE_ACCOUNT` | Optional. Shows Google search queries on Marketing: the whole JSON key file of a Google Cloud service account with the Search Console API turned on. Add the account's `client_email` as a user (Restricted is enough) on each Search Console property. |
+| `GSC_SERVICE_ACCOUNT` | Optional. Brings Google Search Console into Marketing (queries, pages, sitemaps, indexing, keywords, Google clicks on Growth): the whole JSON key file of a Google Cloud service account with the Search Console API turned on. Add the account's `client_email` as a user on each Search Console property; make it an **Owner** to let the console submit sitemaps. |
 | `C3D_GA4_PROPERTY`, `ED_GA4_PROPERTY` | Optional. The numeric GA4 property ID (Admin > Property details, not the G- measurement ID) for engagement on the Growth chart. Uses `GSC_SERVICE_ACCOUNT`: turn on the Google Analytics Data API for that Cloud project and add its `client_email` as a Viewer on the property. |
 | `MARKETING_AUTOFIX` | Optional. `off` stops the 11:30 UTC safe fixes (the button on Marketing still works, and changes are still logged). |
 | `C3D_GSC_PROPERTY`, `ED_GSC_PROPERTY` | Optional. The Search Console property, when it isn't the domain property `sc-domain:<host>` (for example `https://charleston3d.com/`). |
+
+## Promotions
+
+`#promote` runs Shopify's marketing tools for one store at a time, through the Admin API:
+
+- **Discounts.** Every code and automatic discount with its code, status, uses and dates; turn one on or off, or delete it (two clicks). New discounts: percent off, dollars off or free shipping, as a code or automatic, with an optional minimum order, start and end, total uses, one use per customer (codes) and a customer group. They apply to every product, and amount-off discounts still allow free shipping.
+- **Gift cards.** Balances, and new gift cards (amount, note, expiry). The full code is shown once when it's made, as Shopify only returns the last four characters after that. Turning a card off is permanent.
+- **Customer groups.** Shopify segments, and new ones from a rule or a ready-made template (loyal, lapsed, top spenders, subscribed but never bought, South Carolina). A group can be the audience of a discount.
+- **Campaigns and marketing activity.** What Shopify tracks from Shopify Email and the ad channel apps: channel, status, ad spend and UTM campaign.
+- **Sales channels.** Where the store sells, and whether Google & YouTube, Facebook & Instagram, TikTok and Pinterest are connected (with a link to add each).
+- **Abandoned checkouts.** The latest 25, the total left behind, and each cart's recovery link.
+
+Each change goes in the Marketing change log (kind "Promotion"), so the Growth chart shows it against visits and sales. Every section loads on its own: a missing scope only empties its own section and names the scope.
+
+**Only in Shopify's admin.** Shopify keeps these out of its API, so the page links straight to them: Shopify Email campaigns, marketing automations (abandoned cart, welcome and browse emails), Shopify Flow workflows, creating campaigns, and connecting ad accounts and buying ads in the channel apps.
 
 ### Admin API access scopes
 
@@ -185,6 +201,11 @@ Give each store's app these scopes:
 - `read_reports`: sessions and conversion, visits by source and UTM campaign (ShopifyQL)
 - `read_themes`, `write_themes`: Marketing's Site settings (read and save the live theme's search, location and analytics settings)
 - `write_files`: Marketing's photo alt text (`fileUpdate`)
+- `read_discounts`, `write_discounts`: Promotions' discounts
+- `read_gift_cards`, `write_gift_cards`: Promotions' gift cards
+- `read_customers`, `write_customers`: Promotions' customer groups (segments)
+- `read_marketing_events`: Promotions' campaigns and marketing activity
+- `read_orders`: also Promotions' abandoned checkouts
 
 If Elevated Designs answers a listing with "access denied" for the product image, also add `write_files` (the image becomes a Shopify file); Shopify's docs list only `write_products` for `productSet` and staged uploads.
 
@@ -225,6 +246,14 @@ Run `npm install` once first (the API tests use `graphql`, and `wrangler` runs t
 | `POST /api/marketing {store, action: "keywords", keywords}` | Save the store's tracked keywords |
 | `POST /api/marketing {store, action: "settings", values}` | Save marketing settings to the live theme |
 | `POST /api/marketing {store, action: "indexnow", urls?}` | Send pages (or the whole sitemap) to IndexNow with the store's own key |
+| `GET /api/marketing?store=c3d\|ed&part=google` | Search Console: top pages, devices, sitemaps and the home page's index status |
+| `POST /api/marketing {store, action: "sitemap"}` | Submit the store's `sitemap.xml` to Google Search Console |
+| `POST /api/marketing {store, action: "inspect", url}` | Ask Google whether a page on the store's own site is indexed |
+| `GET /api/promotions?store=c3d\|ed` | Promotions: discounts, gift cards, segments, campaigns, channels, abandoned checkouts, segment templates and the admin-only tools |
+| `POST /api/promotions {store, action: "discount", method: "code"\|"automatic", type: "percentage"\|"amount"\|"shipping", title, code?, value?, minSubtotal?, startsAt?, endsAt?, usageLimit?, oncePerCustomer?, segmentId?}` | Create a discount |
+| `POST /api/promotions {store, action: "discountStatus", id, active}` / `{..., action: "discountDelete", id}` | Turn a discount on or off, or delete it |
+| `POST /api/promotions {store, action: "giftcard", amount, note?, expiresOn?}` / `{..., action: "giftcardDisable", id}` | Create a gift card (the code comes back once), or turn one off for good |
+| `POST /api/promotions {store, action: "segment", name, query}` | Create a customer group |
 | `GET /api/images` | Image library list: `{items: [{key, name, type, size, tags, added}]}` |
 | `GET /api/images/<key>` | The image file (no key needed; keys are unguessable) |
 | `POST /api/images` | Save one image: the raw file as the body, its type in `content-type` (PNG, JPEG, WebP, GIF or SVG, checked against the file), `x-filename`, optional `x-tags`; 20 MB at most |
