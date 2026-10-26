@@ -2736,8 +2736,9 @@ const libItem = (blobs, n, meta = {}) => blobs.set(`k${n}-0000000${n % 10}`, PNG
 const manifest = (ids, extra = {}) => ({ workspace: WS, folders: { [CLIP]: "Clipped Images" }, images: ids.map((n) => ({ id: kid(n), type: "image/png", folder: CLIP, ...(extra[n] ?? {}) })) });
 function kittlFetch(man, { bad = new Set() } = {}) {
   const calls = [];
-  const fetchImpl = async (url) => {
+  const fetchImpl = async (url, init) => {
     const u = String(url); calls.push(u);
+    if (u !== KS.MANIFEST_URL && !/^image\//.test(init?.headers?.accept ?? "")) return new Response("bare request", { status: 403 });
     if (u === KS.MANIFEST_URL) return man ? new Response(JSON.stringify(man)) : new Response("nope", { status: 404 });
     const m = /^https:\/\/cache\.kittl\.com\/pr:sharp\/plain\/api\/users\/(\w+)\/uploads\/(\w+)\.png$/.exec(u);
     if (!m || m[1] !== WS) return new Response("not here", { status: 404 });
@@ -2816,7 +2817,10 @@ test("kittl sync: the hourly cron saves its result and /api/library-sync shows t
   const res = await handleRequest(new Request("https://console.example/api/library-sync"), env);
   assert.equal(res.status, 200);
   const body = await res.json();
-  assert.deepEqual([body.ok, body.added, body.removed, body.inKittl, body.failed], [true, 1, 0, 2, 0]);
+  assert.deepEqual([body.ok, body.added, body.removed, body.inKittl, body.failed, body.problems], [true, 1, 0, 2, 0, []]);
+  await scheduledKittlSync(env, kittlFetch(manifest([1, 2, 3]), { bad: new Set([kid(3)]) }).fetchImpl);
+  const bad = await (await handleRequest(new Request("https://console.example/api/library-sync"), env)).json();
+  assert.deepEqual([bad.failed, bad.problems], [1, [`${kid(3)}: not a valid png file`]], "the reason a copy failed is shown");
   const list = await handleImages(imgReq("/api/images?public=1"), { blobs: kvBlobStore(kv), env: envOf() });
   assert.equal((await list.json()).items.length, 2, "the sync's own record isn't listed as an image");
 });

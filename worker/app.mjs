@@ -106,7 +106,8 @@ export async function handleRequest(req, env) {
     if (pathname === "/api/library-sync" && req.method === "GET") {
       const last = env?.IMAGES ? await env.IMAGES.get(KITTL_STATE_KEY, "json") : null;
       const { failed = [], ...rest } = last ?? {};
-      return json(last ? { ...rest, failed: failed.length } : { ok: false, error: "No sync has run yet." }, 200);
+      // The first few reasons (a Kittl id and what went wrong, nothing private) say why images didn't copy.
+      return json(last ? { ...rest, failed: failed.length, problems: failed.slice(0, 3) } : { ok: false, error: "No sync has run yet." }, 200);
     }
     if (pathname === "/api/images" || pathname.startsWith("/api/images/"))
       return await handleImages(req, { blobs: imageStore(env), env: envReader(env) });
