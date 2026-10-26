@@ -1,10 +1,10 @@
 /* Layout: fixed sidebar of sections (bottom bar on phones) beside one scrolling work area.
    Brand color marks which business a thing belongs to; status color marks what needs you. */
 :root {
-  --bg: #f2f3f5; --surface: #ffffff; --sunk: #e8eaee; --line: #d6dae1;
-  --fg: #161a22; --muted: #5b6372; --accent: #2747d6; --accent-soft: #e2e7fb;
-  --side: #141821; --side-fg: #c9cfdb; --side-hi: #ffffff;
-  --c3d: #0e7c74; --c3d-soft: #d9efec; --ed: #8b3a90; --ed-soft: #f2e2f3;
+  --bg: #f6f1e7; --surface: #fffdf8; --sunk: #ece5d6; --line: #ddd3bf;
+  --fg: #16203a; --muted: #5e6474; --accent: #1d3566; --accent-soft: #e3e6ef;
+  --side: #0d1b38; --side-fg: #c9cfdb; --side-hi: #ffffff; --brass: #d9b25c;
+  --c3d: #0e7c74; --c3d-soft: #d9efec; --ed: #8a6417; --ed-soft: #f3e6c4;
   --ok: #1d7a3a; --ok-soft: #def1e3; --warn: #a15c00; --warn-soft: #fbebd3; --bad: #b4232a; --bad-soft: #fbe0e1; --off: #6b7280; --off-soft: #eceef1;
   --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
   --f-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
@@ -13,17 +13,17 @@
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #0f1218; --surface: #171b23; --sunk: #20252f; --line: #2d3441;
-  --fg: #e7e9ef; --muted: #98a1b3; --accent: #8ea2ff; --accent-soft: #222b4b;
-  --side: #0a0d12; --side-fg: #a9b1c2; --side-hi: #ffffff;
-  --c3d: #4fc8bd; --c3d-soft: #15322e; --ed: #d992dd; --ed-soft: #35203a;
+  --bg: #0a1428; --surface: #111d36; --sunk: #182644; --line: #24345a;
+  --fg: #f3ede1; --muted: #aab3c7; --accent: #d9b25c; --accent-soft: #2e2a1c;
+  --side: #070f20; --side-fg: #a9b1c2; --side-hi: #ffffff; --brass: #d9b25c;
+  --c3d: #4fc8bd; --c3d-soft: #15322e; --ed: #d9b25c; --ed-soft: #33290f;
   --ok: #5fd27f; --ok-soft: #16311e; --warn: #f0a94a; --warn-soft: #392a12; --bad: #ff7b81; --bad-soft: #3c1a1d; --off: #a0a7b4; --off-soft: #252a34;
   color-scheme: dark; } }
 :root[data-theme="dark"] {
-  --bg: #0f1218; --surface: #171b23; --sunk: #20252f; --line: #2d3441;
-  --fg: #e7e9ef; --muted: #98a1b3; --accent: #8ea2ff; --accent-soft: #222b4b;
-  --side: #0a0d12; --side-fg: #a9b1c2; --side-hi: #ffffff;
-  --c3d: #4fc8bd; --c3d-soft: #15322e; --ed: #d992dd; --ed-soft: #35203a;
+  --bg: #0a1428; --surface: #111d36; --sunk: #182644; --line: #24345a;
+  --fg: #f3ede1; --muted: #aab3c7; --accent: #d9b25c; --accent-soft: #2e2a1c;
+  --side: #070f20; --side-fg: #a9b1c2; --side-hi: #ffffff; --brass: #d9b25c;
+  --c3d: #4fc8bd; --c3d-soft: #15322e; --ed: #d9b25c; --ed-soft: #33290f;
   --ok: #5fd27f; --ok-soft: #16311e; --warn: #f0a94a; --warn-soft: #392a12; --bad: #ff7b81; --bad-soft: #3c1a1d; --off: #a0a7b4; --off-soft: #252a34;
   color-scheme: dark;
 }
@@ -52,11 +52,11 @@ kbd { font-family: var(--f-mono); font-size: 12px; border: 1px solid var(--line)
 .app { display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: 100%; }
 .side { background: var(--side); color: var(--side-fg); display: flex; flex-direction: column; gap: 2px; padding: calc(18px + env(safe-area-inset-top, 0px)) 12px 18px max(12px, env(safe-area-inset-left, 0px)); position: sticky; top: 0; height: 100vh; }
 .logo { display: flex; align-items: center; gap: 10px; color: var(--side-hi); text-decoration: none; font-family: var(--f-display); font-weight: 700; font-size: 17px; padding: 4px 8px 18px; }
-.logo-mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(135deg, var(--c3d), var(--ed)); color: #fff; font-size: 12px; letter-spacing: .04em; }
+.logo-mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(135deg, var(--side), var(--brass)); border: 1px solid var(--brass); color: #fff; font-size: 12px; letter-spacing: .04em; }
 .nav { display: flex; gap: 10px; align-items: center; color: var(--side-fg); text-decoration: none; padding: 9px 10px; border-radius: 8px; font-weight: 500; border-left: 3px solid transparent; }
 .nav .ico { width: 18px; text-align: center; opacity: .8; }
 .nav:hover { background: rgba(255, 255, 255, .06); color: var(--side-hi); }
-.nav[aria-current="page"] { background: rgba(255, 255, 255, .1); color: var(--side-hi); border-left-color: var(--accent); }
+.nav[aria-current="page"] { background: rgba(255, 255, 255, .1); color: var(--side-hi); border-left-color: var(--brass); }
 .nav-c3d[aria-current="page"] { border-left-color: var(--c3d); }
 .nav-ed[aria-current="page"] { border-left-color: var(--ed); }
 .nav-c3d .ico { color: var(--c3d); opacity: 1; }
