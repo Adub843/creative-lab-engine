@@ -339,3 +339,28 @@ code { font-family: var(--f-mono); font-size: 13px; background: var(--sunk); pad
 .brand-hero img { height: 64px; width: auto; max-width: 100%; object-fit: contain; }
 .logo-c3d { background: #15181f; }
 .logo-ed { background: #101a3a; }
+
+/* marketing */
+.wrap { overflow-wrap: anywhere; }
+.spark { display: block; margin-top: 4px; }
+.spark polyline { fill: none; stroke: var(--brand, var(--accent)); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.checks { list-style: none; margin: 0; padding: 0; display: grid; }
+.check { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.check:last-child { border-bottom: 0; }
+.check .pill { justify-self: start; }
+@media (max-width: 640px) { .check { grid-template-columns: 1fr; gap: 4px; } }
+.serp { display: grid; gap: 2px; background: var(--sunk); border-radius: 8px; padding: 12px 14px; max-width: 640px; font-family: Arial, var(--f-body); }
+.serp-url { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.serp-title { font-size: 18px; color: var(--accent); line-height: 1.3; overflow-wrap: anywhere; }
+.serp-desc { font-size: 13.5px; color: var(--fg); overflow-wrap: anywhere; }
+.seo-list { display: grid; }
+.seo-row { border-bottom: 1px solid var(--line); }
+.seo-row > summary { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 0; cursor: pointer; list-style: none; }
+.seo-row > summary::-webkit-details-marker { display: none; }
+.seo-row > summary img, .seo-row .noimg { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; background: var(--sunk); display: block; }
+.seo-edit { padding: 0 0 16px 60px; }
+@media (max-width: 640px) { .seo-edit { padding-left: 0; } }
+.fs { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 0; }
+.fs legend { font-weight: 600; padding: 0 6px; }
+textarea.field { resize: vertical; font-family: var(--f-body); }
+.utm-out { display: block; font-family: var(--f-mono); font-size: 13px; background: var(--sunk); border-radius: 8px; padding: 10px 12px; overflow-wrap: anywhere; }

@@ -30,7 +30,13 @@ binding = "IMAGES"
 [[kv_namespaces]]
 binding = "PRICING"
 
-# Every 15 minutes the Worker moves the price sync one step on; a new sync only starts when the
-# price sheet changed or the last one is over a day old.
+# Each store's daily marketing scores (lib/marketing.mjs), kept for 120 days. Created by the first
+# deploy like IMAGES.
+[[kv_namespaces]]
+binding = "MARKETING"
+
+# 11:00 UTC daily (early morning in Charleston): checks both public sites for the Marketing page.
+# Every 15 minutes: moves the shirt price sync one step on; a new sync only starts when the price
+# sheet changed or the last one is over a day old.
 [triggers]
-crons = ["*/15 * * * *"]
+crons = ["0 11 * * *", "*/15 * * * *"]

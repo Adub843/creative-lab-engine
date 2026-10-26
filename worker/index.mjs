@@ -4,5 +4,5 @@ import { handleRequest, handleScheduled } from "./app.mjs";
 
 export default {
   fetch: (req, env) => handleRequest(req, env),
-  scheduled: (event, env, ctx) => ctx.waitUntil(handleScheduled(env)),
+  scheduled: (event, env, ctx) => ctx.waitUntil(handleScheduled(env, event.cron)),
 };

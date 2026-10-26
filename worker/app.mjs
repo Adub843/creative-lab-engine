@@ -8,6 +8,7 @@
 //   ASSETS   the static files in dist/
 //   IMAGES   Workers KV namespace holding the image library (lib/kv-store.mjs)
 //   PRICING  Workers KV namespace holding where the shirt price sync got to (lib/pricing.mjs)
+//   MARKETING  Workers KV namespace holding each store's daily marketing scores (lib/marketing.mjs)
 // Secrets (set with `npx wrangler secret put NAME`, never in code): CONSOLE_KEY, the Shopify
 // domains and tokens (C3D_*, ED_*), and optionally INDEXNOW_KEY, ED_HANDLING_DAYS, *_SITE_URL.
 import { handleProducts, HttpError } from "../lib/shopify.mjs";
@@ -16,6 +17,7 @@ import { handleListings, libraryReader } from "../lib/listings.mjs";
 import { handleImages } from "../lib/images.mjs";
 import { kvBlobStore } from "../lib/kv-store.mjs";
 import { handlePricing, scheduledPricing } from "../lib/pricing.mjs";
+import { handleMarketing, runScheduledAudits } from "../lib/marketing.mjs";
 
 // The app pages: only its own scripts, Shopify's CDN for product photos, never framed.
 export const SITE_HEADERS = {
@@ -79,12 +81,15 @@ const products = jsonRoute(handleProducts);
 const insights = jsonRoute(handleInsights);
 const listings = jsonRoute(handleListings);
 const pricing = jsonRoute(handlePricing);
+const marketing = jsonRoute(handleMarketing);
+const marketingKv = (env) => (env?.MARKETING && typeof env.MARKETING.get === "function" ? env.MARKETING : null);
 
 export async function handleRequest(req, env) {
   const { pathname } = new URL(req.url);
   try {
     if (pathname === "/api/products") return await products(req, env);
     if (pathname === "/api/insights") return await insights(req, env);
+    if (pathname === "/api/marketing") return await marketing(req, env, { kv: marketingKv(env) });
     if (pathname === "/api/listings") {
       // The design is read through the image library's own read route, from the same KV namespace.
       const readImage = async (key) => libraryReader({ blobs: imageStore(env), env: envReader(env) })(key);
@@ -107,11 +112,15 @@ export async function handleRequest(req, env) {
   return out;
 }
 
-// The cron (wrangler.toml [triggers]): moves the shirt price sync one step on. See lib/pricing.mjs.
-export async function handleScheduled(env) {
+// The crons (wrangler.toml [triggers]): the daily site check for the Marketing page, and every 15
+// minutes one step of the shirt price sync (lib/pricing.mjs).
+export const AUDIT_CRON = "0 11 * * *";
+export async function handleScheduled(env, cron) {
+  if (!cron || cron === AUDIT_CRON) return runScheduledAudits(envReader(env), (input, init) => fetch(input, init), marketingKv(env));
   try {
-    await scheduledPricing({ env: envReader(env), kv: env?.PRICING ?? null, fetchImpl: (input, init) => fetch(input, init) });
+    return await scheduledPricing({ env: envReader(env), kv: env?.PRICING ?? null, fetchImpl: (input, init) => fetch(input, init) });
   } catch (e) {
     console.error("price sync", e?.code ?? e?.name, e?.message);
+    return null;
   }
 }
