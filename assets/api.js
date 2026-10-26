@@ -83,7 +83,7 @@ export async function api(path, { method = "GET", body, key = false, reason } = 
     }
     if (res.status === 401) consoleKey.clear(); // never keep a key the server refused
     if (!out) throw new ApiError(res.status, "no_api", res.status === 404
-      ? "The console API isn't running here. Open the deployed console, or run it with netlify dev."
+      ? "The console API isn't running here. Open the deployed console, or run it with npm run dev."
       : `The console API answered with an error (${res.status}).`);
     throw new ApiError(res.status, out.code ?? "error", out.error ?? `Error ${res.status}`, out.details);
   }

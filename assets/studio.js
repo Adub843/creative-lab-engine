@@ -1,5 +1,5 @@
 // Design Studio: an online image library plus a drag-and-drop shirt designer.
-// Images live in Netlify Blobs through /api/images, so the PC can stay off.
+// Images live online (Cloudflare Workers KV) through /api/images, so the PC can stay off.
 // If that API can't be reached (served as plain files, or not deployed yet), images are kept in this browser instead.
 import { el, store, toast } from "./app.js";
 import { consoleKey } from "./api.js";
@@ -43,6 +43,12 @@ async function listLocal() {
   } catch { return []; }
 }
 
+// The online list can lag a minute behind uploads and deletes (Workers KV is eventually
+// consistent), so this tab remembers its own recent changes and applies them to the list.
+const RECENT_MS = 5 * 60 * 1000;
+const recentAdds = new Map(), recentDeletes = new Map(); // key -> { item?, at }
+const fresh = (m) => { for (const [k, v] of m) if (Date.now() - v.at > RECENT_MS) m.delete(k); return m; };
+
 let cloudLocked = false; // the online library answered 401/403: no (or a wrong) console key
 export async function listImages() {
   let cloud = [];
@@ -50,7 +56,11 @@ export async function listImages() {
   try {
     const res = await fetch(API, { headers: { accept: "application/json", ...keyHeader() } });
     cloudLocked = res.status === 401 || res.status === 403;
-    if (res.ok && res.headers.get("content-type")?.includes("json")) cloud = (await res.json()).items ?? [];
+    if (res.ok && res.headers.get("content-type")?.includes("json")) {
+      cloud = ((await res.json()).items ?? []).filter((i) => !fresh(recentDeletes).has(i.key));
+      const seen = new Set(cloud.map((i) => i.key));
+      for (const [k, { item }] of fresh(recentAdds)) if (!seen.has(k)) cloud.push(item);
+    }
   } catch { /* offline or not deployed */ }
   const local = await listLocal();
   return [...cloud, ...local].sort((a, b) => (b.added ?? 0) - (a.added ?? 0));
@@ -66,7 +76,11 @@ async function upload(file, tags) {
       body: file,
     });
     if (res.status === 401 || res.status === 403) throw Object.assign(new Error(res.status === 401 ? "Wrong or missing console key. Add it under Settings below." : "Uploads are off until CONSOLE_KEY is set for this console."), { stop: true });
-    if (res.ok) return { saved: "cloud", item: (await res.json()).item };
+    if (res.ok) {
+      const { item } = await res.json();
+      recentAdds.set(item.key, { item, at: Date.now() });
+      return { saved: "cloud", item };
+    }
     if (res.status === 413 || res.status === 415) throw Object.assign(new Error((await res.json().catch(() => ({}))).error ?? res.statusText), { stop: true });
   } catch (e) { if (e.stop) throw e; }
   const item = { key: `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
@@ -84,6 +98,8 @@ async function remove(item) {
   }
   const res = await fetch(`${API}/${encodeURIComponent(item.key)}`, { method: "DELETE", headers: keyHeader() });
   if (!res.ok) throw new Error(res.status === 401 ? "Wrong or missing console key." : "Couldn't delete that image.");
+  recentAdds.delete(item.key);
+  recentDeletes.set(item.key, { at: Date.now() });
 }
 
 // ---------- shirt artwork ----------

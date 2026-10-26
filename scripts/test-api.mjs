@@ -630,9 +630,9 @@ test("a CONSOLE_KEY shorter than 16 characters is refused everywhere", async () 
   assert.equal(sh.calls.length, 0);
 });
 
-test("Netlify adapter: JSON responses are nosniff, unframeable and sandboxed", async () => {
-  const { netlifyHandler } = await import("../lib/netlify.mjs");
-  const res = await netlifyHandler(async () => ({ status: 200, body: { a: 1 } }))(new Request("https://console.example/api/x"));
+test("Worker adapter: JSON responses are nosniff, unframeable and sandboxed", async () => {
+  const { jsonRoute } = await import("../worker/app.mjs");
+  const res = await jsonRoute(async () => ({ status: 200, body: { a: 1 } }))(new Request("https://console.example/api/x"), {});
   assert.equal(res.headers.get("x-content-type-options"), "nosniff");
   assert.match(res.headers.get("content-security-policy"), /frame-ancestors 'none'.*sandbox/);
   assert.equal(res.headers.get("cache-control"), "no-store");
@@ -640,16 +640,41 @@ test("Netlify adapter: JSON responses are nosniff, unframeable and sandboxed", a
 
 // ---------- image library ----------
 const { handleImages } = await import("../lib/images.mjs");
-function fakeBlobs() {
-  const m = new Map();
-  return { m,
-    list: async () => ({ blobs: [...m.keys()].map((key) => ({ key })) }),
-    getMetadata: async (k) => (m.has(k) ? { metadata: m.get(k).metadata } : null),
-    getWithMetadata: async (k) => (m.has(k) ? { data: m.get(k).data, metadata: m.get(k).metadata } : null),
-    set: async (k, data, { metadata }) => { m.set(k, { data, metadata }); },
-    delete: async (k) => { m.delete(k); },
+const { kvBlobStore } = await import("../lib/kv-store.mjs");
+// In-memory Workers KV with the limits the real one enforces: values up to 25 MiB, metadata up to
+// 1024 bytes once serialised, and list pages (1000 keys, smaller here to exercise the cursor).
+function fakeKV({ pageSize = 1000 } = {}) {
+  const m = new Map(), ops = [];
+  const copy = (v) => (v instanceof ArrayBuffer ? v.slice(0) : ArrayBuffer.isView(v) ? v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength) : new TextEncoder().encode(String(v)).buffer);
+  return { m, ops,
+    async put(k, value, { metadata } = {}) {
+      ops.push(["put", k]);
+      const data = copy(value);
+      if (data.byteLength > 25 * 1024 * 1024) throw new Error("KV put() failed: value too large");
+      if (metadata !== undefined && new TextEncoder().encode(JSON.stringify(metadata)).length > 1024) throw new Error("KV put() failed: metadata too large");
+      m.set(k, { data, metadata: metadata === undefined ? null : JSON.parse(JSON.stringify(metadata)) });
+    },
+    async getWithMetadata(k, opts) {
+      ops.push(["get", k]);
+      const type = typeof opts === "string" ? opts : opts?.type ?? "text";
+      const hit = m.get(k);
+      if (!hit) return { value: null, metadata: null };
+      const value = type === "arrayBuffer" ? hit.data.slice(0) : type === "json" ? JSON.parse(new TextDecoder().decode(hit.data)) : new TextDecoder().decode(hit.data);
+      return { value, metadata: hit.metadata };
+    },
+    async delete(k) { ops.push(["delete", k]); m.delete(k); },
+    async list({ prefix = "", cursor, limit = pageSize } = {}) {
+      ops.push(["list", prefix]);
+      const names = [...m.keys()].filter((k) => k.startsWith(prefix)).sort();
+      const start = cursor ? Number(cursor) : 0;
+      const keys = names.slice(start, start + Math.min(limit, pageSize)).map((name) => ({ name, ...(m.get(name).metadata ? { metadata: m.get(name).metadata } : {}) }));
+      const done = start + keys.length >= names.length;
+      return { keys, list_complete: done, ...(done ? {} : { cursor: String(start + keys.length) }) };
+    },
   };
 }
+// The image library's store, as the Worker builds it from the IMAGES binding.
+function fakeBlobs(kv = fakeKV()) { return Object.assign(kvBlobStore(kv), { m: kv.m, kv }); }
 const imgReq = (path, { method = "GET", headers = {}, body } = {}) => new Request(`https://console.example${path}`, { method, headers, body });
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
 const EVIL_SVG = `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" onload="alert(document.domain)"><script>alert(1)</script></svg>`;
@@ -682,7 +707,7 @@ test("images: content must match the declared type, and only image types are tak
   const asSvg = await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/svg+xml", ...KEYH }, body: html }), ctx);
   assert.equal(asSvg.status, 415, "HTML claiming to be SVG is refused");
   assert.equal((await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "text/html", ...KEYH }, body: html }), ctx)).status, 415);
-  const big = await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", "content-length": String(7 * 1024 * 1024), ...KEYH }, body: PNG }), ctx);
+  const big = await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", "content-length": String(21 * 1024 * 1024), ...KEYH }, body: PNG }), ctx);
   assert.equal(big.status, 413);
   assert.equal(ctx.blobs.m.size, 0);
 });
@@ -705,28 +730,6 @@ test("images: odd keys are 404, not a crash", async () => {
 });
 
 // ---------- what gets published ----------
-test("netlify.toml publishes only index.html and assets/, with CSP and frame-ancestors", async () => {
-  const fs = await import("node:fs");
-  const path = await import("node:path");
-  const os = await import("node:os");
-  const { execSync } = await import("node:child_process");
-  const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
-  const toml = fs.readFileSync(path.join(root, "netlify.toml"), "utf8");
-  const build = toml.split("[dev]")[0];
-  assert.match(build, /publish = "dist"/);
-  const cmd = /command = "([^"]+)"/.exec(build)[1];
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bc-build-"));
-  for (const f of ["index.html", "assets", "lib", "scripts", "netlify", "package.json", "README.md", "netlify.toml"])
-    fs.cpSync(path.join(root, f), path.join(tmp, f), { recursive: true });
-  execSync(cmd, { cwd: tmp, shell: "/bin/sh" });
-  assert.deepEqual(fs.readdirSync(path.join(tmp, "dist")).sort(), ["assets", "index.html"]);
-  fs.rmSync(tmp, { recursive: true, force: true });
-  const csp = /Content-Security-Policy = "([^"]+)"/.exec(toml)[1];
-  for (const d of ["default-src 'self'", "script-src 'self'", "frame-ancestors 'none'", "object-src 'none'", "base-uri 'none'"]) assert.ok(csp.includes(d), d);
-  assert.match(toml, /X-Content-Type-Options = "nosniff"/);
-  assert.match(toml, /Referrer-Policy = /);
-});
-
 // ---------- customizable (Charleston 3D only) ----------
 const { handleListings, libraryReader, listingTemplate } = await import("../lib/listings.mjs");
 
@@ -1195,6 +1198,202 @@ test("the listing template builder (assets/listing.js) fits Shopify's limits and
     title: l.title, tags: l.tags, descriptionHtml: l.descriptionHtml, seoTitle: l.seoTitle, seoDescription: l.seoDescription }), await listCtx(sh));
   assert.equal(res.status, 201, JSON.stringify(res.body));
   assert.equal(sh.calls.find((c) => c.op === "ConsoleListingCreate").variables.input.variants.length, 80);
+});
+
+// ---------- the Cloudflare Worker: what gets published, routing, bindings, limits ----------
+const W = await import("../worker/app.mjs");
+const I = await import("../lib/images.mjs");
+const fakeAssets = () => ({ calls: [], async fetch(req) { this.calls.push(new URL(req.url).pathname); return new Response("<!doctype html><title>app</title>", { headers: { "content-type": "text/html" } }); } });
+const workerEnv = (over = {}) => ({ ...ENV, IMAGES: fakeKV(), ASSETS: fakeAssets(), ...over });
+const wreq = (path, init = {}) => new Request(`https://business-console.example.workers.dev${path}`, init);
+async function withFetch(fn, impl) {
+  const original = globalThis.fetch;
+  globalThis.fetch = impl;
+  try { return await fn(); } finally { globalThis.fetch = original; }
+}
+
+test("build: dist/ holds only index.html and assets/, and wrangler.toml serves just that", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const os = await import("node:os");
+  const { execFileSync } = await import("node:child_process");
+  const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bc-build-"));
+  for (const f of ["index.html", "assets", "lib", "scripts", "worker", "data", "package.json", "README.md", "wrangler.toml"])
+    fs.cpSync(path.join(root, f), path.join(tmp, f), { recursive: true });
+  execFileSync(process.execPath, [path.join(tmp, "scripts", "build.mjs")], { cwd: tmp, stdio: "ignore" });
+  assert.deepEqual(fs.readdirSync(path.join(tmp, "dist")).sort(), ["assets", "index.html"]);
+  fs.rmSync(tmp, { recursive: true, force: true });
+  const toml = fs.readFileSync(path.join(root, "wrangler.toml"), "utf8");
+  assert.match(toml, /^main = "worker\/index\.mjs"$/m);
+  assert.match(toml, /^command = "node scripts\/build\.mjs"$/m);
+  assert.match(toml, /\[assets\]\s+directory = "\.\/dist"\s+binding = "ASSETS"/);
+  assert.match(toml, /^run_worker_first = true$/m, "API routes and security headers go through the Worker");
+  assert.match(toml, /compatibility_flags = \["nodejs_compat"\]/);
+  assert.match(toml, /\[\[kv_namespaces\]\]\s+binding = "IMAGES"/);
+  assert.ok(!/r2_buckets|\[vars\]|shpat_|CONSOLE_KEY\s*=|_TOKEN\s*=|_SECRET\s*=/.test(toml), "no R2, no vars, no secrets in wrangler.toml");
+  // Nothing in this project runs on Netlify: no config, functions, packages, code or docs for it.
+  for (const gone of ["netlify.toml", "netlify", "lib/netlify.mjs"]) assert.ok(!fs.existsSync(path.join(root, gone)), `${gone} is gone`);
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+  assert.ok(!Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).some((d) => /netlify/i.test(d)), "no Netlify packages");
+  assert.ok(!/netlify/i.test(fs.readFileSync(path.join(root, "package-lock.json"), "utf8")), "none in the lockfile either");
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
+  const hosting = ["wrangler.toml", "package.json", "README.md", "index.html", ...["worker", "lib", ".github"].flatMap((d) => walk(path.join(root, d)).map((f) => path.relative(root, f)))];
+  for (const f of hosting) assert.ok(!/netlify/i.test(fs.readFileSync(path.join(root, f), "utf8")), `${f} mentions Netlify`);
+});
+
+test("worker: the entry module exports only the fetch handler (workerd refuses anything else)", async () => {
+  const entry = await import("../worker/index.mjs");
+  assert.deepEqual(Object.keys(entry), ["default"]);
+  assert.deepEqual(Object.keys(entry.default), ["fetch"]);
+  const res = await entry.default.fetch(wreq("/api/nope"), workerEnv());
+  assert.equal(res.status, 404);
+});
+
+test("worker: app files get the CSP and security headers; unknown /api paths are JSON 404s", async () => {
+  const env = workerEnv();
+  const page = await W.handleRequest(wreq("/"), env);
+  assert.equal(page.status, 200);
+  assert.deepEqual(env.ASSETS.calls, ["/"]);
+  const csp = page.headers.get("content-security-policy");
+  for (const d of ["default-src 'self'", "script-src 'self'", "frame-ancestors 'none'", "object-src 'none'", "base-uri 'none'"]) assert.ok(csp.includes(d), d);
+  assert.equal(page.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(page.headers.get("x-frame-options"), "DENY");
+  assert.match(page.headers.get("referrer-policy"), /strict-origin/);
+  for (const p of ["/api", "/api/", "/api/nope", "/api/products/x", "/api/imagesx"]) {
+    const res = await W.handleRequest(wreq(p), env);
+    assert.equal(res.status, 404, p);
+    assert.equal(res.headers.get("content-type"), "application/json; charset=utf-8", p);
+  }
+  assert.deepEqual(env.ASSETS.calls, ["/"], "API paths never fall through to the files");
+});
+
+test("worker: /api/products, /api/insights and /api/listings reach their handlers with secrets from env", async () => {
+  const sh = fakeShopify();
+  await withFetch(async () => {
+    const env = workerEnv();
+    assert.equal((await W.handleRequest(wreq("/api/products?store=c3d"), env)).status, 401, "key needed");
+    const list = await W.handleRequest(wreq("/api/products?store=c3d", { headers: KEYH }), env);
+    assert.equal(list.status, 200);
+    assert.equal((await list.json()).products.length, 2);
+    assert.ok(sh.calls.some((c) => c.token === TOKEN && c.domain === "charleston3d.myshopify.com"), "token and domain come from env");
+    const ins = await W.handleRequest(wreq("/api/insights?store=c3d&days=3"), env);
+    assert.equal(ins.status, 401);
+    const lst = await W.handleRequest(wreq("/api/listings?store=ed", { headers: KEYH }), env);
+    assert.equal(lst.status, 200);
+    assert.ok((await lst.json()).template.catalog.blanks.length >= 3, "blank catalog is bundled");
+    // A binding (an object) is never taken as a setting.
+    const odd = await W.handleRequest(wreq("/api/products?store=c3d", { headers: KEYH }), workerEnv({ CONSOLE_KEY: { secret: "x".repeat(32) } }));
+    assert.equal((await odd.json()).code, "key_not_set");
+    // No secret ever comes back in an answer.
+    const bad = await W.handleRequest(wreq("/api/products?store=c3d", { headers: { "x-console-key": "wrong-key-wrong-key-1" } }), env);
+    const text = await bad.text();
+    assert.ok(!text.includes(TOKEN) && !text.includes(ENV.CONSOLE_KEY), text);
+  }, sh.fetch);
+});
+
+test("worker: JSON bodies are capped before they're read, with or without content-length", async () => {
+  const sh = fakeShopify();
+  await withFetch(async () => {
+    const env = workerEnv();
+    const big = JSON.stringify({ store: "c3d", id: PID, live: true, pad: "x".repeat(W.MAX_JSON_BYTES) });
+    const r1 = await W.handleRequest(wreq("/api/products", { method: "POST", headers: { "content-type": "application/json", ...KEYH }, body: big }), env);
+    assert.equal(r1.status, 413);
+    const stream = new ReadableStream({ start(c) { for (let i = 0; i < 80; i++) c.enqueue(new TextEncoder().encode("x".repeat(1024))); c.close(); } });
+    const r2 = await W.handleRequest(wreq("/api/listings", { method: "POST", headers: { "content-type": "application/json", ...KEYH }, body: stream, duplex: "half" }), env);
+    assert.equal(r2.status, 413);
+    assert.equal(sh.calls.filter((c) => c.op && c.op !== "OnlineStorePublication").length, 0, "nothing reached Shopify");
+  }, sh.fetch);
+});
+
+test("worker: image library on Workers KV keeps the same API (list, file, upload, delete)", async () => {
+  const kv = fakeKV({ pageSize: 2 }); // several list pages, followed by cursor
+  const env = workerEnv({ IMAGES: kv });
+  assert.equal((await W.handleRequest(wreq("/api/images"), env)).status, 401, "list needs the key");
+  assert.equal((await W.handleRequest(wreq("/api/images", { method: "POST", headers: { "content-type": "image/png" }, body: PNG }), env)).status, 401, "upload needs the key");
+  const keys = [];
+  for (let i = 0; i < 5; i++) {
+    const up = await W.handleRequest(wreq("/api/images", { method: "POST", headers: { "content-type": "image/png", "x-filename": `d${i}.png`, "x-tags": "palmetto", ...KEYH }, body: PNG }), env);
+    assert.equal(up.status, 201);
+    const { item } = await up.json();
+    assert.deepEqual(Object.keys(item).sort(), ["added", "key", "name", "size", "tags", "type"]);
+    keys.push(item.key);
+  }
+  assert.ok([...kv.m.keys()].every((k) => k.startsWith("image:")), "stored under the image: prefix");
+  const list = await W.handleRequest(wreq("/api/images", { headers: KEYH }), env);
+  const { items } = await list.json();
+  assert.equal(items.length, 5, "every page of the KV list");
+  assert.deepEqual(new Set(items.map((i) => i.name)), new Set(["d0.png", "d1.png", "d2.png", "d3.png", "d4.png"]));
+  assert.ok(items.every((i) => i.type === "image/png" && i.size === PNG.byteLength && i.tags === "palmetto"));
+  assert.equal(kv.ops.filter(([op]) => op === "get").length, 0, "listing reads no values, only KV metadata");
+  const file = await W.handleRequest(wreq(`/api/images/${keys[0]}`), env);
+  assert.equal(file.status, 200, "files need no key (unguessable keys)");
+  assert.equal(file.headers.get("content-type"), "image/png");
+  assert.deepEqual(new Uint8Array(await file.arrayBuffer()), PNG);
+  assert.equal(file.headers.get("access-control-allow-origin"), null, "no CORS: the console's own pages only");
+  assert.equal((await W.handleRequest(wreq(`/api/images/${keys[0]}`, { method: "DELETE" }), env)).status, 401, "delete needs the key");
+  assert.equal((await W.handleRequest(wreq(`/api/images/${keys[0]}`, { method: "DELETE", headers: KEYH }), env)).status, 200);
+  assert.equal((await W.handleRequest(wreq(`/api/images/${keys[0]}`), env)).status, 404);
+  assert.equal((await W.handleRequest(wreq(`/api/images/${keys[1]}`, { method: "PUT", headers: KEYH, body: PNG }), env)).status, 405);
+  assert.equal(kv.m.size, 4);
+});
+
+test("worker: without the IMAGES binding the library says it isn't set up (and touches nothing)", async () => {
+  const env = workerEnv({ IMAGES: undefined });
+  const res = await W.handleRequest(wreq("/api/images", { headers: KEYH }), env);
+  assert.equal(res.status, 503);
+  assert.equal((await res.json()).code, "storage_not_set_up");
+});
+
+test("worker: uploads are capped at 20 MB (KV takes 25 MiB), even when streamed without a length", async () => {
+  assert.equal(I.MAX_BYTES, 20 * 1024 * 1024);
+  const kv = fakeKV(), env = workerEnv({ IMAGES: kv });
+  const exact = new Uint8Array(I.MAX_BYTES); exact.set(PNG);
+  const ok = await W.handleRequest(wreq("/api/images", { method: "POST", headers: { "content-type": "image/png", ...KEYH }, body: exact }), env);
+  assert.equal(ok.status, 201, "exactly 20 MB is taken");
+  assert.equal([...kv.m.values()][0].data.byteLength, I.MAX_BYTES);
+  const over = new Uint8Array(I.MAX_BYTES + 1); over.set(PNG);
+  const r1 = await W.handleRequest(wreq("/api/images", { method: "POST", headers: { "content-type": "image/png", ...KEYH }, body: over }), env);
+  assert.equal(r1.status, 413);
+  assert.match((await r1.json()).error, /larger than 20 MB/);
+  let pulled = 0;
+  const chunk = new Uint8Array(1024 * 1024); chunk.set(PNG);
+  const endless = new ReadableStream({ pull(c) { pulled++; c.enqueue(chunk.slice()); if (pulled > 100) c.close(); } });
+  const r2 = await W.handleRequest(wreq("/api/images", { method: "POST", headers: { "content-type": "image/png", ...KEYH }, body: endless, duplex: "half" }), env);
+  assert.equal(r2.status, 413);
+  assert.ok(pulled <= 25, `stopped reading early (${pulled} MB pulled)`);
+  assert.equal(kv.m.size, 1, "nothing more stored");
+});
+
+test("worker: names and tags always fit KV's 1024-byte metadata, without control characters", async () => {
+  const kv = fakeKV(), env = workerEnv({ IMAGES: kv });
+  const name = "é\"\\".repeat(100) + "\t\u0001x"; // Latin-1 only: header values are byte strings
+  const up = await W.handleRequest(wreq("/api/images", { method: "POST", headers: { "content-type": "image/png", "x-filename": name, "x-tags": "ÿ\"".repeat(150), ...KEYH }, body: PNG }), env);
+  assert.equal(up.status, 201);
+  const { metadata } = [...kv.m.values()][0];
+  assert.ok(new TextEncoder().encode(JSON.stringify(metadata)).length <= 1024);
+  assert.ok(!/[\u0000-\u001f]/.test(metadata.name + metadata.tags));
+  assert.ok(metadata.name.startsWith("é\"\\"));
+  // and the helper keeps whole characters within its byte budget for any text
+  const fitted = I.fitText("\u{1F455}".repeat(300), 200);
+  assert.ok(new TextEncoder().encode(fitted).length <= I.MAX_META_TEXT_BYTES && [...fitted].every((c) => c === "\u{1F455}"));
+  assert.equal((await W.handleRequest(wreq("/api/images", { method: "POST", headers: { "content-type": "image/png", "x-filename": "\u0001\u0002", ...KEYH }, body: PNG }), env)).status, 201);
+  assert.ok([...kv.m.values()].some((v) => v.metadata.name === "image"), "an empty name becomes 'image'");
+});
+
+test("worker: a listing reads its design from the same KV image library", async () => {
+  const sh = fakeShopify();
+  await withFetch(async () => {
+    const kv = fakeKV();
+    await fakeBlobs(kv).set(IMG_KEY, PNG_BYTES.buffer, { metadata: { name: "lowcountry_sunset-FINAL.png", type: "image/png", size: PNG_BYTES.byteLength, added: 1 } });
+    const res = await W.handleRequest(wreq("/api/listings", { method: "POST", headers: { "content-type": "application/json", ...KEYH }, body: JSON.stringify(LISTING) }), workerEnv({ IMAGES: kv }));
+    assert.equal(res.status, 201, await res.clone().text());
+    const upload = sh.calls.find((c) => c.upload);
+    assert.equal(upload.upload.size, PNG_BYTES.byteLength);
+    assert.equal(upload.upload.type, "image/png");
+    const missing = await W.handleRequest(wreq("/api/listings", { method: "POST", headers: { "content-type": "application/json", ...KEYH }, body: JSON.stringify({ ...LISTING, imageKey: "zzzzzz-0123abcd" }) }), workerEnv({ IMAGES: fakeKV() }));
+    assert.equal(missing.status, 404);
+  }, sh.fetch);
 });
 
 // ---------- last: the schema check over everything sent above ----------

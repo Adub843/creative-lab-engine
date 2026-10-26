@@ -96,6 +96,7 @@ async function main() {
   // Image library: kept in memory, list/upload/delete need the key, files are served without it.
   const images = new Map();
   const imageCalls = [];
+  let staleList = null; // when set, the list answers this instead (Workers KV lists can lag behind writes)
   const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
   await page.route("**/api/images**", async (route) => {
     const req = route.request();
@@ -104,7 +105,7 @@ async function main() {
     imageCalls.push({ method: req.method(), key, auth: req.headers()["x-console-key"] ?? null });
     if (req.method() === "GET" && key) return images.has(key) ? route.fulfill({ status: 200, contentType: "image/png", body: PNG }) : json(404, { error: "Image not found" });
     if (req.headers()["x-console-key"] !== KEY) return json(401, { error: "Wrong or missing console key.", code: "bad_key" });
-    if (req.method() === "GET") return json(200, { items: [...images.values()].sort((a, b) => b.added - a.added) });
+    if (req.method() === "GET") return json(200, { items: staleList ?? [...images.values()].sort((a, b) => b.added - a.added) });
     if (req.method() === "POST") {
       const item = { key: `k${images.size + 1}-0123abcd`, name: req.headers()["x-filename"], type: req.headers()["content-type"], size: req.postDataBuffer()?.length ?? 0, tags: req.headers()["x-tags"] ?? "", added: Date.now() };
       images.set(item.key, item);
@@ -634,6 +635,28 @@ async function main() {
     page.once("dialog", (d) => d.accept());
     await page.getByRole("button", { name: "Clear shirt" }).click();
     assert.equal(await page.locator(".print-area .layer").count(), 0);
+  });
+
+  await step("studio: a list that lags behind uploads and deletes (Workers KV) still shows what this tab did", async () => {
+    const old = { key: "k0-0123abcd", name: "old.png", type: "image/png", size: 10, tags: "", added: 1 };
+    images.set(old.key, old);
+    staleList = [old];
+    await page.click('a.nav[data-route="dashboard"]');
+    await page.click('a.nav[data-route="studio"]');
+    await page.waitForSelector('.lib button:has-text("old.png")');
+    await clearToasts();
+    await page.setInputFiles('.studio input[type="file"]', { name: "late.png", mimeType: "image/png", buffer: PNG });
+    await page.waitForSelector('.lib button:has-text("late.png")'); // not in the (stale) list yet, shown anyway
+    assert.ok(!staleList.some((i) => i.name === "late.png"));
+    page.once("dialog", (d) => d.accept());
+    await page.locator('.lib button:has-text("old.png")').click({ button: "right" });
+    await page.waitForSelector(".toast >> text=Image deleted");
+    await page.click('a.nav[data-route="dashboard"]');
+    await page.click('a.nav[data-route="studio"]');
+    await page.waitForSelector('.lib button:has-text("late.png")');
+    assert.equal(await page.locator('.lib button:has-text("old.png")').count(), 0, "a deleted image stays gone though the list still has it");
+    staleList = null;
+    for (const k of [...images.keys()]) images.delete(k);
   });
 
   await step("dashboard and brand pages: store links go to the Shopify sites, not Netlify", async () => {
