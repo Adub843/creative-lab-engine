@@ -1,0 +1,43 @@
+# Business Console on Cloudflare Workers (free plan): one Worker serves the app's files and the /api/* routes.
+# Secrets (Shopify tokens, CONSOLE_KEY, ...) are never written here: set them with `npx wrangler secret put NAME`.
+# See the README, "Put the console online (Cloudflare)".
+name = "business-console"
+main = "worker/index.mjs"
+compatibility_date = "2026-10-01"
+# lib/shopify.mjs checks the console key with node:crypto (createHash, timingSafeEqual).
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+# Copies index.html and assets/ into dist/ before `wrangler dev` and `wrangler deploy`.
+[build]
+command = "node scripts/build.mjs"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+# Every request goes through the Worker first, so the API routes win and every page gets the
+# security headers set in worker/app.mjs.
+run_worker_first = true
+
+# The image library (Workers KV: each image's bytes plus its name, type, size and tags).
+# No id is needed: the first `wrangler deploy` creates the namespace on your account and later
+# deploys keep using it. `wrangler dev` keeps a separate local copy on your computer.
+[[kv_namespaces]]
+binding = "IMAGES"
+
+
+# Where the shirt price sync got to (lib/pricing.mjs). Created on the first deploy like IMAGES.
+[[kv_namespaces]]
+binding = "PRICING"
+
+# Each store's daily marketing scores (lib/marketing.mjs), kept for 120 days. Created by the first
+# deploy like IMAGES.
+[[kv_namespaces]]
+binding = "MARKETING"
+
+# 11:00 UTC daily (early morning in Charleston): checks both public sites for the Marketing page.
+# 11:30 UTC daily: applies the safe SEO fixes (titles, descriptions, alt text) to both stores.
+# Every 15 minutes: moves the shirt price sync one step on; a new sync only starts when the price
+# sheet changed or the last one is over a day old.
+[triggers]
+crons = ["0 11 * * *", "30 11 * * *", "*/15 * * * *"]

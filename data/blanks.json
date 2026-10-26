@@ -1,0 +1,2478 @@
+{
+ "version": 1,
+ "updated": "2026-10-26",
+ "currency": "USD",
+ "costsAreEstimates": false,
+ "pricing": {
+  "marginPct": 100,
+  "printFee": 8,
+  "roundTo99": true,
+  "placeholder": false
+ },
+ "types": {
+  "tee": "T-shirts",
+  "long-sleeve": "Long sleeve",
+  "tank": "Tanks",
+  "womens": "Women's",
+  "youth": "Youth",
+  "crewneck": "Crewneck sweatshirts",
+  "hoodie": "Hoodies"
+ },
+ "tiers": {
+  "value": "Best price",
+  "standard": "Soft and fitted",
+  "premium": "Premium"
+ },
+ "allIds": [
+  "gildan-5000",
+  "hanes-5280",
+  "jerzees-29m",
+  "fruit-3930r",
+  "pc-pc54",
+  "gildan-64000",
+  "bella-3001",
+  "nextlevel-3600",
+  "nextlevel-6210",
+  "hanes-5180",
+  "district-dt6000",
+  "aa-2001",
+  "comfortcolors-1717",
+  "ascolour-5026",
+  "shakawear-shgd",
+  "gildan-h000",
+  "gildan-5400",
+  "comfortcolors-6014",
+  "bella-3480",
+  "bella-6004",
+  "gildan-5000b",
+  "gildan-18000",
+  "comfortcolors-1566",
+  "gildan-18500",
+  "independent-ss4500"
+ ],
+ "blanks": [
+  {
+   "id": "gildan-5000",
+   "brand": "Gildan",
+   "style": "5000",
+   "name": "Heavy Cotton Tee",
+   "type": "tee",
+   "tier": "value",
+   "fabric": "100% cotton (heathers are blends)",
+   "weightOz": 5.3,
+   "fit": "Classic",
+   "sizes": [
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL",
+    "3XL",
+    "4XL",
+    "5XL"
+   ],
+   "cost": {
+    "base": 2.8,
+    "2XL": 4.88,
+    "3XL": 6.57,
+    "4XL": 7.42,
+    "5XL": 6.57,
+    "S": 2.51,
+    "M": 2.51,
+    "L": 2.51,
+    "XL": 2.54
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#FFFFFF"
+    },
+    {
+     "name": "Black",
+     "hex": "#1B1B1B"
+    },
+    {
+     "name": "Sport Grey",
+     "hex": "#9B9B9B"
+    },
+    {
+     "name": "Dark Heather",
+     "hex": "#4A4B4F"
+    },
+    {
+     "name": "Navy",
+     "hex": "#1F2A44"
+    },
+    {
+     "name": "Royal",
+     "hex": "#1D4F9C"
+    },
+    {
+     "name": "Red",
+     "hex": "#C8102E"
+    },
+    {
+     "name": "Cardinal Red",
+     "hex": "#8A1538"
+    },
+    {
+     "name": "Maroon",
+     "hex": "#5B1F2E"
+    },
+    {
+     "name": "Forest Green",
+     "hex": "#1F3B2D"
+    },
+    {
+     "name": "Irish Green",
+     "hex": "#00A651"
+    },
+    {
+     "name": "Military Green",
+     "hex": "#5B6236"
+    },
+    {
+     "name": "Charcoal",
+     "hex": "#4B4E53"
+    },
+    {
+     "name": "Light Blue",
+     "hex": "#A9C6E8"
+    },
+    {
+     "name": "Carolina Blue",
+     "hex": "#7BAFD4"
+    },
+    {
+     "name": "Light Pink",
+     "hex": "#F4C6D3"
+    },
+    {
+     "name": "Orange",
+     "hex": "#F26B21"
+    },
+    {
+     "name": "Gold",
+     "hex": "#F2A900"
+    },
+    {
+     "name": "Daisy",
+     "hex": "#F7DC6F"
+    },
+    {
+     "name": "Purple",
+     "hex": "#4B2E83"
+    },
+    {
+     "name": "Sand",
+     "hex": "#D9C9A8"
+    },
+    {
+     "name": "Natural",
+     "hex": "#EFE6D2"
+    },
+    {
+     "name": "Ash",
+     "hex": "#D4D4D2"
+    },
+    {
+     "name": "Safety Green",
+     "hex": "#C6F432"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "S": 13.99,
+    "M": 13.99,
+    "L": 13.99,
+    "XL": 13.99,
+    "2XL": 17.99,
+    "3XL": 21.99,
+    "4XL": 22.99,
+    "5XL": 22.99
+   }
+  },
+  {
+   "id": "gildan-64000",
+   "brand": "Gildan",
+   "style": "64000",
+   "name": "Softstyle Tee",
+   "type": "tee",
+   "tier": "standard",
+   "fabric": "100% ring-spun cotton",
+   "weightOz": 4.5,
+   "fit": "Modern",
+   "sizes": [
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL",
+    "3XL"
+   ],
+   "cost": {
+    "base": 3.2,
+    "2XL": 5.92,
+    "3XL": 7.4,
+    "S": 2.81,
+    "M": 2.81,
+    "L": 2.81,
+    "XL": 2.81
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#FFFFFF"
+    },
+    {
+     "name": "Black",
+     "hex": "#1B1B1B"
+    },
+    {
+     "name": "Sport Grey",
+     "hex": "#9B9B9B"
+    },
+    {
+     "name": "Dark Heather",
+     "hex": "#4A4B4F"
+    },
+    {
+     "name": "Navy",
+     "hex": "#1F2A44"
+    },
+    {
+     "name": "Royal",
+     "hex": "#1D4F9C"
+    },
+    {
+     "name": "Red",
+     "hex": "#C8102E"
+    },
+    {
+     "name": "Cardinal Red",
+     "hex": "#8A1538"
+    },
+    {
+     "name": "Maroon",
+     "hex": "#5B1F2E"
+    },
+    {
+     "name": "Forest Green",
+     "hex": "#1F3B2D"
+    },
+    {
+     "name": "Irish Green",
+     "hex": "#00A651"
+    },
+    {
+     "name": "Military Green",
+     "hex": "#5B6236"
+    },
+    {
+     "name": "Charcoal",
+     "hex": "#4B4E53"
+    },
+    {
+     "name": "Light Blue",
+     "hex": "#A9C6E8"
+    },
+    {
+     "name": "Light Pink",
+     "hex": "#F4C6D3"
+    },
+    {
+     "name": "Orange",
+     "hex": "#F26B21"
+    },
+    {
+     "name": "Gold",
+     "hex": "#F2A900"
+    },
+    {
+     "name": "Daisy",
+     "hex": "#F7DC6F"
+    },
+    {
+     "name": "Purple",
+     "hex": "#4B2E83"
+    },
+    {
+     "name": "Sand",
+     "hex": "#D9C9A8"
+    },
+    {
+     "name": "Natural",
+     "hex": "#EFE6D2"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "S": 13.99,
+    "M": 13.99,
+    "L": 13.99,
+    "XL": 13.99,
+    "2XL": 19.99,
+    "3XL": 22.99
+   }
+  },
+  {
+   "id": "hanes-5280",
+   "brand": "Hanes",
+   "style": "5280",
+   "name": "Essential-T",
+   "type": "tee",
+   "tier": "value",
+   "fabric": "100% cotton",
+   "weightOz": 5.2,
+   "fit": "Classic",
+   "sizes": [
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL",
+    "3XL"
+   ],
+   "cost": {
+    "base": 2.7,
+    "2XL": 5.74,
+    "3XL": 7.65,
+    "S": 2.58,
+    "M": 2.58,
+    "L": 2.58,
+    "XL": 2.58
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#FFFFFF"
+    },
+    {
+     "name": "Black",
+     "hex": "#1A1A1A"
+    },
+    {
+     "name": "Light Steel",
+     "hex": "#B8BCC0"
+    },
+    {
+     "name": "Charcoal Heather",
+     "hex": "#55575B"
+    },
+    {
+     "name": "Navy",
+     "hex": "#1E2840"
+    },
+    {
+     "name": "Deep Royal",
+     "hex": "#22448F"
+    },
+    {
+     "name": "Deep Red",
+     "hex": "#B5121B"
+    },
+    {
+     "name": "Maroon",
+     "hex": "#5A1E2B"
+    },
+    {
+     "name": "Kelly Green",
+     "hex": "#1E8C45"
+    },
+    {
+     "name": "Light Blue",
+     "hex": "#AFC9E3"
+    },
+    {
+     "name": "Pale Pink",
+     "hex": "#F3CBD5"
+    },
+    {
+     "name": "Orange",
+     "hex": "#F36F21"
+    },
+    {
+     "name": "Athletic Gold",
+     "hex": "#F3B229"
+    },
+    {
+     "name": "Purple",
+     "hex": "#4A2D7F"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "S": 13.99,
+    "M": 13.99,
+    "L": 13.99,
+    "XL": 13.99,
+    "2XL": 19.99,
+    "3XL": 23.99
+   }
+  },
+  {
+   "id": "pc-pc54",
+   "brand": "Port & Company",
+   "style": "PC54",
+   "name": "Core Cotton Tee",
+   "type": "tee",
+   "tier": "value",
+   "fabric": "100% cotton",
+   "weightOz": 5.4,
+   "fit": "Classic",
+   "sizes": [
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL",
+    "3XL",
+    "4XL",
+    "5XL"
+   ],
+   "cost": {
+    "base": 3.4,
+    "2XL": 5.32,
+    "3XL": 7.57,
+    "4XL": 8.05,
+    "5XL": 8.05,
+    "S": 2.65,
+    "M": 2.65,
+    "L": 2.65,
+    "XL": 2.65
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#FFFFFF"
+    },
+    {
+     "name": "Jet Black",
+     "hex": "#151515"
+    },
+    {
+     "name": "Athletic Heather",
+     "hex": "#A7A7A7"
+    },
+    {
+     "name": "Charcoal",
+     "hex": "#4E5055"
+    },
+    {
+     "name": "Navy",
+     "hex": "#1F2A44"
+    },
+    {
+     "name": "Royal",
+     "hex": "#1F4F9E"
+    },
+    {
+     "name": "Red",
+     "hex": "#C8102E"
+    },
+    {
+     "name": "Cardinal",
+     "hex": "#7F1A30"
+    },
+    {
+     "name": "Kelly",
+     "hex": "#178F46"
+    },
+    {
+     "name": "Forest Green",
+     "hex": "#213E2E"
+    },
+    {
+     "name": "Light Blue",
+     "hex": "#A8C7E6"
+    },
+    {
+     "name": "Candy Pink",
+     "hex": "#F6B5CB"
+    },
+    {
+     "name": "Orange",
+     "hex": "#F36C21"
+    },
+    {
+     "name": "Gold",
+     "hex": "#F3B000"
+    },
+    {
+     "name": "Purple",
+     "hex": "#4B2D82"
+    },
+    {
+     "name": "Safety Green",
+     "hex": "#C8F02D"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "S": 13.99,
+    "M": 13.99,
+    "L": 13.99,
+    "XL": 13.99,
+    "2XL": 18.99,
+    "3XL": 23.99,
+    "4XL": 24.99,
+    "5XL": 24.99
+   }
+  },
+  {
+   "id": "jerzees-29m",
+   "brand": "Jerzees",
+   "style": "29M",
+   "name": "Dri-Power 50/50 Tee",
+   "type": "tee",
+   "tier": "value",
+   "fabric": "50% cotton / 50% polyester",
+   "weightOz": 5.6,
+   "fit": "Classic",
+   "sizes": [
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL",
+    "3XL",
+    "4XL",
+    "5XL"
+   ],
+   "cost": {
+    "base": 2.9,
+    "2XL": 6.56,
+    "3XL": 9.09,
+    "4XL": 9.44,
+    "5XL": 9.44,
+    "S": 3.39,
+    "M": 3.39,
+    "L": 3.39,
+    "XL": 3.39
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#FFFFFF"
+    },
+    {
+     "name": "Black",
+     "hex": "#1C1C1C"
+    },
+    {
+     "name": "Athletic Heather",
+     "hex": "#A6A6A6"
+    },
+    {
+     "name": "Oxford",
+     "hex": "#C3C3C3"
+    },
+    {
+     "name": "Charcoal Grey",
+     "hex": "#4E5054"
+    },
+    {
+     "name": "J. Navy",
+     "hex": "#1D2742"
+    },
+    {
+     "name": "Royal",
+     "hex": "#1F4E9E"
+    },
+    {
+     "name": "True Red",
+     "hex": "#C2161F"
+    },
+    {
+     "name": "Maroon",
+     "hex": "#5C1F2C"
+    },
+    {
+     "name": "Kelly",
+     "hex": "#178F46"
+    },
+    {
+     "name": "Forest Green",
+     "hex": "#22412F"
+    },
+    {
+     "name": "Columbia Blue",
+     "hex": "#9BC3E6"
+    },
+    {
+     "name": "Safety Orange",
+     "hex": "#FF6A13"
+    },
+    {
+     "name": "Gold",
+     "hex": "#F4B000"
+    },
+    {
+     "name": "Purple",
+     "hex": "#4D2C82"
+    },
+    {
+     "name": "Safety Green",
+     "hex": "#C8F02D"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "S": 14.99,
+    "M": 14.99,
+    "L": 14.99,
+    "XL": 14.99,
+    "2XL": 21.99,
+    "3XL": 26.99,
+    "4XL": 26.99,
+    "5XL": 26.99
+   }
+  },
+  {
+   "id": "district-dt6000",
+   "brand": "District",
+   "style": "DT6000",
+   "name": "Very Important Tee",
+   "type": "tee",
+   "tier": "standard",
+   "fabric": "100% combed ring-spun cotton",
+   "weightOz": 4.3,
+   "fit": "Retail",
+   "sizes": [
+    "XS",
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL",
+    "3XL",
+    "4XL"
+   ],
+   "cost": {
+    "base": 4.2,
+    "2XL": 7.21,
+    "3XL": 9.92,
+    "4XL": 9.92,
+    "XS": 3.68,
+    "S": 3.68,
+    "M": 3.68,
+    "L": 3.68,
+    "XL": 3.68
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#FFFFFF"
+    },
+    {
+     "name": "Black",
+     "hex": "#1A1A1A"
+    },
+    {
+     "name": "Heathered Grey",
+     "hex": "#A6A6A6"
+    },
+    {
+     "name": "Charcoal",
+     "hex": "#4A4C51"
+    },
+    {
+     "name": "New Navy",
+     "hex": "#1E2741"
+    },
+    {
+     "name": "Deep Royal",
+     "hex": "#22448F"
+    },
+    {
+     "name": "Classic Red",
+     "hex": "#C1121F"
+    },
+    {
+     "name": "Maroon",
+     "hex": "#5A1F2D"
+    },
+    {
+     "name": "Olive",
+     "hex": "#6B6B3E"
+    },
+    {
+     "name": "Light Heather Grey",
+     "hex": "#CFCFCF"
+    },
+    {
+     "name": "Celadon",
+     "hex": "#A9C5A3"
+    },
+    {
+     "name": "Gold",
+     "hex": "#F1B11B"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "XS": 15.99,
+    "S": 15.99,
+    "M": 15.99,
+    "L": 15.99,
+    "XL": 15.99,
+    "2XL": 22.99,
+    "3XL": 27.99,
+    "4XL": 27.99
+   }
+  },
+  {
+   "id": "nextlevel-3600",
+   "brand": "Next Level",
+   "style": "3600",
+   "name": "Cotton Crew Tee",
+   "type": "tee",
+   "tier": "standard",
+   "fabric": "100% combed ring-spun cotton",
+   "weightOz": 4.3,
+   "fit": "Retail",
+   "sizes": [
+    "XS",
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL",
+    "3XL"
+   ],
+   "cost": {
+    "base": 4.4,
+    "2XL": 7.5,
+    "3XL": 9.24,
+    "XS": 4.48,
+    "S": 4.45,
+    "M": 4.48,
+    "L": 4.48,
+    "XL": 4.45
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#FFFFFF"
+    },
+    {
+     "name": "Black",
+     "hex": "#1A1A1A"
+    },
+    {
+     "name": "Heather Gray",
+     "hex": "#A9A9A9"
+    },
+    {
+     "name": "Graphite Black",
+     "hex": "#3E3F42"
+    },
+    {
+     "name": "Heavy Metal",
+     "hex": "#5B5D61"
+    },
+    {
+     "name": "Midnight Navy",
+     "hex": "#1E2539"
+    },
+    {
+     "name": "Royal",
+     "hex": "#2050A0"
+    },
+    {
+     "name": "Red",
+     "hex": "#C8102E"
+    },
+    {
+     "name": "Cardinal",
+     "hex": "#7E1A2E"
+    },
+    {
+     "name": "Maroon",
+     "hex": "#5A1F2C"
+    },
+    {
+     "name": "Military Green",
+     "hex": "#5D6440"
+    },
+    {
+     "name": "Forest Green",
+     "hex": "#24412F"
+    },
+    {
+     "name": "Light Blue",
+     "hex": "#B3CCE4"
+    },
+    {
+     "name": "Cool Blue",
+     "hex": "#5B8FC7"
+    },
+    {
+     "name": "Light Pink",
+     "hex": "#F5C7D4"
+    },
+    {
+     "name": "Orange",
+     "hex": "#F2742B"
+    },
+    {
+     "name": "Gold",
+     "hex": "#F1B11B"
+    },
+    {
+     "name": "Banana Cream",
+     "hex": "#F6E8A8"
+    },
+    {
+     "name": "Sand",
+     "hex": "#D8C8A7"
+    },
+    {
+     "name": "Natural",
+     "hex": "#EFE6D0"
+    },
+    {
+     "name": "Purple Rush",
+     "hex": "#4D2F86"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "XS": 16.99,
+    "S": 16.99,
+    "M": 16.99,
+    "L": 16.99,
+    "XL": 16.99,
+    "2XL": 22.99,
+    "3XL": 26.99
+   }
+  },
+  {
+   "id": "nextlevel-6210",
+   "brand": "Next Level",
+   "style": "6210",
+   "name": "CVC Crew Tee",
+   "type": "tee",
+   "tier": "standard",
+   "fabric": "60% cotton / 40% polyester",
+   "weightOz": 4.3,
+   "fit": "Retail",
+   "sizes": [
+    "XS",
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL",
+    "3XL"
+   ],
+   "cost": {
+    "base": 4.6,
+    "2XL": 6.68,
+    "3XL": 8.5,
+    "XS": 4.31,
+    "S": 4.31,
+    "M": 4.31,
+    "L": 4.31,
+    "XL": 4.34
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#FFFFFF"
+    },
+    {
+     "name": "Black",
+     "hex": "#1A1A1A"
+    },
+    {
+     "name": "Dark Heather Gray",
+     "hex": "#4E4F53"
+    },
+    {
+     "name": "Heather Gray",
+     "hex": "#A9A9A9"
+    },
+    {
+     "name": "Charcoal",
+     "hex": "#4A4C51"
+    },
+    {
+     "name": "Midnight Navy",
+     "hex": "#1E2539"
+    },
+    {
+     "name": "Royal",
+     "hex": "#2050A0"
+    },
+    {
+     "name": "Red",
+     "hex": "#C8102E"
+    },
+    {
+     "name": "Cardinal",
+     "hex": "#7E1A2E"
+    },
+    {
+     "name": "Military Green",
+     "hex": "#5D6440"
+    },
+    {
+     "name": "Stonewash Denim",
+     "hex": "#6E87A6"
+    },
+    {
+     "name": "Sand",
+     "hex": "#D8C8A7"
+    },
+    {
+     "name": "Light Pink",
+     "hex": "#F5C7D4"
+    },
+    {
+     "name": "Purple Rush",
+     "hex": "#4D2F86"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "XS": 16.99,
+    "S": 16.99,
+    "M": 16.99,
+    "L": 16.99,
+    "XL": 16.99,
+    "2XL": 21.99,
+    "3XL": 24.99
+   }
+  },
+  {
+   "id": "aa-2001",
+   "brand": "American Apparel",
+   "style": "2001CVC",
+   "name": "Unisex CVC Tee",
+   "type": "tee",
+   "tier": "standard",
+   "fabric": "60% cotton / 40% polyester",
+   "weightOz": 4.3,
+   "fit": "Retail",
+   "sizes": [
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL",
+    "3XL"
+   ],
+   "cost": {
+    "base": 5.4,
+    "2XL": 7.9,
+    "3XL": 8.35,
+    "S": 4.9,
+    "M": 4.9,
+    "L": 4.9,
+    "XL": 4.9
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#FFFFFF"
+    },
+    {
+     "name": "Black",
+     "hex": "#1A1A1A"
+    },
+    {
+     "name": "Heather Grey",
+     "hex": "#A9A9A9"
+    },
+    {
+     "name": "Heather Black",
+     "hex": "#3E3F42"
+    },
+    {
+     "name": "Navy",
+     "hex": "#1E2539"
+    },
+    {
+     "name": "Royal Blue",
+     "hex": "#2050A0"
+    },
+    {
+     "name": "Red",
+     "hex": "#C8102E"
+    },
+    {
+     "name": "Military Green",
+     "hex": "#5D6440"
+    },
+    {
+     "name": "Sand",
+     "hex": "#D8C8A7"
+    },
+    {
+     "name": "Pink",
+     "hex": "#F5C7D4"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "S": 17.99,
+    "M": 17.99,
+    "L": 17.99,
+    "XL": 17.99,
+    "2XL": 23.99,
+    "3XL": 24.99
+   }
+  },
+  {
+   "id": "bella-3001",
+   "brand": "Bella+Canvas",
+   "style": "3001",
+   "name": "Unisex Jersey Tee",
+   "type": "tee",
+   "tier": "standard",
+   "fabric": "100% Airlume combed ring-spun cotton (heathers are blends)",
+   "weightOz": 4.2,
+   "fit": "Retail",
+   "sizes": [
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL",
+    "3XL",
+    "4XL"
+   ],
+   "cost": {
+    "base": 4.5,
+    "2XL": 7.89,
+    "3XL": 9.09,
+    "4XL": 10.53,
+    "S": 4.55,
+    "M": 4.55,
+    "L": 4.55,
+    "XL": 4.55
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#FFFFFF"
+    },
+    {
+     "name": "Black",
+     "hex": "#1A1A1A"
+    },
+    {
+     "name": "Athletic Heather",
+     "hex": "#B4B4B4"
+    },
+    {
+     "name": "Dark Grey Heather",
+     "hex": "#4C4D51"
+    },
+    {
+     "name": "Asphalt",
+     "hex": "#55585D"
+    },
+    {
+     "name": "Navy",
+     "hex": "#1E2741"
+    },
+    {
+     "name": "True Royal",
+     "hex": "#2051A3"
+    },
+    {
+     "name": "Red",
+     "hex": "#C8102E"
+    },
+    {
+     "name": "Cardinal",
+     "hex": "#8A1C2B"
+    },
+    {
+     "name": "Maroon",
+     "hex": "#5A1F2D"
+    },
+    {
+     "name": "Forest",
+     "hex": "#23402F"
+    },
+    {
+     "name": "Military Green",
+     "hex": "#5F6640"
+    },
+    {
+     "name": "Heather Mauve",
+     "hex": "#C59A9E"
+    },
+    {
+     "name": "Heather Dust",
+     "hex": "#E6D6C3"
+    },
+    {
+     "name": "Soft Cream",
+     "hex": "#F2E6CF"
+    },
+    {
+     "name": "Natural",
+     "hex": "#EFE5D0"
+    },
+    {
+     "name": "Pebble Brown",
+     "hex": "#A88F77"
+    },
+    {
+     "name": "Heather Peach",
+     "hex": "#F3B9A3"
+    },
+    {
+     "name": "Yellow",
+     "hex": "#F9D84A"
+    },
+    {
+     "name": "Orange",
+     "hex": "#F37321"
+    },
+    {
+     "name": "Light Blue",
+     "hex": "#AFCBE4"
+    },
+    {
+     "name": "Heather Columbia Blue",
+     "hex": "#9FB8CF"
+    },
+    {
+     "name": "Pink",
+     "hex": "#F3BCD0"
+    },
+    {
+     "name": "Team Purple",
+     "hex": "#4C2C81"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "S": 17.99,
+    "M": 17.99,
+    "L": 17.99,
+    "XL": 17.99,
+    "2XL": 23.99,
+    "3XL": 26.99,
+    "4XL": 29.99
+   }
+  },
+  {
+   "id": "hanes-5180",
+   "brand": "Hanes",
+   "style": "5180",
+   "name": "Beefy-T",
+   "type": "tee",
+   "tier": "standard",
+   "fabric": "100% cotton",
+   "weightOz": 6.1,
+   "fit": "Classic heavyweight",
+   "sizes": [
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL",
+    "3XL"
+   ],
+   "cost": {
+    "base": 4.8,
+    "2XL": 7.29,
+    "3XL": 10.92,
+    "S": 4.84,
+    "M": 4.84,
+    "L": 4.84,
+    "XL": 4.84
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#FFFFFF"
+    },
+    {
+     "name": "Black",
+     "hex": "#1A1A1A"
+    },
+    {
+     "name": "Light Steel",
+     "hex": "#B8BCC0"
+    },
+    {
+     "name": "Smoke Grey",
+     "hex": "#6D6E70"
+    },
+    {
+     "name": "Navy",
+     "hex": "#1E2840"
+    },
+    {
+     "name": "Deep Royal",
+     "hex": "#22448F"
+    },
+    {
+     "name": "Deep Red",
+     "hex": "#B5121B"
+    },
+    {
+     "name": "Maroon",
+     "hex": "#5A1E2B"
+    },
+    {
+     "name": "Deep Forest",
+     "hex": "#22402F"
+    },
+    {
+     "name": "Kelly Green",
+     "hex": "#1E8C45"
+    },
+    {
+     "name": "Light Blue",
+     "hex": "#AFC9E3"
+    },
+    {
+     "name": "Orange",
+     "hex": "#F36F21"
+    },
+    {
+     "name": "Athletic Gold",
+     "hex": "#F3B229"
+    },
+    {
+     "name": "Natural",
+     "hex": "#EFE6D2"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "S": 17.99,
+    "M": 17.99,
+    "L": 17.99,
+    "XL": 17.99,
+    "2XL": 22.99,
+    "3XL": 29.99
+   }
+  },
+  {
+   "id": "gildan-h000",
+   "brand": "Gildan",
+   "style": "H000",
+   "name": "Hammer Heavyweight Tee",
+   "type": "tee",
+   "tier": "premium",
+   "fabric": "100% ring-spun cotton",
+   "weightOz": 6,
+   "fit": "Classic heavyweight",
+   "sizes": [
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL",
+    "3XL"
+   ],
+   "cost": {
+    "base": 5.2,
+    "2XL": 8.78,
+    "3XL": 12.05,
+    "S": 5.22,
+    "M": 5.22,
+    "L": 5.22,
+    "XL": 5.22
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#FFFFFF"
+    },
+    {
+     "name": "Black",
+     "hex": "#1B1B1B"
+    },
+    {
+     "name": "Sport Grey",
+     "hex": "#9B9B9B"
+    },
+    {
+     "name": "Charcoal",
+     "hex": "#4B4E53"
+    },
+    {
+     "name": "Navy",
+     "hex": "#1F2A44"
+    },
+    {
+     "name": "Royal",
+     "hex": "#1D4F9C"
+    },
+    {
+     "name": "Red",
+     "hex": "#C8102E"
+    },
+    {
+     "name": "Maroon",
+     "hex": "#5B1F2E"
+    },
+    {
+     "name": "Forest Green",
+     "hex": "#1F3B2D"
+    },
+    {
+     "name": "Military Green",
+     "hex": "#5B6236"
+    },
+    {
+     "name": "Sand",
+     "hex": "#D9C9A8"
+    },
+    {
+     "name": "Natural",
+     "hex": "#EFE6D2"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "S": 18.99,
+    "M": 18.99,
+    "L": 18.99,
+    "XL": 18.99,
+    "2XL": 25.99,
+    "3XL": 32.99
+   }
+  },
+  {
+   "id": "comfortcolors-1717",
+   "brand": "Comfort Colors",
+   "style": "1717",
+   "name": "Garment-Dyed Heavyweight Tee",
+   "type": "tee",
+   "tier": "premium",
+   "fabric": "100% ring-spun cotton, garment dyed",
+   "weightOz": 6.1,
+   "fit": "Relaxed",
+   "sizes": [
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL",
+    "3XL",
+    "4XL"
+   ],
+   "cost": {
+    "base": 6.9,
+    "2XL": 10.42,
+    "3XL": 12.76,
+    "4XL": 12.76,
+    "S": 6.27,
+    "M": 6.74,
+    "L": 6.74,
+    "XL": 6.74
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#F7F5EF"
+    },
+    {
+     "name": "Black",
+     "hex": "#2A2A2A"
+    },
+    {
+     "name": "Pepper",
+     "hex": "#4E4E4C"
+    },
+    {
+     "name": "Grey",
+     "hex": "#8C8C8A"
+    },
+    {
+     "name": "Granite",
+     "hex": "#5F6265"
+    },
+    {
+     "name": "True Navy",
+     "hex": "#2C3550"
+    },
+    {
+     "name": "Blue Jean",
+     "hex": "#6E86A6"
+    },
+    {
+     "name": "Chambray",
+     "hex": "#B9CBDD"
+    },
+    {
+     "name": "Ice Blue",
+     "hex": "#B7D3DF"
+    },
+    {
+     "name": "Seafoam",
+     "hex": "#8DBAAA"
+    },
+    {
+     "name": "Light Green",
+     "hex": "#A7BE8D"
+    },
+    {
+     "name": "Moss",
+     "hex": "#6F7B4B"
+    },
+    {
+     "name": "Sage",
+     "hex": "#A3AE8F"
+    },
+    {
+     "name": "Crimson",
+     "hex": "#9E2E3A"
+    },
+    {
+     "name": "Brick",
+     "hex": "#9C4436"
+    },
+    {
+     "name": "Watermelon",
+     "hex": "#E36E74"
+    },
+    {
+     "name": "Blossom",
+     "hex": "#F2C4C9"
+    },
+    {
+     "name": "Orchid",
+     "hex": "#C9A6C7"
+    },
+    {
+     "name": "Butter",
+     "hex": "#F6E3A1"
+    },
+    {
+     "name": "Mustard",
+     "hex": "#D6A63A"
+    },
+    {
+     "name": "Ivory",
+     "hex": "#F1EADB"
+    },
+    {
+     "name": "Khaki",
+     "hex": "#C8B795"
+    },
+    {
+     "name": "Espresso",
+     "hex": "#4C3A31"
+    },
+    {
+     "name": "Bay",
+     "hex": "#B6C4B0"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "S": 20.99,
+    "M": 21.99,
+    "L": 21.99,
+    "XL": 21.99,
+    "2XL": 28.99,
+    "3XL": 33.99,
+    "4XL": 33.99
+   }
+  },
+  {
+   "id": "shakawear-shgd",
+   "brand": "Shaka Wear",
+   "style": "SHGD",
+   "name": "Garment-Dyed Max Heavyweight Tee",
+   "type": "tee",
+   "tier": "premium",
+   "fabric": "100% cotton, garment dyed",
+   "weightOz": 7.5,
+   "fit": "Boxy heavyweight",
+   "sizes": [
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL",
+    "3XL",
+    "4XL",
+    "5XL"
+   ],
+   "cost": {
+    "base": 5.8,
+    "2XL": 12.79,
+    "3XL": 15.16,
+    "4XL": 17.63,
+    "5XL": 20.02,
+    "S": 9.38,
+    "M": 9.38,
+    "L": 9.38,
+    "XL": 9.38
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#F7F5EF"
+    },
+    {
+     "name": "Black",
+     "hex": "#222222"
+    },
+    {
+     "name": "Shadow",
+     "hex": "#4A4A48"
+    },
+    {
+     "name": "Grey",
+     "hex": "#8A8A88"
+    },
+    {
+     "name": "Navy",
+     "hex": "#2B3450"
+    },
+    {
+     "name": "Cream",
+     "hex": "#EEE5CF"
+    },
+    {
+     "name": "Olive",
+     "hex": "#6A6B43"
+    },
+    {
+     "name": "Sage",
+     "hex": "#A3AE8F"
+    },
+    {
+     "name": "Dusty Rose",
+     "hex": "#D6A3A3"
+    },
+    {
+     "name": "Brown",
+     "hex": "#5E4636"
+    },
+    {
+     "name": "Sky Blue",
+     "hex": "#A7C6DD"
+    },
+    {
+     "name": "Burgundy",
+     "hex": "#6E2733"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "S": 26.99,
+    "M": 26.99,
+    "L": 26.99,
+    "XL": 26.99,
+    "2XL": 33.99,
+    "3XL": 38.99,
+    "4XL": 43.99,
+    "5XL": 48.99
+   }
+  },
+  {
+   "id": "gildan-5400",
+   "brand": "Gildan",
+   "style": "5400",
+   "name": "Heavy Cotton Long Sleeve Tee",
+   "type": "long-sleeve",
+   "tier": "value",
+   "fabric": "100% cotton",
+   "weightOz": 5.3,
+   "fit": "Classic",
+   "sizes": [
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL",
+    "3XL"
+   ],
+   "cost": {
+    "base": 5.2,
+    "2XL": 6.24,
+    "3XL": 8.5,
+    "4XL": 9.6,
+    "5XL": 10.2,
+    "S": 4.48,
+    "M": 4.45,
+    "L": 4.48,
+    "XL": 4.48
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#FFFFFF"
+    },
+    {
+     "name": "Black",
+     "hex": "#1B1B1B"
+    },
+    {
+     "name": "Sport Grey",
+     "hex": "#9B9B9B"
+    },
+    {
+     "name": "Dark Heather",
+     "hex": "#4A4B4F"
+    },
+    {
+     "name": "Navy",
+     "hex": "#1F2A44"
+    },
+    {
+     "name": "Royal",
+     "hex": "#1D4F9C"
+    },
+    {
+     "name": "Red",
+     "hex": "#C8102E"
+    },
+    {
+     "name": "Maroon",
+     "hex": "#5B1F2E"
+    },
+    {
+     "name": "Forest Green",
+     "hex": "#1F3B2D"
+    },
+    {
+     "name": "Military Green",
+     "hex": "#5B6236"
+    },
+    {
+     "name": "Charcoal",
+     "hex": "#4B4E53"
+    },
+    {
+     "name": "Light Blue",
+     "hex": "#A9C6E8"
+    },
+    {
+     "name": "Orange",
+     "hex": "#F26B21"
+    },
+    {
+     "name": "Sand",
+     "hex": "#D9C9A8"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "S": 16.99,
+    "M": 16.99,
+    "L": 16.99,
+    "XL": 16.99,
+    "2XL": 20.99,
+    "3XL": 24.99
+   }
+  },
+  {
+   "id": "comfortcolors-6014",
+   "brand": "Comfort Colors",
+   "style": "6014",
+   "name": "Garment-Dyed Long Sleeve Tee",
+   "type": "long-sleeve",
+   "tier": "premium",
+   "fabric": "100% ring-spun cotton, garment dyed",
+   "weightOz": 6.1,
+   "fit": "Relaxed",
+   "sizes": [
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL",
+    "3XL"
+   ],
+   "cost": {
+    "base": 11.5,
+    "2XL": 16.9,
+    "3XL": 22.23,
+    "S": 13.49,
+    "M": 13.49,
+    "L": 13.49,
+    "XL": 14.67
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#F7F5EF"
+    },
+    {
+     "name": "Black",
+     "hex": "#2A2A2A"
+    },
+    {
+     "name": "Pepper",
+     "hex": "#4E4E4C"
+    },
+    {
+     "name": "Grey",
+     "hex": "#8C8C8A"
+    },
+    {
+     "name": "True Navy",
+     "hex": "#2C3550"
+    },
+    {
+     "name": "Blue Jean",
+     "hex": "#6E86A6"
+    },
+    {
+     "name": "Moss",
+     "hex": "#6F7B4B"
+    },
+    {
+     "name": "Sage",
+     "hex": "#A3AE8F"
+    },
+    {
+     "name": "Crimson",
+     "hex": "#9E2E3A"
+    },
+    {
+     "name": "Ivory",
+     "hex": "#F1EADB"
+    },
+    {
+     "name": "Butter",
+     "hex": "#F6E3A1"
+    },
+    {
+     "name": "Espresso",
+     "hex": "#4C3A31"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "S": 34.99,
+    "M": 34.99,
+    "L": 34.99,
+    "XL": 37.99,
+    "2XL": 41.99,
+    "3XL": 52.99
+   }
+  },
+  {
+   "id": "bella-3480",
+   "brand": "Bella+Canvas",
+   "style": "3480",
+   "name": "Unisex Jersey Tank",
+   "type": "tank",
+   "tier": "standard",
+   "fabric": "100% Airlume combed ring-spun cotton",
+   "weightOz": 4.2,
+   "fit": "Retail",
+   "sizes": [
+    "XS",
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL"
+   ],
+   "cost": {
+    "base": 4.7,
+    "2XL": 9.03,
+    "XS": 6.89,
+    "S": 6.89,
+    "M": 6.89,
+    "L": 6.89,
+    "XL": 6.89
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#FFFFFF"
+    },
+    {
+     "name": "Black",
+     "hex": "#1A1A1A"
+    },
+    {
+     "name": "Athletic Heather",
+     "hex": "#B4B4B4"
+    },
+    {
+     "name": "Dark Grey Heather",
+     "hex": "#4C4D51"
+    },
+    {
+     "name": "Navy",
+     "hex": "#1E2741"
+    },
+    {
+     "name": "True Royal",
+     "hex": "#2051A3"
+    },
+    {
+     "name": "Red",
+     "hex": "#C8102E"
+    },
+    {
+     "name": "Heather Mauve",
+     "hex": "#C59A9E"
+    },
+    {
+     "name": "Natural",
+     "hex": "#EFE5D0"
+    },
+    {
+     "name": "Military Green",
+     "hex": "#5F6640"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "XS": 21.99,
+    "S": 21.99,
+    "M": 21.99,
+    "L": 21.99,
+    "XL": 21.99,
+    "2XL": 26.99
+   }
+  },
+  {
+   "id": "bella-6004",
+   "brand": "Bella+Canvas",
+   "style": "6004",
+   "name": "Women's Slim Fit Tee",
+   "type": "womens",
+   "tier": "standard",
+   "fabric": "100% Airlume combed ring-spun cotton",
+   "weightOz": 4.2,
+   "fit": "Women's slim",
+   "sizes": [
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL"
+   ],
+   "cost": {
+    "base": 4.8,
+    "2XL": 8.39,
+    "S": 5.73,
+    "M": 5.73,
+    "L": 5.73,
+    "XL": 5.73
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#FFFFFF"
+    },
+    {
+     "name": "Black",
+     "hex": "#1A1A1A"
+    },
+    {
+     "name": "Athletic Heather",
+     "hex": "#B4B4B4"
+    },
+    {
+     "name": "Dark Grey Heather",
+     "hex": "#4C4D51"
+    },
+    {
+     "name": "Navy",
+     "hex": "#1E2741"
+    },
+    {
+     "name": "Red",
+     "hex": "#C8102E"
+    },
+    {
+     "name": "Heather Mauve",
+     "hex": "#C59A9E"
+    },
+    {
+     "name": "Pink",
+     "hex": "#F3BCD0"
+    },
+    {
+     "name": "Soft Cream",
+     "hex": "#F2E6CF"
+    },
+    {
+     "name": "Heather Dust",
+     "hex": "#E6D6C3"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "S": 19.99,
+    "M": 19.99,
+    "L": 19.99,
+    "XL": 19.99,
+    "2XL": 24.99
+   }
+  },
+  {
+   "id": "gildan-5000b",
+   "brand": "Gildan",
+   "style": "5000B",
+   "name": "Youth Heavy Cotton Tee",
+   "type": "youth",
+   "tier": "value",
+   "fabric": "100% cotton",
+   "weightOz": 5.3,
+   "fit": "Youth classic",
+   "sizes": [
+    "XS",
+    "S",
+    "M",
+    "L",
+    "XL"
+   ],
+   "cost": {
+    "base": 2.6,
+    "XS": 2.23,
+    "S": 2.23,
+    "M": 2.23,
+    "L": 2.26,
+    "XL": 2.26
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#FFFFFF"
+    },
+    {
+     "name": "Black",
+     "hex": "#1B1B1B"
+    },
+    {
+     "name": "Sport Grey",
+     "hex": "#9B9B9B"
+    },
+    {
+     "name": "Navy",
+     "hex": "#1F2A44"
+    },
+    {
+     "name": "Royal",
+     "hex": "#1D4F9C"
+    },
+    {
+     "name": "Red",
+     "hex": "#C8102E"
+    },
+    {
+     "name": "Maroon",
+     "hex": "#5B1F2E"
+    },
+    {
+     "name": "Forest Green",
+     "hex": "#1F3B2D"
+    },
+    {
+     "name": "Irish Green",
+     "hex": "#00A651"
+    },
+    {
+     "name": "Light Blue",
+     "hex": "#A9C6E8"
+    },
+    {
+     "name": "Light Pink",
+     "hex": "#F4C6D3"
+    },
+    {
+     "name": "Orange",
+     "hex": "#F26B21"
+    },
+    {
+     "name": "Gold",
+     "hex": "#F2A900"
+    },
+    {
+     "name": "Purple",
+     "hex": "#4B2E83"
+    },
+    {
+     "name": "Safety Green",
+     "hex": "#C6F432"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "XS": 12.99,
+    "S": 12.99,
+    "M": 12.99,
+    "L": 12.99,
+    "XL": 12.99
+   }
+  },
+  {
+   "id": "gildan-18000",
+   "brand": "Gildan",
+   "style": "18000",
+   "name": "Heavy Blend Crewneck Sweatshirt",
+   "type": "crewneck",
+   "tier": "value",
+   "fabric": "50% cotton / 50% polyester",
+   "weightOz": 8,
+   "fit": "Classic",
+   "sizes": [
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL",
+    "3XL",
+    "4XL",
+    "5XL"
+   ],
+   "cost": {
+    "base": 8.4,
+    "2XL": 10.25,
+    "3XL": 12.61,
+    "4XL": 12.61,
+    "5XL": 12.61,
+    "S": 6.86,
+    "M": 6.86,
+    "L": 6.86,
+    "XL": 6.86
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#FFFFFF"
+    },
+    {
+     "name": "Black",
+     "hex": "#1B1B1B"
+    },
+    {
+     "name": "Sport Grey",
+     "hex": "#9B9B9B"
+    },
+    {
+     "name": "Dark Heather",
+     "hex": "#4A4B4F"
+    },
+    {
+     "name": "Navy",
+     "hex": "#1F2A44"
+    },
+    {
+     "name": "Royal",
+     "hex": "#1D4F9C"
+    },
+    {
+     "name": "Red",
+     "hex": "#C8102E"
+    },
+    {
+     "name": "Maroon",
+     "hex": "#5B1F2E"
+    },
+    {
+     "name": "Forest Green",
+     "hex": "#1F3B2D"
+    },
+    {
+     "name": "Military Green",
+     "hex": "#5B6236"
+    },
+    {
+     "name": "Charcoal",
+     "hex": "#4B4E53"
+    },
+    {
+     "name": "Light Blue",
+     "hex": "#A9C6E8"
+    },
+    {
+     "name": "Light Pink",
+     "hex": "#F4C6D3"
+    },
+    {
+     "name": "Sand",
+     "hex": "#D9C9A8"
+    },
+    {
+     "name": "Ash",
+     "hex": "#D4D4D2"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "S": 21.99,
+    "M": 21.99,
+    "L": 21.99,
+    "XL": 21.99,
+    "2XL": 28.99,
+    "3XL": 33.99,
+    "4XL": 33.99,
+    "5XL": 33.99
+   }
+  },
+  {
+   "id": "comfortcolors-1566",
+   "brand": "Comfort Colors",
+   "style": "1566",
+   "name": "Garment-Dyed Crewneck Sweatshirt",
+   "type": "crewneck",
+   "tier": "premium",
+   "fabric": "80% cotton / 20% polyester, garment dyed",
+   "weightOz": 9.5,
+   "fit": "Relaxed",
+   "sizes": [
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL",
+    "3XL"
+   ],
+   "cost": {
+    "base": 18.5,
+    "2XL": 35.16,
+    "3XL": 42.77,
+    "S": 24.05,
+    "M": 24.05,
+    "L": 24.05,
+    "XL": 24.05
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#F7F5EF"
+    },
+    {
+     "name": "Black",
+     "hex": "#2A2A2A"
+    },
+    {
+     "name": "Pepper",
+     "hex": "#4E4E4C"
+    },
+    {
+     "name": "Grey",
+     "hex": "#8C8C8A"
+    },
+    {
+     "name": "True Navy",
+     "hex": "#2C3550"
+    },
+    {
+     "name": "Blue Jean",
+     "hex": "#6E86A6"
+    },
+    {
+     "name": "Moss",
+     "hex": "#6F7B4B"
+    },
+    {
+     "name": "Sage",
+     "hex": "#A3AE8F"
+    },
+    {
+     "name": "Crimson",
+     "hex": "#9E2E3A"
+    },
+    {
+     "name": "Ivory",
+     "hex": "#F1EADB"
+    },
+    {
+     "name": "Blossom",
+     "hex": "#F2C4C9"
+    },
+    {
+     "name": "Espresso",
+     "hex": "#4C3A31"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "S": 56.99,
+    "M": 56.99,
+    "L": 56.99,
+    "XL": 56.99,
+    "2XL": 78.99,
+    "3XL": 93.99
+   }
+  },
+  {
+   "id": "gildan-18500",
+   "brand": "Gildan",
+   "style": "18500",
+   "name": "Heavy Blend Hooded Sweatshirt",
+   "type": "hoodie",
+   "tier": "value",
+   "fabric": "50% cotton / 50% polyester",
+   "weightOz": 8,
+   "fit": "Classic",
+   "sizes": [
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL",
+    "3XL",
+    "4XL",
+    "5XL"
+   ],
+   "cost": {
+    "base": 11.5,
+    "2XL": 17.69,
+    "3XL": 19.4,
+    "4XL": 20.96,
+    "5XL": 21.28,
+    "S": 10.94,
+    "M": 10.94,
+    "L": 10.94,
+    "XL": 10.94
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#FFFFFF"
+    },
+    {
+     "name": "Black",
+     "hex": "#1B1B1B"
+    },
+    {
+     "name": "Sport Grey",
+     "hex": "#9B9B9B"
+    },
+    {
+     "name": "Dark Heather",
+     "hex": "#4A4B4F"
+    },
+    {
+     "name": "Navy",
+     "hex": "#1F2A44"
+    },
+    {
+     "name": "Royal",
+     "hex": "#1D4F9C"
+    },
+    {
+     "name": "Red",
+     "hex": "#C8102E"
+    },
+    {
+     "name": "Maroon",
+     "hex": "#5B1F2E"
+    },
+    {
+     "name": "Forest Green",
+     "hex": "#1F3B2D"
+    },
+    {
+     "name": "Military Green",
+     "hex": "#5B6236"
+    },
+    {
+     "name": "Charcoal",
+     "hex": "#4B4E53"
+    },
+    {
+     "name": "Light Blue",
+     "hex": "#A9C6E8"
+    },
+    {
+     "name": "Light Pink",
+     "hex": "#F4C6D3"
+    },
+    {
+     "name": "Orange",
+     "hex": "#F26B21"
+    },
+    {
+     "name": "Sand",
+     "hex": "#D9C9A8"
+    },
+    {
+     "name": "Safety Green",
+     "hex": "#C6F432"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "S": 29.99,
+    "M": 29.99,
+    "L": 29.99,
+    "XL": 29.99,
+    "2XL": 43.99,
+    "3XL": 46.99,
+    "4XL": 49.99,
+    "5XL": 50.99
+   }
+  },
+  {
+   "id": "independent-ss4500",
+   "brand": "Independent Trading Co.",
+   "style": "SS4500",
+   "name": "Midweight Hooded Sweatshirt",
+   "type": "hoodie",
+   "tier": "standard",
+   "fabric": "80% cotton / 20% polyester",
+   "weightOz": 8.5,
+   "fit": "Retail",
+   "sizes": [
+    "XS",
+    "S",
+    "M",
+    "L",
+    "XL",
+    "2XL",
+    "3XL"
+   ],
+   "cost": {
+    "base": 17.5,
+    "2XL": 17.93,
+    "3XL": 18.26,
+    "XS": 14.53,
+    "S": 12.99,
+    "M": 12.99,
+    "L": 12.99,
+    "XL": 12.99
+   },
+   "colors": [
+    {
+     "name": "White",
+     "hex": "#FFFFFF"
+    },
+    {
+     "name": "Black",
+     "hex": "#1A1A1A"
+    },
+    {
+     "name": "Grey Heather",
+     "hex": "#A6A6A6"
+    },
+    {
+     "name": "Charcoal Heather",
+     "hex": "#4E5054"
+    },
+    {
+     "name": "Classic Navy",
+     "hex": "#1F2537"
+    },
+    {
+     "name": "Royal",
+     "hex": "#2050A0"
+    },
+    {
+     "name": "Red",
+     "hex": "#C8102E"
+    },
+    {
+     "name": "Maroon",
+     "hex": "#5A1F2D"
+    },
+    {
+     "name": "Alpine Green",
+     "hex": "#2E4A3B"
+    },
+    {
+     "name": "Olive",
+     "hex": "#6B6B3E"
+    },
+    {
+     "name": "Bone",
+     "hex": "#E8E1D2"
+    },
+    {
+     "name": "Sandstone",
+     "hex": "#C9B79A"
+    },
+    {
+     "name": "Blush",
+     "hex": "#EDC4C4"
+    }
+   ],
+   "suppliers": [
+    "shirtspace",
+    "bulkapparel"
+   ],
+   "prices": {
+    "XS": 37.99,
+    "S": 33.99,
+    "M": 33.99,
+    "L": 33.99,
+    "XL": 33.99,
+    "2XL": 43.99,
+    "3XL": 44.99
+   }
+  }
+ ]
+}

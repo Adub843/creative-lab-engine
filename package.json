@@ -1,0 +1,20 @@
+{
+  "name": "business-console",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "check": "node --check assets/app.js && node --check assets/api.js && node --check assets/data.js && node --check assets/products.js && node --check assets/insights.js && node --check assets/studio.js && node --check assets/listing.js && node --check assets/list-design.js && node --check lib/shopify.mjs && node --check lib/insights.mjs && node --check lib/images.mjs && node --check lib/kv-store.mjs && node --check lib/listings.mjs && node --check lib/pricing.mjs && node --check lib/marketing.mjs && node --check assets/marketing.js && node --check lib/promotions.mjs && node --check assets/promotions.js && node --check assets/confirm.js && node --check worker/index.mjs && node --check worker/app.mjs && node --check scripts/build.mjs && node --check scripts/schema/validate.mjs && node --check scripts/test-api.mjs && node --check scripts/test-ui.cjs",
+    "test": "node scripts/test-api.mjs",
+    "test:ui": "NODE_PATH=$(npm root -g) node scripts/test-ui.cjs",
+    "build": "node scripts/build.mjs",
+    "deploy": "npm test && wrangler deploy"
+  },
+  "devDependencies": {
+    "graphql": "16.9.0",
+    "wrangler": "4.150.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
