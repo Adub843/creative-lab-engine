@@ -3,7 +3,7 @@
 // 25 Oct 2026: both store sites are Shopify themes on their own stores (no Netlify hosting), and
 // each brand has its own theme repo: Charleston 3D in charleston3d-site, Elevated Designs in
 // elevated-designs-site. Nothing here is shared between the two brands.
-// "probably" in a description means it was inferred from a name or setup, not opened.
+// Descriptions of the small Netlify tools that were never opened go by their names and setup.
 
 const nl = (n) => [
   { label: "Open in Netlify", url: `https://app.netlify.com/projects/${n}` },
@@ -17,7 +17,7 @@ export const BRANDS = {
     tagline: "Personalized 3D printed gifts, sold on a hand-coded Shopify theme with Shopify checkout",
     site: "https://charleston3d.com",
     app: "https://app.charleston3d.com",
-    logo: "assets/brand/c3d-wordmark.png",
+    logo: "assets/brand/c3d-wordmark.png", logoSize: [440, 84],
     admin: { label: "Shopify admin", url: "https://charleston3d.com/admin" },
   },
   ed: {
@@ -25,7 +25,7 @@ export const BRANDS = {
     tagline: "Custom apparel and print designs, sold on a hand-coded Shopify theme with Shopify checkout",
     site: "https://elevatedshirts.com",
     app: "https://design.elevatedshirts.com",
-    logo: "assets/brand/ed-script.png",
+    logo: "assets/brand/ed-script.png", logoSize: [364, 230],
     admin: { label: "Shopify admin", url: "https://elevatedshirts.com/admin" },
   },
   other: { name: "Other projects", tagline: "Video, content and personal apps" },
@@ -33,7 +33,7 @@ export const BRANDS = {
 
 export const STATUS = {
   attn: "Needs attention",
-  blind: "Can't see",
+  blind: "Not connected",
   live: "Live",
   empty: "Never launched",
 };
@@ -43,7 +43,7 @@ export const SERVICES = [
   { id: "c3dsite", name: "charleston3d.com", brand: "c3d", kind: "Website · Shopify theme", status: "attn",
     does: "Charleston 3D's storefront: a hand-coded Shopify theme running on the Charleston3D store. Products, prices and checkout come live from Shopify, so a product switched on in Products shows up at once. No Netlify, no build step.",
     source: "GitHub: Adub843/charleston3d-site, branch claude/shopify-theme (Charleston 3D only)",
-    note: "The coded theme is being finished in Oct 2026; the live theme is still \"Charleston3D Lowcountry\" until it's published. The old Wix plan was canceled on 8 Oct.",
+    note: "The live theme is still \"Charleston3D Lowcountry\". The coded theme replaces it once it's published in Shopify. The old Wix plan was canceled on 8 Oct.",
     links: [{ label: "Products on the site", url: "#products/c3d" }, { label: "Insights", url: "#insights/c3d" },
       { label: "Open live site", url: BRANDS.c3d.site }, { label: "Themes in Shopify", url: `${BRANDS.c3d.site}/admin/themes` }] },
   { id: "c3dshop", name: "Charleston3D store", brand: "c3d", kind: "Store backend · Shopify", status: "live",
@@ -59,15 +59,15 @@ export const SERVICES = [
     does: "3D-print maker tool that exports .3MF files, with an order form and library and orders functions.",
     links: nl("hype-chain-maker") },
   { id: "npm", name: "nameplate-maker", brand: "c3d", kind: "Web app · Netlify", status: "live",
-    does: "Probably a nameplate design tool for printing.", links: nl("nameplate-maker") },
+    does: "Nameplate designer for 3D printing.", links: nl("nameplate-maker") },
   { id: "ff", name: "3d-print-file-finder", brand: "c3d", kind: "Web app · Netlify", status: "live",
-    does: "Probably a tool for finding 3D-print files.", links: nl("3d-print-file-finder") },
+    does: "Finds 3D-print files.", links: nl("3d-print-file-finder") },
   { id: "pt", source: "Your PC: Documents\\print-trends", name: "print-trends", brand: "c3d", kind: "Web app · Netlify", status: "live",
-    does: "Probably tracks what's selling in 3D prints.", links: nl("print-trends") },
+    does: "Tracks what's selling in 3D prints.", links: nl("print-trends") },
   { id: "noz", name: "nozzlelog", brand: "c3d", kind: "Placeholder · Netlify", status: "empty",
-    does: "Created but never launched. Probably meant as a printer log.", links: nlAdmin("nozzlelog") },
+    does: "Created but never launched. Meant as a printer log, going by its name.", links: nlAdmin("nozzlelog") },
   { id: "ll", name: "layerledger-agxn", brand: "c3d", kind: "Placeholder · Netlify", status: "empty",
-    does: "Created but never launched. Probably meant as a print cost ledger.", links: nlAdmin("layerledger-agxn") },
+    does: "Created but never launched. Meant as a print cost ledger, going by its name.", links: nlAdmin("layerledger-agxn") },
 
   // Elevated Designs
   { id: "edsite", name: "elevatedshirts.com", brand: "ed", kind: "Website · Shopify theme", status: "live",
@@ -125,7 +125,7 @@ export const SERVICES = [
   { id: "oops", source: "Your PC: Documents\\oops-i-bought-a-house", name: "oops-i-bought-a-house", brand: "other", kind: "Web app · Netlify", status: "live",
     does: "Two-page app with identify and vision functions.", links: nl("oops-i-bought-a-house") },
   { id: "pr", name: "partreiver", brand: "other", kind: "Web app · Netlify", status: "attn",
-    does: "Same two functions as oops-i-bought-a-house, byte for byte. Probably a copy.", links: nl("partreiver") },
+    does: "Same two functions as oops-i-bought-a-house, byte for byte, so it looks like a copy.", links: nl("partreiver") },
   { id: "care", name: "carelinked", brand: "other", kind: "Web app · Netlify", status: "live", does: "Static app.", links: nl("carelinked") },
   { id: "pw", name: "penny-wise-app", brand: "other", kind: "Web app · Netlify", status: "live", does: "Budget app.", links: nl("penny-wise-app") },
   { id: "wn", name: "workflow-notes", brand: "other", kind: "Web app · Netlify", status: "attn",
@@ -151,7 +151,7 @@ export const SERVICES = [
     note: "75% of this month's 3,000 credits used by 12 Oct. The cycle runs to 5 Nov.",
     links: [{ label: "Open Netlify", url: "https://app.netlify.com" }] },
   { id: "ts", name: "Tailscale", brand: "other", kind: "Private network · Tailscale", status: "blind",
-    does: "Probably links your computers together. Not connected to the console.",
+    does: "Private network that links your computers. Not connected to the console.",
     links: [{ label: "Open Tailscale machines", url: "https://login.tailscale.com/admin/machines" }] },
 ];
 
@@ -217,7 +217,7 @@ export const TOPOLOGY = [
   ] },
   { layer: "Back office (Cloudflare)", nodes: [
     { id: "console", name: "Business Console", where: "Cloudflare Worker, free plan", brand: "other",
-      does: "This console. Behind CONSOLE_KEY. Publishes products, lists designs, prices, insights and marketing for both stores, each store on its own.",
+      does: "This console, locked with your console key. Publishes products, lists designs, prices, insights and marketing for both stores, each store on its own.",
       to: [["store-c3d", "Admin API"], ["store-ed", "Admin API"], ["kv", "reads and writes"], ["search", "Search Console, GA4, Bing, IndexNow"]],
       links: [{ label: "Open console", url: CONSOLE_URL }, { label: "Cloudflare dashboard", url: "https://dash.cloudflare.com" }] },
     { id: "kv", name: "Workers KV", where: "Same Cloudflare account", brand: "other",
@@ -261,7 +261,7 @@ export const TOPOLOGY = [
   { layer: "Planned: home lab", planned: true, nodes: [
     { id: "openclaw", name: "OpenClaw node", where: "Beelink SER9 Pro mini PC, local model", brand: "other", planned: true,
       does: "Local agents that take over routine work: checking the Marketing page, the price sync and orders through the console's API, with the console key kept on that machine only.",
-      to: [["console", "HTTPS API with CONSOLE_KEY"], ["tailnet", "remote access"]], links: [] },
+      to: [["console", "HTTPS API with the console key"], ["tailnet", "remote access"]], links: [] },
     { id: "server", name: "Home server", where: "Current PC, after the move", brand: "other", planned: true,
       does: "Backups of the repos, image library export and business files; file share for the small network.", to: [["tailnet", "remote access"]], links: [] },
     { id: "tailnet", name: "Tailscale", where: "Private network between your machines", brand: "other", planned: true,

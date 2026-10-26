@@ -18,12 +18,14 @@ export const consoleKey = {
 try { localStorage.removeItem("bc-key"); } catch { /* older versions kept the key here */ }
 
 let dlg = null, asking = null;
-export function askForKey(reason = "Changes to the stores need the console key (the CONSOLE_KEY value set for this console).") {
+const KEY_HELP = "your console key (it's in your password manager, and in the console's settings in Cloudflare)";
+export function askForKey(reason = `Changes to the stores need ${KEY_HELP}.`, { invalid = false } = {}) {
   // Two calls at once (say the product list and the image library) share one prompt.
   if (asking) return asking;
   if (!dlg) {
-    const input = el("input", { class: "field", id: "key-in", type: "password", autocomplete: "off", required: true });
-    const msg = el("p", { class: "muted small", id: "key-msg" });
+    const input = el("input", { class: "field", id: "key-in", type: "password", autocomplete: "off", required: true, "aria-describedby": "key-msg",
+      oninput: () => input.removeAttribute("aria-invalid") });
+    const msg = el("p", { class: "muted small key-msg", id: "key-msg" });
     const cancel = el("button", { class: "btn", type: "button", id: "key-cancel" }, "Cancel");
     const form = el("form", { method: "dialog", class: "stack" },
       el("h2", { id: "key-title" }, "Console key"), msg,
@@ -35,9 +37,14 @@ export function askForKey(reason = "Changes to the stores need the console key (
     cancel.addEventListener("click", () => dlg.close(""));
     form.addEventListener("submit", (e) => { e.preventDefault(); const v = input.value.trim(); if (v) dlg.close(v); });
   }
-  dlg.querySelector("#key-msg").textContent = reason;
+  // A refused key shows as an alert in the danger color, and the field is marked invalid.
+  const msg = dlg.querySelector("#key-msg");
   const input = dlg.querySelector("#key-in");
+  msg.classList.toggle("is-error", invalid);
+  if (invalid) msg.setAttribute("role", "alert"); else msg.removeAttribute("role");
+  msg.textContent = reason;
   input.value = "";
+  if (invalid) input.setAttribute("aria-invalid", "true"); else input.removeAttribute("aria-invalid");
   asking = new Promise((resolve) => {
     dlg.addEventListener("close", () => {
       const v = dlg.returnValue;
@@ -77,13 +84,13 @@ export async function api(path, { method = "GET", body, key = false, reason } = 
     if (res.ok && out) return out;
     if (res.status === 401 && key && attempt === 0) {
       consoleKey.clear();
-      k = await askForKey("That key didn't work. Check it and try again.");
+      k = await askForKey("That key didn't work. Check it and try again.", { invalid: true });
       if (!k) throw new ApiError(401, "cancelled", "No console key entered, so nothing was changed.");
       continue;
     }
     if (res.status === 401) consoleKey.clear(); // never keep a key the server refused
     if (!out) throw new ApiError(res.status, "no_api", res.status === 404
-      ? "The console API isn't running here. Open the deployed console, or run it with npm run dev."
+      ? "This page needs the live console, and it isn't reachable from here. Open the console at its usual web address and try again."
       : `The console API answered with an error (${res.status}).`);
     throw new ApiError(res.status, out.code ?? "error", out.error ?? `Error ${res.status}`, out.details);
   }
