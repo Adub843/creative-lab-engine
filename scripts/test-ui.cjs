@@ -1205,6 +1205,18 @@ async function main() {
 
   // ---------- marketing ----------
   const mkPosts = [];
+  const mkFixes = [{ id: "20261026113000-aaaaaaaa", store: "c3d", source: "auto", kind: "seo", itemKind: "product", target: "gid://shopify/Product/5", title: "Palmetto Keychain", url: "https://charleston3d.com/products/palmetto-keychain", at: "2026-10-26T11:30:00Z",
+    before: { seoTitle: "", seoDescription: "Keychain." }, after: { seoTitle: "Palmetto Keychain, Charleston SC | Charleston3D", seoDescription: "Keychain." } },
+    { id: "20261001113000-bbbbbbbb", store: "c3d", source: "console", kind: "seo", itemKind: "collection", target: "gid://shopify/Collection/2", title: "Ornaments", url: "https://charleston3d.com/collections/ornaments", at: "2026-10-01T15:00:00Z",
+      before: { seoTitle: "", seoDescription: "" }, after: { seoTitle: "Ornaments | Charleston3D", seoDescription: "" } }];
+  const mkDay = (i) => new Date(Date.UTC(2026, 9, 26) - i * 86400000).toISOString().slice(0, 10);
+  const mkGrowth = (store, days) => ({ store, days, site: "https://charleston3d.com",
+    series: Array.from({ length: days }, (_, k) => { const i = days - 1 - k; return { date: mkDay(i), sessions: 20 + (k % 7), visitors: 18, cartAdds: k % 3, checkouts: k % 4 ? 0 : 1, orders: k % 9 ? 0 : 1, revenue: k % 9 ? 0 : 24.5, duration: 40 + (k % 5), bounce: 60,
+      googleClicks: null, googleImpressions: null, bingClicks: k % 2, bingImpressions: 10, ga4Engagement: null, ga4EngagedTime: null, health: i < 2 ? 80 : null }; }),
+    totals: { sessions: { last30: 690, prev30: 600, change: 15 }, cartAdds: { last30: 30, prev30: 30, change: 0 }, checkouts: { last30: 8, prev30: 10, change: -20 }, orders: { last30: 3, prev30: 0, change: null }, revenue: { last30: 73.5, prev30: 0, change: null }, googleClicks: { last30: 0, prev30: 0, change: null }, bingClicks: { last30: 15, prev30: 10, change: 50 } },
+    changes: mkFixes.filter((f) => f.store === store).map((f) => ({ ...f, effect: f.id.startsWith("20261026") ? { days: 0, early: true, beforePerDay: 3, afterPerDay: null, change: null } : { days: 14, early: false, beforePerDay: 2, afterPerDay: 3, change: 50 } })),
+    sources: { shop: { available: true }, google: { connected: false, note: "Add GSC_SERVICE_ACCOUNT to chart Google clicks." }, bing: { connected: true }, ga4: { connected: false, note: "Add C3D_GA4_PROPERTY to chart GA4 engagement." } } });
+  let mkKeywords = ["3d printing charleston", "charleston souvenirs"];
   const mkAudit = (store) => ({
     store, site: store === "ed" ? "https://elevatedshirts.com" : "https://charleston3d.com", checkedAt: "2026-10-26T11:00:00Z",
     scores: { overall: 82, seo: 90, geo: 100, bing: 60, ai: 85, analytics: 50 },
@@ -1243,6 +1255,10 @@ async function main() {
       if (part === "catalog") return json(200, mkCatalog);
       if (part === "settings") return json(200, mkSettings);
       if (part === "traffic") return json(200, mkTraffic);
+      if (part === "changes") return json(200, { store, auto: true, logAvailable: true, changes: mkFixes.filter((f) => f.store === store) });
+      if (part === "growth") return json(200, mkGrowth(store, Number(u.searchParams.get("days") || 90)));
+      if (part === "keywords") return json(200, { store, saveAvailable: true, keywords: mkKeywords.map((k, i) => ({ keyword: k, google: i ? null : { clicks: 4, impressions: 120, position: 8.4, page: "https://charleston3d.com/pages/custom", searches: 3 }, googlePrev: null, bing: { clicks: 1, impressions: 9, position: 5, page: "", searches: 1 }, moved: i ? null : 2.1 })),
+        sources: { google: { connected: true }, bing: { connected: true } } });
       return json(400, { error: "bad part" });
     }
     const b = JSON.parse(req.postData());
@@ -1250,6 +1266,17 @@ async function main() {
     if (b.action === "seo") return json(200, { seoTitle: b.seoTitle, seoDescription: b.seoDescription, indexNow: { sent: true } });
     if (b.action === "alt") return json(200, { alt: b.alt });
     if (b.action === "settings") return json(200, { settings: { ...mkSettings.settings, ...b.values }, changed: Object.keys(b.values) });
+    if (b.action === "autofix") {
+      mkFixes.unshift({ id: "20261026120000-cccccccc", store: b.store, source: "auto", kind: "alt", itemKind: "product", target: "gid://shopify/MediaImage/9", title: "Rainbow Row Ornament", url: "https://charleston3d.com/products/rainbow-row-ornament", at: "2026-10-26T12:00:00Z", before: { alt: "" }, after: { alt: "Rainbow Row Ornament from Charleston3D" } });
+      return json(200, { store: b.store, applied: [mkFixes[0]], failed: [], remaining: 0, indexNow: { sent: true } });
+    }
+    if (b.action === "undo") {
+      const c = mkFixes.find((f) => f.id === b.changeId);
+      c.review = { verdict: "undo", by: "you" };
+      mkFixes.unshift({ id: "20261026130000-dddddddd", store: b.store, source: "console", kind: "revert", itemKind: c.itemKind, target: c.target, title: c.title, url: c.url, at: "2026-10-26T13:00:00Z", before: c.after, after: c.before, note: "Undone on the Marketing page." });
+      return json(200, { store: b.store, undone: c.id, entry: mkFixes[0] });
+    }
+    if (b.action === "keywords") { mkKeywords = b.keywords.map((k) => k.toLowerCase()); return json(200, { store: b.store, keywords: mkKeywords }); }
     if (b.action === "indexnow") return json(200, { store: b.store, indexNow: { sent: true, status: 200, count: 17 } });
     return json(400, { error: "bad action" });
   });
@@ -1264,6 +1291,56 @@ async function main() {
     assert.match(await first.textContent(), /Fix.*redirects to theelevateddesignsllc\.com.*New.*Settings > Domains/s);
     assert.match(await page.locator("text=1 new problem since 2026-10-25").textContent(), /new problem/);
     assert.match(await page.locator(".serp").first().textContent(), /charleston3d\.com.*Charleston3D \| 3D Printed Gifts/s);
+  });
+
+  await step("marketing: growth tiles and a daily chart with change flags, by metric and days", async () => {
+    const grow = page.locator(".panel", { hasText: "Growth" }).first();
+    await grow.locator(".chart svg").waitFor();
+    assert.match(await grow.locator(".tiles").textContent(), /Visits\s*690.*▲ 15% vs the 30 days before.*Sales\s*\$73\.50.*Bing clicks\s*15/s);
+    assert.ok(!/Google clicks/.test(await grow.locator(".tiles").textContent()), "Google isn't connected, so no Google tile");
+    assert.equal(await grow.locator(".chart .mark").count(), 2, "one flag per day something changed");
+    assert.equal(await grow.locator('.chip[data-k="googleClicks"]').count(), 0);
+    await grow.locator('.chip[data-k="revenue"]').click();
+    assert.equal(await grow.locator('.chip[data-k="revenue"]').getAttribute("aria-pressed"), "true");
+    await grow.locator(".chart").focus();
+    await page.keyboard.press("End");
+    assert.match(await grow.locator(".tip").textContent(), /Oct 26: \$0\.00 · Changed: Palmetto Keychain/);
+    assert.match(await grow.textContent(), /Add GSC_SERVICE_ACCOUNT to chart Google clicks/);
+    await grow.locator(".chip", { hasText: "30 days" }).click();
+    await page.waitForFunction(() => [...document.querySelectorAll(".panel")].some((p) => /Growth/.test(p.textContent) && p.querySelector('.chip[aria-pressed="true"]')?.textContent === "Sales" && [...p.querySelectorAll(".chip")].find((c) => c.textContent === "30 days")?.getAttribute("aria-pressed") === "true"));
+    await grow.locator('.chip[data-k="sessions"]').click();
+  });
+
+  await step("marketing: every change is logged with its effect, Apply now runs fixes, and Undo puts the old value back", async () => {
+    const log = page.locator(".panel", { hasText: "Changes and what they did" });
+    await log.locator("a", { hasText: "Palmetto Keychain" }).waitFor();
+    await log.locator("text=Visits to this page").waitFor();
+    assert.match(await log.textContent(), /never changed.*Auto.*Palmetto Keychain.*SEO title: \(empty\) → Palmetto Keychain, Charleston SC \| Charleston3D.*Too early to tell.*You.*Ornaments.*Visits to this page: 2\/day before → 3\/day since \(\+50%\)/s);
+    assert.ok(!/SEO description/.test(await log.locator(".check").first().textContent()), "unchanged fields aren't listed");
+    await log.locator("button", { hasText: "Apply safe fixes now" }).click();
+    await page.waitForSelector("text=Applied 1 fix");
+    await page.waitForSelector(".panel:has-text('Changes and what they did') >> text=Photo alt text");
+    assert.deepEqual(mkPosts.find((p) => p.action === "autofix"), { store: "c3d", action: "autofix" });
+    const orn = page.locator(".panel:has-text('Changes and what they did') .check", { hasText: "Ornaments" });
+    await orn.locator("button", { hasText: "Undo" }).click();
+    await page.waitForSelector("text=Put back: Ornaments");
+    assert.deepEqual(mkPosts.find((p) => p.action === "undo"), { store: "c3d", action: "undo", changeId: "20261001113000-bbbbbbbb" });
+    await page.waitForSelector(".panel:has-text('Changes and what they did') >> text=You undid this.");
+    const first = page.locator(".panel:has-text('Changes and what they did') .check").first();
+    assert.match(await first.textContent(), /Undone.*Ornaments.*Undone on the Marketing page/s);
+    assert.equal(await first.locator("button", { hasText: "Undo" }).count(), 0, "an undo can't itself be undone from the log");
+  });
+
+  await step("marketing: keywords show Google position and movement, and the list can be changed", async () => {
+    const kw = page.locator(".panel", { hasText: "Keywords" }).first();
+    await kw.locator("td", { hasText: "3d printing charleston" }).waitFor();
+    assert.match(await kw.locator("tbody tr").first().textContent(), /3d printing charleston\s*8\.4\s*▲ 2\.1\s*4\s*120\s*1\s*\/pages\/custom/);
+    await kw.locator("summary", { hasText: "Change the keywords" }).click();
+    await kw.locator("textarea").fill("3d printing charleston\nCustom Ornaments");
+    await kw.locator("button", { hasText: "Save keywords" }).click();
+    await page.waitForSelector("text=Tracking 2 keywords");
+    assert.deepEqual(mkPosts.find((p) => p.action === "keywords").keywords, ["3d printing charleston", "Custom Ornaments"]);
+    await page.locator(".panel:has-text('Keywords') td", { hasText: "custom ornaments" }).waitFor();
   });
 
   await step("marketing: edit a product's SEO with the suggestion and save alt text", async () => {
@@ -1282,7 +1359,8 @@ async function main() {
     await row2.locator('input[aria-label^="Alt text"]').fill("Rainbow Row ornament in pastel colors");
     await row2.locator("button", { hasText: "Save alt text" }).click();
     await page.waitForSelector("text=Alt text saved: Rainbow Row Ornament");
-    assert.equal(mkPosts.find((p) => p.action === "alt").mediaId, "gid://shopify/MediaImage/9");
+    const alt = mkPosts.find((p) => p.action === "alt");
+    assert.deepEqual([alt.mediaId, alt.productId], ["gid://shopify/MediaImage/9", "gid://shopify/Product/1"]);
     await page.click('.chip[data-k="all"]');
     assert.equal(await page.locator(".seo-row").count(), 2);
   });
@@ -1297,7 +1375,7 @@ async function main() {
   await step("marketing: traffic, QR campaigns and Bing searches", async () => {
     await page.waitForSelector("td:has-text('ed-builder')");
     assert.match(await page.locator("text=Closest to page 1").locator("..").textContent(), /charleston 3d printing.*#7\.5/);
-    assert.match(await page.locator("text=Add GSC_SERVICE_ACCOUNT").textContent(), /GSC_SERVICE_ACCOUNT/);
+    assert.match(await page.locator("text=Add GSC_SERVICE_ACCOUNT to see Google searches").textContent(), /GSC_SERVICE_ACCOUNT/);
   });
 
   await step("marketing: UTM builder only allows the brand's own site", async () => {

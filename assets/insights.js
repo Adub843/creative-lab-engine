@@ -24,8 +24,9 @@ function delta(pct, label = "vs previous period") {
 }
 
 // ---------- chart ----------
-// points: [{ label, value, kind? }]; kind "forecast" draws a lighter, dashed bar.
-function chart({ points, type = "bar", format, title, height = 200 }) {
+// points: [{ label, value, kind?, mark? }]; kind "forecast" draws a lighter, dashed bar, and a
+// mark (text) draws a flagged line on that day, e.g. a marketing change.
+export function chart({ points, type = "bar", format, title, height = 200 }) {
   const box = el("div", { class: "chart", tabindex: "0", role: "img", "aria-label": title });
   const tip = el("div", { class: "tip", hidden: true, "aria-hidden": "true" });
   let active = -1, geom = null;
@@ -57,6 +58,11 @@ function chart({ points, type = "bar", format, title, height = 200 }) {
       const d = points.map((p, i) => `${i ? "L" : "M"}${(x0 + step * (i + 0.5)).toFixed(1)} ${y(p.value).toFixed(1)}`).join("");
       svg.append(s("path", { class: "area", d: `${d}L${(x0 + step * (points.length - 0.5)).toFixed(1)} ${y0}L${(x0 + step * 0.5).toFixed(1)} ${y0}Z` }), s("path", { class: "line", d }));
     }
+    points.forEach((p, i) => {
+      if (!p.mark) return;
+      const mx = (x0 + step * (i + 0.5)).toFixed(1);
+      svg.append(s("line", { class: "mark", x1: mx, x2: mx, y1: y1, y2: y0 }), s("path", { class: "mark-flag", d: `M${mx} ${y1}l5 -4v8z` }));
+    });
     const cross = s("line", { class: "cross", y1: y1, y2: y0, x1: -10, x2: -10 });
     const dot = s("circle", { class: "dot", r: 4, cx: -10, cy: -10 });
     svg.append(cross, dot);
@@ -71,7 +77,7 @@ function chart({ points, type = "bar", format, title, height = 200 }) {
     const cx = geom.x0 + geom.step * (i + 0.5);
     geom.cross.setAttribute("x1", cx); geom.cross.setAttribute("x2", cx);
     geom.dot.setAttribute("cx", cx); geom.dot.setAttribute("cy", geom.y(p.value));
-    tip.textContent = `${p.label}${p.kind === "forecast" ? " (forecast)" : ""}: ${format(p.value)}`;
+    tip.textContent = `${p.label}${p.kind === "forecast" ? " (forecast)" : ""}: ${format(p.value)}${p.mark ? ` · ${p.mark}` : ""}`;
     tip.hidden = false;
     tip.style.left = `${Math.min(Math.max(cx, 70), geom.W - 70)}px`;
   }
@@ -100,7 +106,7 @@ function niceMax(v) {
   const p = 10 ** Math.floor(Math.log10(v));
   return [1, 2, 2.5, 5, 10].map((m) => m * p).find((m) => m >= v) ?? v;
 }
-function numbersTable(caption, headers, rows) {
+export function numbersTable(caption, headers, rows) {
   return el("details", { class: "nums" }, el("summary", {}, "Show numbers"),
     el("div", { class: "tbl" }, el("table", {}, el("caption", { class: "sr" }, caption),
       el("thead", {}, el("tr", {}, headers.map((h) => el("th", { scope: "col" }, h)))),

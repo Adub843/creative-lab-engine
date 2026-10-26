@@ -17,7 +17,7 @@ import { handleListings, libraryReader } from "../lib/listings.mjs";
 import { handleImages } from "../lib/images.mjs";
 import { kvBlobStore } from "../lib/kv-store.mjs";
 import { handlePricing, scheduledPricing } from "../lib/pricing.mjs";
-import { handleMarketing, runScheduledAudits } from "../lib/marketing.mjs";
+import { handleMarketing, runScheduledAudits, runScheduledFixes } from "../lib/marketing.mjs";
 
 // The app pages: only its own scripts, Shopify's CDN for product photos, never framed.
 export const SITE_HEADERS = {
@@ -112,11 +112,14 @@ export async function handleRequest(req, env) {
   return out;
 }
 
-// The crons (wrangler.toml [triggers]): the daily site check for the Marketing page, and every 15
-// minutes one step of the shirt price sync (lib/pricing.mjs).
+// The crons (wrangler.toml [triggers]): the daily site check for the Marketing page, half an hour
+// later the automatic SEO fixes (a run of their own, so each gets the full subrequest allowance),
+// and every 15 minutes one step of the shirt price sync (lib/pricing.mjs).
 export const AUDIT_CRON = "0 11 * * *";
+export const AUTOFIX_CRON = "30 11 * * *";
 export async function handleScheduled(env, cron) {
   if (!cron || cron === AUDIT_CRON) return runScheduledAudits(envReader(env), (input, init) => fetch(input, init), marketingKv(env));
+  if (cron === AUTOFIX_CRON) return runScheduledFixes(envReader(env), (input, init) => fetch(input, init), marketingKv(env));
   try {
     return await scheduledPricing({ env: envReader(env), kv: env?.PRICING ?? null, fetchImpl: (input, init) => fetch(input, init) });
   } catch (e) {

@@ -1869,6 +1869,266 @@ test("marketing: catalog lists SEO problems with suggestions inside the limits",
   noLeak(res);
 });
 
+const fixWrites = {
+  MarketingProductSeo: (v, data) => data({ productUpdate: { product: { id: v.product.id, handle: "x", seo: v.product.seo }, userErrors: [] } }),
+  MarketingCollectionSeo: (v, data) => data({ collectionUpdate: { collection: { id: v.input.id, handle: "x", seo: v.input.seo }, userErrors: [] } }),
+  MarketingAlt: (v, data) => data({ fileUpdate: { files: [{ id: v.files[0].id, alt: v.files[0].alt }], userErrors: [] } }),
+};
+
+test("marketing: automatic fixes fill what's missing, keep good wording, log the old value and ping IndexNow", async () => {
+  const sh = catalogShopify({ override: fixWrites });
+  const kv = fakeKV();
+  const res = await MK.handleMarketing(post({ store: "c3d", action: "autofix" }), mkCtx(sh.fetch, {}, { kv }));
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  const seo = sh.calls.filter((c) => c.op === "MarketingProductSeo").map((c) => c.variables.product);
+  assert.deepEqual(seo.map((p) => p.id), ["gid://shopify/Product/1", "gid://shopify/Product/3"], "the complete keychain is left alone");
+  assert.equal(seo[0].seo.title, "Name Ornament, Charleston SC | Charleston3D");
+  assert.match(seo[0].seo.description, /^A personalized ornament with your family name\./);
+  const alt = sh.calls.find((c) => c.op === "MarketingAlt").variables.files[0];
+  assert.deepEqual(alt, { id: "gid://shopify/MediaImage/11", alt: "Name Ornament from Charleston3D" });
+  assert.equal(sh.calls.filter((c) => c.op === "MarketingAlt").length, 1, "an existing alt text is never replaced");
+  assert.equal(sh.calls.filter((c) => c.op === "MarketingCollectionSeo").length, 1, "the hidden frontpage collection is skipped");
+  assert.equal(res.body.applied.length, 4);
+  assert.equal(res.body.remaining, 0);
+  const ping = sh.calls.find((c) => c.indexnow).indexnow;
+  assert.equal(ping.key, MKENV.C3D_INDEXNOW_KEY);
+  assert.ok(ping.urlList.includes("https://charleston3d.com/products/name-ornament"));
+  const log = await MK.handleMarketing(keyed({ store: "c3d", part: "changes" }), mkCtx(sh.fetch, {}, { kv }));
+  assert.equal(log.body.changes.length, 4);
+  assert.equal(log.body.auto, true);
+  const first = log.body.changes.find((f) => f.kind === "seo" && f.title === "Name Ornament");
+  assert.deepEqual(first.before, { seoTitle: "", seoDescription: "" });
+  assert.match(first.at, /^\d{4}-\d\d-\d\dT/);
+  const ed = await MK.handleMarketing(keyed({ store: "ed", part: "changes" }), mkCtx(sh.fetch, {}, { kv }));
+  assert.deepEqual(ed.body.changes, [], "each store keeps its own log");
+});
+
+test("marketing: fix rules: lengths, never a shorter description, and the per-run cap", () => {
+  const item = (o) => ({ kind: "product", id: "gid://shopify/Product/9", title: "Tee", url: "https://elevatedshirts.com/products/tee", seoTitle: "", seoDescription: "", mediaId: null, alt: "",
+    suggestion: { title: "Tee | Elevated Designs", description: "A soft tee printed in Charleston, SC, by Elevated Designs. Order yours today." }, ...o });
+  const ok = "A heavyweight tee screen printed by hand in Charleston, South Carolina. Ships in a week.";
+  assert.deepEqual(MK.planFixes("ed", { items: [item({ seoTitle: "Tee: the Lowcountry classic | Elevated Designs", seoDescription: ok })] }), [], "good wording stays");
+  const long = MK.planFixes("ed", { items: [item({ seoTitle: "x".repeat(61), seoDescription: ok })] });
+  assert.deepEqual(long[0].after, { seoTitle: "Tee | Elevated Designs", seoDescription: ok }, "only the field out of range changes");
+  const short = MK.planFixes("ed", { items: [item({ seoTitle: "Tee | Elevated Designs", seoDescription: "Soft tee." })] });
+  assert.equal(short[0].after.seoDescription, item({}).suggestion.description);
+  const shorter = MK.planFixes("ed", { items: [item({ seoTitle: "Tee | Elevated Designs", seoDescription: "x".repeat(69), suggestion: { title: "Tee | Elevated Designs", description: "Short." } })] });
+  assert.deepEqual(shorter, [], "a suggestion shorter than what's there is not used");
+  const many = Array.from({ length: 20 }, (_, n) => item({ id: `gid://shopify/Product/${n + 1}`, mediaId: `gid://shopify/MediaImage/${n + 1}` }));
+  assert.equal(MK.planFixes("ed", { items: many }).length, MK.AUTOFIX_MAX_CHANGES);
+  assert.ok(MK.planFixes("ed", { items: many }).every((f) => !/Charleston3D/.test(JSON.stringify(f.after))), "brands stay separate");
+});
+
+test("marketing: the daily fix run covers both stores, survives one failing, and can be switched off", async () => {
+  const sh = catalogShopify({ override: fixWrites });
+  const kv = fakeKV();
+  const out = await MK.runScheduledFixes(envOf({ ...MKENV }), sh.fetch, kv);
+  assert.equal(out.c3d.applied, 4);
+  assert.equal(out.ed.applied, 4);
+  assert.ok(kv.m.has("changes:c3d") && kv.m.has("changes:ed"));
+  const off = await MK.runScheduledFixes(envOf({ ...MKENV, MARKETING_AUTOFIX: "off" }), sh.fetch, fakeKV());
+  assert.deepEqual(off, {});
+  const half = await MK.runScheduledFixes(envOf({ ...MKENV, ED_SHOPIFY_DOMAIN: undefined }), sh.fetch, fakeKV());
+  assert.equal(half.c3d.applied, 4);
+  assert.equal(half.ed.error, "not_connected");
+  const denied = catalogShopify({ override: { ...fixWrites, MarketingProductSeo: () => new Response(JSON.stringify({ errors: [{ message: "Access denied", extensions: { code: "ACCESS_DENIED", requiredAccess: "`write_products`" } }] }), { status: 200 }) } });
+  const r = await MK.handleMarketing(post({ store: "c3d", action: "autofix" }), mkCtx(denied.fetch, {}, { kv: fakeKV() }));
+  assert.equal(r.status, 200);
+  assert.equal(r.body.applied.length, 0);
+  assert.equal(r.body.failed.length, 1, "stops after the first access denied");
+  const bad = await MK.handleMarketing(post({ store: "c3d", action: "autofix", extra: 1 }), mkCtx(sh.fetch));
+  assert.equal(bad.status, 400);
+});
+
+// ShopifyQL answers keyed by the report asked for, with rows per day relative to NOW.
+const dayOf = (offset) => new Date(NOW.getTime() - offset * 86400000).toISOString().slice(0, 10);
+function qlShopify({ pageRows = [], siteRows = [], salesRows = [], extra = {}, ...opts } = {}) {
+  const table = (columns, rows) => ({ shopifyqlQuery: { parseErrors: [], tableData: { columns: columns.map((name) => ({ name, dataType: "STRING" })), rows: rows.map((r) => columns.map((c) => r[c] ?? null)) } } });
+  return catalogShopify({ ...opts, override: { ...fixWrites,
+    MarketingTraffic: (v, data) => {
+      if (/GROUP BY landing_page_path/.test(v.q)) return data(table(["day", "landing_page_path", "sessions", "sessions_with_cart_additions", "sessions_that_completed_checkout"], pageRows));
+      if (/^FROM sessions SHOW sessions, online_store_visitors/.test(v.q)) return data(table(["day", "sessions", "online_store_visitors", "sessions_with_cart_additions", "sessions_that_reached_checkout", "sessions_that_completed_checkout", "conversion_rate", "average_session_duration", "bounce_rate"], siteRows));
+      if (/^FROM sales/.test(v.q)) return data(table(["day", "orders", "total_sales"], salesRows));
+      return data(table([], []));
+    }, ...extra } });
+}
+const daily = (path, from, to, sessions) => Array.from({ length: from - to + 1 }, (_, i) => ({ day: dayOf(from - i), landing_page_path: path, sessions, sessions_with_cart_additions: 0, sessions_that_completed_checkout: 0 }));
+
+test("marketing: a change's effect compares visits per day in the 14 days before and since", () => {
+  const pages = MK.pageDays([...daily("/products/tee", 30, 16, 4), ...daily("/products/tee", 15, 0, 6), { day: dayOf(3), landing_page_path: "/products/tee?x=1", sessions: 2 }]);
+  const e = MK.changeEffect({ at: `${dayOf(15)}T12:00:00Z` }, pages.get("/products/tee"), NOW);
+  assert.equal(e.days, 14);
+  assert.equal(e.beforePerDay, 4);
+  assert.equal(e.afterPerDay, 6.14, "query strings count toward the page");
+  assert.equal(e.change, 53);
+  assert.equal(e.early, false);
+  const young = MK.changeEffect({ at: `${dayOf(3)}T12:00:00Z` }, pages.get("/products/tee"), NOW);
+  assert.equal(young.days, 3);
+  assert.equal(young.early, true);
+  assert.equal(MK.changeEffect({ at: `${dayOf(20)}T00:00:00Z` }, undefined, NOW).change, null, "no visits before: no percentage");
+});
+
+test("marketing: 14 days on, an automatic change that cut its page's visits is undone and left alone", async () => {
+  const kv = fakeKV();
+  const at = `${dayOf(16)}T11:30:00Z`;
+  const changes = [
+    MK.changeEntry({ at, source: "auto", kind: "seo", itemKind: "product", target: "gid://shopify/Product/2", title: "Keychain", url: "https://charleston3d.com/products/keychain",
+      before: { seoTitle: "Keychain old", seoDescription: "old description" },
+      after: { seoTitle: "Custom Keychain, 3D Printed in Charleston SC | Charleston3D", seoDescription: "A custom name keychain, 3D printed to order in Charleston, SC. Ships in 5-7 business days." } }),
+    MK.changeEntry({ at, source: "auto", kind: "seo", itemKind: "product", target: "gid://shopify/Product/1", title: "Name Ornament", url: "https://charleston3d.com/products/name-ornament",
+      before: { seoTitle: "", seoDescription: "" }, after: { seoTitle: "x", seoDescription: "y" } }),
+  ];
+  await kv.put("changes:c3d", JSON.stringify(changes));
+  const sh = qlShopify({ pageRows: [...daily("/products/keychain", 31, 17, 5), ...daily("/products/keychain", 16, 0, 2), ...daily("/products/name-ornament", 31, 0, 3)] });
+  const r = await MK.applyFixes({ env: envOf({ ...MKENV }), fetchImpl: sh.fetch, kv, store: "c3d", clock: () => NOW });
+  assert.equal(r.reviewed, 2);
+  const undo = sh.calls.filter((c) => c.op === "MarketingProductSeo").find((c) => c.variables.product.id === "gid://shopify/Product/2");
+  assert.deepEqual(undo.variables.product.seo, { title: "Keychain old", description: "old description" });
+  const log = await MK.readChanges(kv, "c3d");
+  const revert = log.find((c) => c.kind === "revert");
+  assert.match(revert.note, /fell 6\d% in the 14 days/);
+  assert.equal(log.find((c) => c.id === changes[0].id).review.verdict, "undo");
+  // The ornament's current SEO isn't what the change wrote (someone changed it), so it's kept as is.
+  assert.equal(log.find((c) => c.id === changes[1].id).review.verdict, "kept");
+  // Next run: the undone keychain is left alone even though its wording is short.
+  const sh2 = qlShopify();
+  await MK.applyFixes({ env: envOf({ ...MKENV }), fetchImpl: sh2.fetch, kv, store: "c3d", clock: () => NOW });
+  assert.ok(!sh2.calls.some((c) => c.op === "MarketingProductSeo" && c.variables.product.id === "gid://shopify/Product/2"));
+  assert.ok(!sh2.calls.some((c) => /GROUP BY landing_page_path/.test(c.variables?.q ?? "")), "nothing left to review, so no page report");
+});
+
+test("marketing: changes made on the page are logged with what they replaced, and can be undone", async () => {
+  const kv = fakeKV();
+  const sh = qlShopify({ extra: {
+    MarketingSeoBefore: (v, data) => data({ node: v.id.includes("Product/1")
+      ? { title: "Name Ornament", handle: "name-ornament", seo: { title: "Old title", description: "Old description" }, featuredMedia: { id: "gid://shopify/MediaImage/11", alt: "old alt" } }
+      : null }),
+    MarketingProductSeo: (v, data) => data({ productUpdate: { product: { id: v.product.id, handle: "name-ornament", seo: v.product.seo }, userErrors: [] } }),
+  } });
+  const ctx = mkCtx(sh.fetch, {}, { kv, now: () => NOW });
+  const s1 = await MK.handleMarketing(post({ store: "c3d", action: "seo", id: "gid://shopify/Product/1", seoTitle: "New title for the ornament", seoDescription: "New description" }), ctx);
+  assert.equal(s1.status, 200, JSON.stringify(s1.body));
+  const s2 = await MK.handleMarketing(post({ store: "c3d", action: "alt", mediaId: "gid://shopify/MediaImage/11", productId: "gid://shopify/Product/1", alt: "Red ornament" }), ctx);
+  assert.equal(s2.status, 200, JSON.stringify(s2.body));
+  let log = (await MK.handleMarketing(keyed({ store: "c3d", part: "changes" }), ctx)).body.changes;
+  assert.deepEqual(log.map((c) => [c.source, c.kind, c.title]), [["console", "alt", "Name Ornament"], ["console", "seo", "Name Ornament"]]);
+  assert.deepEqual(log[1].before, { seoTitle: "Old title", seoDescription: "Old description" });
+  assert.equal(log[0].url, "https://charleston3d.com/products/name-ornament");
+  assert.deepEqual(log[0].before, { alt: "old alt" });
+  const u = await MK.handleMarketing(post({ store: "c3d", action: "undo", changeId: log[1].id }), ctx);
+  assert.equal(u.status, 200, JSON.stringify(u.body));
+  const write = sh.calls.filter((c) => c.op === "MarketingProductSeo").at(-1).variables.product.seo;
+  assert.deepEqual(write, { title: "Old title", description: "Old description" });
+  log = (await MK.handleMarketing(keyed({ store: "c3d", part: "changes" }), ctx)).body.changes;
+  assert.equal(log[0].kind, "revert");
+  assert.equal(log.find((c) => c.id === u.body.undone).review.verdict, "undo");
+  const missing = await MK.handleMarketing(post({ store: "c3d", action: "undo", changeId: "20261025150000-00000000" }), ctx);
+  assert.equal(missing.status, 404);
+  const bad = await MK.handleMarketing(post({ store: "c3d", action: "undo", changeId: "../x" }), ctx);
+  assert.equal(bad.status, 400);
+  // A spoofed productId whose photo is a different file doesn't give the log a wrong page.
+  await MK.handleMarketing(post({ store: "c3d", action: "alt", mediaId: "gid://shopify/MediaImage/99", productId: "gid://shopify/Product/1", alt: "x" }), ctx);
+  log = (await MK.handleMarketing(keyed({ store: "c3d", part: "changes" }), ctx)).body.changes;
+  assert.equal(log[0].url, "https://charleston3d.com/");
+});
+
+test("marketing: growth puts visits, sales, search clicks and health in one daily series, with each change's effect", async () => {
+  const kv = fakeKV();
+  await kv.put("changes:ed", JSON.stringify([MK.changeEntry({ at: `${dayOf(10)}T11:30:00Z`, source: "auto", kind: "seo", itemKind: "product", target: "gid://shopify/Product/1", title: "Tee", url: "https://elevatedshirts.com/products/tee", before: { seoTitle: "" }, after: { seoTitle: "Tee | Elevated Designs" } })]));
+  await MK.saveHistory(kv, { store: "ed", checkedAt: NOW.toISOString(), scores: { overall: 88 }, checks: [] });
+  const sh = qlShopify({
+    siteRows: [{ day: dayOf(0), sessions: 27, online_store_visitors: 26, sessions_with_cart_additions: 2, sessions_that_reached_checkout: 1, sessions_that_completed_checkout: 1, conversion_rate: "0.037", average_session_duration: "32.37", bounce_rate: "0.92" },
+      { day: dayOf(40), sessions: 9 }],
+    salesRows: [{ day: dayOf(0), orders: 1, total_sales: "31.98" }],
+    pageRows: [...daily("/products/tee", 24, 11, 1), ...daily("/products/tee", 10, 0, 3)],
+  });
+  mkFetch.bing = (u) => (u.includes("GetRankAndTrafficStats") ? new Response(JSON.stringify({ d: [{ Clicks: 4, Impressions: 90, Date: `/Date(${Date.parse(`${dayOf(1)}T07:00:00Z`)}-0700)/` }] }), { status: 200 }) : null);
+  const f = mkFetch(sh);
+  const res = await MK.handleMarketing(keyed({ store: "ed", part: "growth", days: "60" }), mkCtx(f.fetch, { BING_WEBMASTER_API_KEY: "bing-key-1234" }, { kv, now: () => NOW }));
+  delete mkFetch.bing;
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  const g = res.body;
+  assert.equal(g.series.length, 60);
+  const today = g.series.at(-1);
+  assert.deepEqual([today.date, today.sessions, today.visitors, today.cartAdds, today.checkouts, today.orders, today.revenue, today.duration, today.bounce, today.health],
+    [dayOf(0), 27, 26, 2, 1, 1, 31.98, 32, 92, 88]);
+  assert.equal(g.series.at(-2).bingClicks, 4);
+  assert.equal(g.series.at(-2).googleClicks, null, "not connected is null, not zero");
+  assert.equal(g.totals.sessions.last30, 27);
+  assert.equal(g.totals.sessions.prev30, 9);
+  assert.equal(g.totals.sessions.change, 200);
+  assert.equal(g.changes[0].effect.beforePerDay, 1);
+  assert.equal(g.changes[0].effect.afterPerDay, 3);
+  assert.equal(g.sources.google.connected, false);
+  assert.equal(g.sources.bing.connected, true);
+  assert.equal(g.sources.ga4.connected, false);
+  assert.ok(!JSON.stringify(g).includes("bing-key-1234"));
+  const denied = qlShopify({ extra: { MarketingTraffic: () => new Response(JSON.stringify({ errors: [{ message: "denied", extensions: { code: "ACCESS_DENIED" } }] }), { status: 200 }) } });
+  const d = await MK.handleMarketing(keyed({ store: "ed", part: "growth" }), mkCtx(mkFetch(denied).fetch, {}, { kv, now: () => NOW }));
+  assert.equal(d.status, 200);
+  assert.match(d.body.sources.shop.note, /read_reports/);
+  assert.equal(d.body.changes[0].effect, null);
+});
+
+test("marketing: GA4 and Google daily figures come through the service account, per store", async () => {
+  MK.clearGoogleToken();
+  const pair = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
+  const pkcs8 = Buffer.from(await crypto.subtle.exportKey("pkcs8", pair.privateKey)).toString("base64");
+  const sa = JSON.stringify({ client_email: "console@proj.iam.gserviceaccount.com", private_key: `-----BEGIN PRIVATE KEY-----\n${pkcs8}\n-----END PRIVATE KEY-----\n` });
+  const seen = [];
+  mkFetch.google = async (u, init) => {
+    if (u.startsWith("https://oauth2.googleapis.com/token")) return new Response(JSON.stringify({ access_token: "ya29.test", expires_in: 3600 }), { status: 200 });
+    seen.push(u);
+    if (u.startsWith("https://analyticsdata.googleapis.com/")) {
+      const body = JSON.parse(init.body);
+      assert.deepEqual(body.metrics.map((m) => m.name), MK.GA4_METRICS);
+      return new Response(JSON.stringify({ rows: [{ dimensionValues: [{ value: dayOf(1).replace(/-/g, "") }], metricValues: ["12", "95.5", "0.613", "3", "1", "31.98"].map((value) => ({ value })) }] }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ rows: [{ keys: [dayOf(2)], clicks: 3, impressions: 70, position: 11.2 }] }), { status: 200 });
+  };
+  const origGoogle = mkFetch.google;
+  const routed = async (u, init) => (u.startsWith("https://analyticsdata.googleapis.com/") ? origGoogle(u, init) : null);
+  const sh = qlShopify();
+  const base = mkFetch(sh).fetch;
+  const f = async (url, init) => (await routed(String(url), init)) ?? base(url, init);
+  const res = await MK.handleMarketing(keyed({ store: "c3d", part: "growth", days: "30" }), mkCtx(f, { GSC_SERVICE_ACCOUNT: sa, C3D_GA4_PROPERTY: "123456789" }, { kv: fakeKV(), now: () => NOW }));
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  const y = res.body.series.find((d) => d.date === dayOf(1));
+  assert.equal(y.ga4Engagement, 61.3);
+  assert.equal(y.ga4EngagedTime, 96);
+  assert.equal(res.body.series.find((d) => d.date === dayOf(2)).googleClicks, 3);
+  assert.ok(seen.some((u) => u.includes("properties/123456789:runReport")));
+  const bad = await MK.handleMarketing(keyed({ store: "ed", part: "growth" }), mkCtx(f, { GSC_SERVICE_ACCOUNT: sa, ED_GA4_PROPERTY: "G-ABC" }, { kv: fakeKV(), now: () => NOW }));
+  assert.match(bad.body.sources.ga4.error, /numeric property id/);
+  MK.clearGoogleToken();
+});
+
+test("marketing: keywords: defaults per brand, save, and positions from Google and Bing", async () => {
+  const kv = fakeKV();
+  const ctx = mkCtx(qlShopify().fetch, {}, { kv, now: () => NOW });
+  const first = await MK.handleMarketing(keyed({ store: "ed", part: "keywords" }), ctx);
+  assert.equal(first.status, 200);
+  assert.deepEqual(first.body.keywords.map((k) => k.keyword), MK.DEFAULT_KEYWORDS.ed);
+  assert.ok(MK.DEFAULT_KEYWORDS.c3d.every((k) => !MK.DEFAULT_KEYWORDS.ed.includes(k)), "each brand has its own");
+  assert.equal(first.body.sources.google.connected, false);
+  const saved = await MK.handleMarketing(post({ store: "ed", action: "keywords", keywords: ["Charleston  Tees", "charleston tees", "palmetto shirt"] }), ctx);
+  assert.deepEqual(saved.body.keywords, ["charleston tees", "palmetto shirt"]);
+  for (const bad of [["<script>"], ["a"], "x", Array(31).fill("abc"), [5]]) {
+    const r = await MK.handleMarketing(post({ store: "ed", action: "keywords", keywords: bad }), ctx);
+    assert.equal(r.status, 400, JSON.stringify(bad));
+  }
+  const c3d = await MK.handleMarketing(keyed({ store: "c3d", part: "keywords" }), ctx);
+  assert.deepEqual(c3d.body.keywords.map((k) => k.keyword), MK.DEFAULT_KEYWORDS.c3d, "saving ED's list doesn't touch Charleston3D's");
+  const st = MK.keywordStats("charleston tees", [
+    { query: "best charleston tees", page: "https://elevatedshirts.com/collections/tees", clicks: 2, impressions: 40, position: 8 },
+    { query: "tees charleston sc", page: "https://elevatedshirts.com/", clicks: 0, impressions: 10, position: 18 },
+    { query: "charleston hats", page: "https://elevatedshirts.com/", clicks: 9, impressions: 90, position: 2 },
+  ]);
+  assert.deepEqual(st, { clicks: 2, impressions: 50, position: 10, page: "https://elevatedshirts.com/collections/tees", searches: 2 });
+  const nokv = await MK.handleMarketing(post({ store: "ed", action: "keywords", keywords: ["charleston tees"] }), mkCtx(qlShopify().fetch));
+  assert.equal(nokv.status, 503);
+});
+
 test("marketing: suggestions stay short for long names, and ED uses its own brand", () => {
   const s = MK.suggestSeo("ed", { title: "Lowcountry Sunset Palmetto Moon Heavyweight Garment Dyed Tee With Extra Words", description: "" });
   assert.ok(s.title.length <= 60, s.title);
@@ -1988,7 +2248,7 @@ test("marketing: settings refuse addresses, phone numbers, bad IDs, markup and u
   const sh = themeShopify();
   const bad = [
     { city: "12 King Street" }, { areas_served: "Charleston\n843-555-0100" }, { brand_description: "Visit us at 123 Meeting St, Charleston" },
-    { ga4_id: "UA-12345-1" }, { clarity_id: "Has Spaces" }, { bing_verification: "short" }, { google_verification: "<meta>" },
+    { ga4_id: "UA-12345-1" }, { clarity_id: "Has Spaces" }, { meta_pixel_id: "abc" }, { tiktok_pixel_id: "lower-case" }, { pinterest_tag_id: "12" }, { bing_verification: "short" }, { google_verification: "<meta>" },
     { same_as: "http://insecure.example" }, { home_title: "{{ shop.name }}" }, { geo_lat: "north" }, { color_navy: "#000" },
     { ga4_id: 5 }, {}, "values",
   ];
@@ -2050,7 +2310,7 @@ test("marketing: Google Search Console with a service account signs a JWT and re
       assert.ok(await crypto.subtle.verify("RSASSA-PKCS1-v1_5", pair.publicKey, dec(sig), new TextEncoder().encode(`${h}.${p}`)), "JWT signature verifies");
       const claims = JSON.parse(dec(p).toString());
       assert.equal(claims.iss, "console@proj.iam.gserviceaccount.com");
-      assert.equal(claims.scope, "https://www.googleapis.com/auth/webmasters.readonly");
+      assert.equal(claims.scope, "https://www.googleapis.com/auth/webmasters.readonly https://www.googleapis.com/auth/analytics.readonly");
       seen.push("token");
       return new Response(JSON.stringify({ access_token: "ya29.test", expires_in: 3600 }), { status: 200 });
     }
@@ -2153,9 +2413,10 @@ test("wrangler.toml: MARKETING and PRICING KV bindings, the daily audit cron and
   const toml = fs.readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   assert.match(toml, /\[\[kv_namespaces\]\]\s*\nbinding = "MARKETING"/);
   assert.match(toml, /\[\[kv_namespaces\]\]\s*\nbinding = "PRICING"/);
-  assert.match(toml, /\[triggers\]\s*\ncrons = \["0 11 \* \* \*", "\*\/15 \* \* \* \*"\]/);
+  assert.match(toml, /\[triggers\]\s*\ncrons = \["0 11 \* \* \*", "30 11 \* \* \*", "\*\/15 \* \* \* \*"\]/);
   const W2 = await import("../worker/app.mjs");
   assert.equal(W2.AUDIT_CRON, "0 11 * * *");
+  assert.equal(W2.AUTOFIX_CRON, "30 11 * * *");
 });
 
 // ---------- last: the schema check over everything sent above ----------
@@ -2172,4 +2433,17 @@ test("every GraphQL string sent matches the Admin API 2025-10 schema, variables 
   const unsent = ops.filter((q) => !sent.has(q)).map((q) => q.slice(0, 60));
   assert.deepEqual(unsent, [], "every exported operation was exercised by a test");
   assert.deepEqual(schemaProblems, []);
+});
+
+test("marketing: suggested titles keep the first part of long names, and SEO writes always send both fields", async () => {
+  assert.equal(MK.suggestSeo("ed", { title: "Salt Marsh T-Shirt, Lowcountry Marsh Sunset Tee, Charleston SC Spartina Grass Shirt" }).title, "Salt Marsh T-Shirt | Elevated Designs");
+  assert.equal(MK.suggestSeo("ed", { title: "Lowcountry Sunrise Shirt - Retro Palmetto Sun Tee" }).title, "Lowcountry Sunrise Shirt | Elevated Designs");
+  assert.equal(MK.suggestSeo("c3d", { title: "Rainbow Row Ornament" }).title, "Rainbow Row Ornament, Charleston SC | Charleston3D");
+  // Shopify clears a field left out of seo {}, so a title-only fix must still carry the description.
+  const seen = [];
+  const sh = catalogShopify({ override: { ...fixWrites, MarketingProductSeo: (v, data) => { seen.push(v.product.seo); return fixWrites.MarketingProductSeo(v, data); }, MarketingCollectionSeo: (v, data) => { seen.push(v.input.seo); return fixWrites.MarketingCollectionSeo(v, data); } } });
+  const res = await MK.handleMarketing(post({ store: "c3d", action: "autofix" }), mkCtx(sh.fetch, {}, { kv: fakeKV(), now: () => NOW }));
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.ok(seen.length > 0);
+  for (const seo of seen) assert.deepEqual(Object.keys(seo).sort(), ["description", "title"]);
 });
