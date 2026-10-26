@@ -104,7 +104,7 @@ export async function renderMarketing() {
     if (fails.length)
       out.push(el("ul", { class: "checks" }, fails.sort((x, y) => order[x.level] - order[y.level]).map((c) => checkRow(c, a.newProblems.includes(c.id)))));
     const passed = a.checks.filter((c) => c.level === "pass");
-    out.push(el("details", {}, el("summary", {}, `${passed.length} checks passed`), el("ul", { class: "checks" }, passed.map((c) => checkRow(c)))));
+    out.push(el("details", {}, el("summary", {}, `${passed.length} check${passed.length === 1 ? "" : "s"} passed`), el("ul", { class: "checks" }, passed.map((c) => checkRow(c)))));
     const home = a.pages.find((p) => p.kind === "home");
     if (home) out.push(el("div", { class: "stack", style: "gap:6px" }, el("span", { class: "eyebrow" }, "How the home page looks in search"),
       el("div", { class: "serp" }, el("span", { class: "serp-url" }, host(home.url)), el("span", { class: "serp-title" }, home.title || "(no title)"), el("span", { class: "serp-desc" }, home.description || "(no description)"))));

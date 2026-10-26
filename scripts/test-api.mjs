@@ -1949,6 +1949,25 @@ test("marketing: Google Search Console with a service account signs a JWT and re
   MK.clearGoogleToken();
 });
 
+test("marketing: IndexNow refuses to send another domain's pages when the site redirects", async () => {
+  const sh = fakeShopify();
+  const live = fakeSite({ site: "https://theelevateddesignsllc.com" });
+  const redirecting = { fetch: async (url, init) => {
+    const u = new URL(String(url));
+    if (u.host === "theelevateddesignsllc.com") return live.fetch(url, init);
+    if (u.host !== "elevatedshirts.com") return null;
+    u.host = "theelevateddesignsllc.com";
+    const r = await live.fetch(u.href, init);
+    Object.defineProperty(r, "url", { value: u.href });
+    return r;
+  } };
+  const f = mkFetch(sh, redirecting);
+  const res = await MK.handleMarketing(post({ store: "ed", action: "indexnow" }), mkCtx(f.fetch));
+  assert.equal(res.status, 409);
+  assert.match(res.body.error, /no pages on elevatedshirts\.com.*primary domain/);
+  assert.equal(sh.calls.filter((c) => c.indexnow).length, 0, "nothing sent");
+});
+
 test("marketing: send the whole sitemap to IndexNow with the store's own key", async () => {
   const sh = fakeShopify();
   const f = mkFetch(sh, fakeSite({ site: "https://elevatedshirts.com" }));

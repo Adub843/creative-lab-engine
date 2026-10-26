@@ -284,7 +284,7 @@ async function main() {
     await page.click('.seg-btn[data-store="ed"]');
     await page.waitForSelector('.prow:has-text("Lowcountry Tee")');
     assert.equal(await rows().count(), 2);
-    assert.match(await page.locator("#prod-title").textContent(), /theelevateddesignsllc\.com/);
+    assert.match(await page.locator("#prod-title").textContent(), /elevatedshirts\.com/);
     assert.equal(await page.locator(".prow", { hasText: "Lowcountry" }).locator('a[data-act="view"]').getAttribute("href"), "https://elevatedshirts.com/products/lowcountry-tee");
     assert.ok(page.url().endsWith("#products/ed"));
     await sw("Pluff Mud").click();
@@ -488,7 +488,7 @@ async function main() {
     await page.waitForTimeout(700); // the c3d change finishes while ED is showing
     mode.postDelay = 150;
     assert.equal(await rows().count(), 2, "ED list not redrawn with C3D rows");
-    assert.match(await page.locator("#prod-title").textContent(), /theelevateddesignsllc\.com/);
+    assert.match(await page.locator("#prod-title").textContent(), /elevatedshirts\.com/);
     await page.click('.seg-btn[data-store="c3d"]');
     await page.waitForSelector('.prow:has-text("Pineapple")');
     assert.equal(await liveLabel("gid://shopify/Product/103"), "Live", "C3D shows the saved change");
@@ -677,8 +677,8 @@ async function main() {
     await page.click('a.nav[data-route="dashboard"]');
     await page.waitForSelector("h1:has-text('Dashboard')");
     const quick = await page.locator(".quick a").evaluateAll((as) => as.map((a) => a.getAttribute("href")));
-    assert.deepEqual(quick, ["https://charleston3d.com", "#products/c3d", "#insights/c3d", "https://charleston3d.com/admin",
-      "https://elevatedshirts.com", "#products/ed", "#insights/ed", "https://elevatedshirts.com/admin/orders"]);
+    assert.deepEqual(quick, ["https://charleston3d.com", "https://app.charleston3d.com", "#products/c3d", "#insights/c3d",
+      "https://elevatedshirts.com", "https://design.elevatedshirts.com", "#products/ed", "#insights/ed"]);
   });
 
   await step("dashboard: jump palette, service drawer and theme switch", async () => {
@@ -924,7 +924,7 @@ async function main() {
     assert.equal(body.variants, offerOf(two, { sizes: body.sizes }).variants, "server counted the same variants as the sheet");
     assert.deepEqual(body.tags, ["elevated-designs", "sunset", "lowcountry"]);
     assert.equal(body.seoDescription, "Hand-written SEO description for the Lowcountry Sunset tee.");
-    assert.match(await page.locator("#ls-result").textContent(), /Live on theelevateddesignsllc\.com.*is live/s);
+    assert.match(await page.locator("#ls-result").textContent(), /Live on elevatedshirts\.com.*is live/s);
     assert.equal(await page.locator("#ls-view").getAttribute("href"), "https://elevatedshirts.com/products/lowcountry-sunset-tee");
     assert.equal(await page.locator("#ls-view").getAttribute("target"), "_blank");
     assert.equal(await page.locator("#ls-admin").getAttribute("href"), "https://admin.shopify.com/store/elevated-designs/products/555");
