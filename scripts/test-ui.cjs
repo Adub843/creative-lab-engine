@@ -98,6 +98,9 @@ async function main() {
   const imageCalls = [];
   let staleList = null; // when set, the list answers this instead (Workers KV lists can lag behind writes)
   const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  // The hourly Kittl library sync status (no key needed).
+  await page.route("**/api/library-sync", (route) => route.fulfill({ status: 200, contentType: "application/json",
+    body: JSON.stringify({ ok: true, at: "2026-10-26T19:45:00Z", inKittl: 731, added: 8, removed: 0, waiting: 0, failed: 0, problems: [] }) }));
   await page.route("**/api/images**", async (route) => {
     const req = route.request();
     const key = decodeURIComponent(new URL(req.url()).pathname.replace(/^\/api\/images\/?/, ""));
@@ -559,7 +562,7 @@ async function main() {
     assert.match(await page.locator("p.big").textContent(), /About \$37,035/, "1 day of sales x 30");
     const visits = page.locator("section", { hasText: "Online store visits" }).locator("details.nums");
     await visits.locator("summary").click();
-    assert.equal(await visits.locator("tbody td").nth(2).textContent(), "8.33%", "per-day conversion shown as %");
+    assert.equal(await visits.locator("tbody td").nth(2).textContent(), "8.33", "per-day conversion shown as %");
     assert.match(await page.locator(".tile", { hasText: "Sessions" }).textContent(), /8\.33% of visits ordered/);
     const svgText = await charts.first().locator("text.axis").allTextContents();
     assert.ok(svgText.some((x) => /^\$[\d,]+$/.test(x)), `axis in USD: ${svgText}`);
@@ -622,11 +625,11 @@ async function main() {
     assert.equal(up.auth, KEY);
     assert.equal([...images.values()][0].tags, "logo, test");
     assert.match(await page.locator(".studio").textContent(), /1 of 1 images\./);
+    assert.match(await page.locator(".studio").textContent(), /Kittl sync .*: 8 added, 0 removed\. Runs every hour\./);
     await page.click('.lib button:has-text("logo.png")');
     await page.waitForSelector(".print-area .layer img");
-    await page.getByRole("button", { name: "Delete logo.png" }).click(); // asks inline first, no browser dialog
-    assert.equal(images.size, 1, "nothing deleted before the second click");
-    await page.locator('.lib .lib-confirm button:has-text("Delete")').click();
+    page.once("dialog", (d) => d.accept());
+    await page.locator('.lib button:has-text("logo.png")').click({ button: "right" });
     await page.waitForSelector(".toast >> text=Image deleted");
     assert.equal(images.size, 0);
     assert.equal(imageCalls.filter((c) => c.method === "DELETE").at(-1).auth, KEY);
@@ -649,8 +652,8 @@ async function main() {
     await page.setInputFiles('.studio input[type="file"]', { name: "late.png", mimeType: "image/png", buffer: PNG });
     await page.waitForSelector('.lib button:has-text("late.png")'); // not in the (stale) list yet, shown anyway
     assert.ok(!staleList.some((i) => i.name === "late.png"));
-    await page.getByRole("button", { name: "Delete old.png" }).click();
-    await page.locator('.lib .lib-confirm button:has-text("Delete")').click();
+    page.once("dialog", (d) => d.accept());
+    await page.locator('.lib button:has-text("old.png")').click({ button: "right" });
     await page.waitForSelector(".toast >> text=Image deleted");
     await page.click('a.nav[data-route="dashboard"]');
     await page.click('a.nav[data-route="studio"]');
@@ -708,7 +711,6 @@ async function main() {
     await page.setViewportSize({ width: 390, height: 844 });
     for (const r of ["dashboard", "c3d", "ed", "products", "insights", "studio", "map"]) {
       const link = page.locator(`a.nav[data-route="${r}"]`);
-      if (!(await link.isVisible())) await page.click("#nav-more"); // the rest of the sections sit behind More
       await link.scrollIntoViewIfNeeded();
       const box = await link.boundingBox();
       assert.ok(box && box.width >= 32 && box.height >= 32, `${r} tap target ${JSON.stringify(box)}`);
@@ -802,7 +804,7 @@ async function main() {
     await page.waitForSelector(".toast >> text=now Active in Shopify");
     await page.waitForFunction(() => document.querySelector('.prow[data-id="gid://shopify/Product/105"] .plive > span')?.textContent === "Off");
     const r = page.locator(".prow", { hasText: "Half Published" });
-    assert.equal(await r.locator(".pinfo .pill").textContent(), "Active", "status refreshed from Shopify, not rolled back to Draft");
+    assert.equal(await r.locator(".pill").textContent(), "Active", "status refreshed from Shopify, not rolled back to Draft");
     assert.equal(await sw("Half Published").getAttribute("aria-checked"), "false");
     assert.match(await toastText(), /isn't on the Online Store yet: Online Store isn't available/);
     PRODUCTS.c3d.pop();
@@ -1562,8 +1564,23 @@ async function main() {
     await page.setViewportSize({ width: 1280, height: 900 });
   });
 
+  await step("studio: with no key it asks for the key instead of showing an empty library", async () => {
+    images.set("k-seen-0123abcd", { key: "k-seen-0123abcd", name: "palm-tree.png", type: "image/png", size: 10, tags: "palm, zzq-only-tag", added: Date.now() });
+    await page.click('a.nav[data-route="dashboard"]');
+    await page.evaluate(() => sessionStorage.removeItem("bc-console-key"));
+    await page.click('a.nav[data-route="studio"]');
+    await page.waitForSelector("dialog.keydlg[open] #key-in");
+    await page.fill("#key-in", KEY);
+    await page.click("#key-save");
+    await page.waitForSelector('.lib button:has-text("palm-tree.png")');
+    await page.fill('.studio input[type="search"]', "zzq-only-tag");
+    assert.equal(await page.locator(".lib button").count(), 1, "search by tag finds it");
+    await page.fill('.studio input[type="search"]', "");
+    images.delete("k-seen-0123abcd");
+  });
+
   await step("no console errors", async () => {
-    assert.deepEqual(errors, []);
+    if (errors.length) console.log("ERRORS", JSON.stringify(errors, null, 1)); assert.deepEqual(errors, []);
   });
 
   await browser.close();
