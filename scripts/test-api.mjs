@@ -2826,3 +2826,192 @@ test("kittl sync: the hourly cron saves its result and /api/library-sync shows t
   const list = await handleImages(imgReq("/api/images?public=1"), { blobs: kvBlobStore(kv), env: envOf() });
   assert.equal((await list.json()).items.length, 2, "the sync's own record isn't listed as an image");
 });
+
+// ---------- rank tracker ----------
+const TR = await import("../lib/tracker.mjs");
+async function trackerSa() {
+  const pair = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
+  const pkcs8 = Buffer.from(await crypto.subtle.exportKey("pkcs8", pair.privateKey)).toString("base64");
+  return JSON.stringify({ client_email: "console@proj.iam.gserviceaccount.com", private_key: `-----BEGIN PRIVATE KEY-----\n${pkcs8}\n-----END PRIVATE KEY-----\n` });
+}
+// Search Console answers by the dimensions and dates asked for; every call is recorded.
+function trackerGoogle(seen, { site = "https://charleston3d.com" } = {}) {
+  return async (u, init) => {
+    if (u.startsWith("https://oauth2.googleapis.com/token")) return new Response(JSON.stringify({ access_token: "ya29.test", expires_in: 3600 }), { status: 200 });
+    const b = JSON.parse(init.body);
+    seen.push({ u, ...b });
+    const dims = b.dimensions.join(",");
+    if (dims === "query,page") return new Response(JSON.stringify({ rows: [
+      { keys: ["3d printing charleston", `${site}/`], clicks: 5, impressions: 100, position: 4 },
+      { keys: ["3d printing in charleston sc", `${site}/pages/custom`], clicks: 1, impressions: 100, position: 8 },
+      { keys: ["custom 3d printed gifts", `${site}/collections/gifts`], clicks: 0, impressions: 40, position: 15 },
+    ] }), { status: 200 });
+    if (dims === "page") {
+      const cur = b.startDate === dayOf(29);
+      return new Response(JSON.stringify({ rows: cur
+        ? [{ keys: [`${site}/products/ornament`], clicks: 12, impressions: 300, position: 6 }, { keys: [`${site}/pages/about`], clicks: 1, impressions: 50, position: 20 }, { keys: ["https://elevatedshirts.com/x"], clicks: 99, impressions: 9, position: 1 }]
+        : [{ keys: [`${site}/products/ornament`], clicks: 4, impressions: 200, position: 9 }, { keys: [`${site}/pages/about`], clicks: 6, impressions: 80, position: 12 }] }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ rows: [
+      { keys: ["3d printing charleston"], clicks: 5, impressions: 100, position: 4 },
+      { keys: ["rainbow row ornament"], clicks: 2, impressions: 260, position: 11.4 },
+      { keys: ["holy city keychain"], clicks: 0, impressions: 30, position: 24 },
+    ] }), { status: 200 });
+  };
+}
+
+test("tracker: buckets, click-through visibility and the daily trend", () => {
+  assert.deepEqual([null, 1, 3, 3.4, 10, 11, 20, 21].map(TR.bucketOf), ["none", "top3", "top3", "top10", "top10", "top20", "top20", "beyond"]);
+  assert.deepEqual(TR.visibility(["a", "b", "c"], (k) => ({ a: 2, b: 15 })[k] ?? null), { top3: 1, top10: 0, top20: 1, beyond: 0, none: 1 });
+  assert.equal(TR.ctrOf(1), 0.28); assert.equal(TR.ctrOf(1.4), 0.28); assert.equal(TR.ctrOf(12), 0.01); assert.equal(TR.ctrOf(25), 0); assert.equal(TR.ctrOf(null), 0);
+  const trend = TR.averageSeries([{ date: "2026-10-01", k: { a: [1, 3, 40], b: [null, 0, 0] } }, { date: "2026-10-02", k: { a: [1, 3, 40], b: [1, 1, 9] } }]);
+  assert.deepEqual(trend, [{ date: "2026-10-01", average: 1, seen: 1, visibility: 50 }, { date: "2026-10-02", average: 1, seen: 2, visibility: 100 }]);
+});
+
+test("tracker: rank table gives position now, 7 and 28 days back, best and the series", () => {
+  const history = Array.from({ length: 30 }, (_, i) => ({ date: `d${i}`, k: { tee: [30 - i, i, i * 10], gone: i < 5 ? [9, 0, 1] : [null, 0, 0] } }));
+  const [tee, gone] = TR.rankTable(["tee", "gone", "new"], history).concat();
+  assert.equal(tee.position, 1); assert.equal(tee.week, 8); assert.equal(tee.month, 29);
+  assert.equal(tee.change7, 7, "moving from 8 to 1 is 7 places up"); assert.equal(tee.change28, 28);
+  assert.equal(tee.best, 1); assert.equal(tee.clicks, 29); assert.equal(tee.series.length, 30);
+  assert.equal(gone.position, null); assert.equal(gone.best, 9); assert.equal(gone.change7, null);
+  const short = TR.rankTable(["tee"], history.slice(-3))[0];
+  assert.equal(short.week, null, "no 7-day comparison until there are 8 days");
+});
+
+test("tracker: page movers, untracked searches and the suggestion and Bing link parsers", () => {
+  const site = "https://charleston3d.com";
+  const m = TR.pageMovers([{ keys: [`${site}/a`], clicks: 10, impressions: 100 }, { keys: [`${site}/b`], clicks: 1, impressions: 10 }, { keys: ["https://elevatedshirts.com/c"], clicks: 50, impressions: 5 }],
+    [{ keys: [`${site}/a`], clicks: 2, impressions: 60 }, { keys: [`${site}/b`], clicks: 5, impressions: 30 }], site);
+  assert.deepEqual(m.winners.map((x) => [x.page, x.change]), [[`${site}/a`, 8]]);
+  assert.deepEqual(m.losers.map((x) => [x.page, x.change]), [[`${site}/b`, -4]]);
+  const ideas = TR.searchIdeas([{ keys: ["Custom Gifts Charleston"], clicks: 1, impressions: 20, position: 5 }, { keys: ["custom gifts charleston"], clicks: 1, impressions: 20, position: 7 }, { keys: ["3d printing charleston sc"], clicks: 3, impressions: 90, position: 2 }], ["3d printing charleston"]);
+  assert.deepEqual(ideas, [{ query: "custom gifts charleston", clicks: 2, impressions: 40, position: 6 }], "covered searches are left out and the same search is merged");
+  assert.deepEqual(TR.parseSuggest(["tee", ["Charleston Tee", 4, "lowcountry tee "]]), ["charleston tee", "lowcountry tee"]);
+  assert.deepEqual(TR.parseSuggest({ nope: 1 }), []);
+  assert.deepEqual(TR.parseLinkCounts({ d: { Links: [{ Count: 2, Url: "https://charleston3d.com/a" }, { Count: 7, Url: "https://charleston3d.com/" }], TotalPages: 1 } }).pages.map((p) => p.links), [7, 2]);
+  assert.deepEqual(TR.parseUrlLinks({ d: { Details: [{ Url: "https://blog.example/post", AnchorText: "3D prints" }, { Url: "" }] } }), [{ from: "https://blog.example/post", anchor: "3D prints" }]);
+});
+
+test("tracker: competitor list takes public sites only, never the store's own", () => {
+  assert.deepEqual(TR.parseCompetitors(["https://www.Rival.com/shop", "rival.com", "other-prints.co.uk"], "charleston3d.com"), ["rival.com", "other-prints.co.uk"]);
+  for (const bad of [["localhost"], ["10.0.0.1"], ["http://192.168.1.1/"], ["charleston3d.com"], ["www.charleston3d.com"], ["not a site"], [7]])
+    assert.throws(() => TR.parseCompetitors(bad, "charleston3d.com"), (e) => e.status === 400, JSON.stringify(bad));
+  assert.throws(() => TR.parseCompetitors(["a.com", "b.com", "c.com", "d.com", "e.com", "f.com"], "x.com"), (e) => e.status === 400);
+});
+
+test("tracker: one snapshot a day per store, each store against its own Search Console property", async () => {
+  MK.clearGoogleToken();
+  const sa = await trackerSa();
+  const seen = [];
+  mkFetch.google = trackerGoogle(seen);
+  const f = mkFetch(qlShopify()).fetch;
+  const kv = fakeKV();
+  const env = envOf({ ...MKENV, GSC_SERVICE_ACCOUNT: sa });
+  const first = await TR.snapshotRanks({ env, fetchImpl: f, kv, store: "c3d", clock: () => NOW });
+  assert.equal(first.taken, true);
+  const e = first.history[0];
+  assert.equal(e.date, "2026-10-25");
+  assert.deepEqual(e.k["3d printing charleston"], [6, 6, 200], "both searches with all the words count, position weighted by times shown");
+  assert.deepEqual(e.k["custom 3d printed gifts"], [15, 0, 40]);
+  assert.deepEqual(e.k["charleston souvenirs"], [null, 0, 0]);
+  assert.equal(seen[0].startDate, dayOf(8)); assert.equal(seen[0].endDate, dayOf(2));
+  assert.ok(seen[0].u.includes(encodeURIComponent("sc-domain:charleston3d.com")));
+  const again = await TR.snapshotRanks({ env, fetchImpl: f, kv, store: "c3d", clock: () => NOW });
+  assert.equal(again.taken, false, "only one a day");
+  assert.equal(seen.length, 1);
+  const out = await TR.runScheduledSnapshots(env, f, kv, () => new Date(NOW.getTime() + 86400000));
+  assert.deepEqual(out, { c3d: true, ed: true });
+  assert.equal((await kv.get("ranks:c3d", { type: "json" })).length, 2);
+  const ed = await kv.get("ranks:ed", { type: "json" });
+  assert.equal(ed.length, 1);
+  assert.deepEqual(Object.keys(ed[0].k), MK.DEFAULT_KEYWORDS.ed, "the ED history holds only ED keywords");
+  assert.ok(seen.at(-1).u.includes(encodeURIComponent("sc-domain:elevatedshirts.com")), "ED asks ED's own property");
+  const none = await TR.snapshotRanks({ env: envOf(MKENV), fetchImpl: f, kv: fakeKV(), store: "c3d", clock: () => NOW });
+  assert.equal(none.taken, false);
+  MK.clearGoogleToken();
+});
+
+test("tracker: the panel shows visibility, history, movers, ideas, Bing positions and backlinks", async () => {
+  MK.clearGoogleToken();
+  const sa = await trackerSa();
+  const seen = [];
+  mkFetch.google = trackerGoogle(seen);
+  mkFetch.bing = (u) => {
+    if (u.includes("GetQueryStats")) return new Response(JSON.stringify({ d: [{ Query: "3d printing charleston", Clicks: 2, Impressions: 30, AvgImpressionPosition: 3 }] }), { status: 200 });
+    if (u.includes("GetLinkCounts")) return new Response(JSON.stringify({ d: { Links: [{ Count: 3, Url: "https://charleston3d.com/" }], TotalPages: 1 } }), { status: 200 });
+    return null;
+  };
+  const kv = fakeKV();
+  await kv.put("ranks:c3d", JSON.stringify([{ date: dayOf(1), k: { "3d printing charleston": [9, 1, 50], "custom 3d printed gifts": [30, 0, 5], "personalized ornaments charleston": [null, 0, 0], "3d printed name keychain": [null, 0, 0], "charleston souvenirs": [null, 0, 0] } }]));
+  const ctx = mkCtx(mkFetch(qlShopify()).fetch, { GSC_SERVICE_ACCOUNT: sa, BING_WEBMASTER_API_KEY: "bing-key-1234" }, { kv, now: () => NOW });
+  const res = await MK.handleMarketing(mkGet({ store: "c3d", part: "tracker" }), ctx);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  const t = res.body;
+  assert.equal(t.snapshot.days, 2); assert.equal(t.snapshot.taken, true);
+  assert.deepEqual(t.visibility.google, { top3: 0, top10: 1, top20: 1, beyond: 0, none: 3 });
+  assert.equal(t.visibility.bing.top3, 1);
+  assert.equal(t.trend.length, 2);
+  assert.ok(t.trend[1].visibility > t.trend[0].visibility, "moving from 9 to 6 raises visibility");
+  const kw = t.keywords.find((r) => r.keyword === "3d printing charleston");
+  assert.equal(kw.position, 6); assert.equal(kw.bing, 3);
+  assert.deepEqual(t.pages.winners.map((x) => x.page), ["https://charleston3d.com/products/ornament"]);
+  assert.deepEqual(t.pages.losers.map((x) => x.page), ["https://charleston3d.com/pages/about"]);
+  assert.ok(![...t.pages.winners, ...t.pages.losers].some((x) => x.page.includes("elevatedshirts")), "never the other brand's pages");
+  assert.deepEqual(t.ideas.map((x) => x.query), ["rainbow row ornament", "holy city keychain"]);
+  assert.deepEqual(t.backlinks, { connected: true, pages: [{ url: "https://charleston3d.com/", links: 3 }], total: 3 });
+  assert.deepEqual(t.competitors, []);
+  assert.ok(!JSON.stringify(t).includes("bing-key-1234"), "the Bing key never reaches the page");
+  const bare = await MK.handleMarketing(mkGet({ store: "ed", part: "tracker" }), mkCtx(mkFetch(qlShopify()).fetch, {}, { kv: fakeKV(), now: () => NOW }));
+  assert.equal(bare.status, 200);
+  assert.match(bare.body.sources.google.note, /Connect Google Search Console/);
+  assert.match(bare.body.backlinks.note, /Connect Bing Webmaster Tools/);
+  assert.equal(bare.body.pages, null);
+  delete mkFetch.bing;
+  MK.clearGoogleToken();
+});
+
+test("tracker: competitors, compare, suggestions, who links here and snapshot actions", async () => {
+  MK.clearGoogleToken();
+  const kv = fakeKV();
+  const asked = [];
+  const outside = { fetch: async (url) => {
+    const u = String(url);
+    if (u.startsWith("https://suggestqueries.google.com/")) { asked.push(u); return new Response(JSON.stringify(["x", ["3d printing charleston sc", "3d printing charleston", "3d printing near me"]]), { status: 200 }); }
+    if (u.startsWith("https://api.bing.com/osjson.aspx")) { asked.push(u); return new Response(JSON.stringify(["x", ["3d printing near me"]]), { status: 200 }); }
+    if (u === "https://rival.com/") return new Response("<html><head><title>Rival Prints</title></head><body><h1>Hi</h1></body></html>", { status: 200, headers: { "content-type": "text/html" } });
+    if (u === "https://down.example/") throw new TypeError("fetch failed");
+    return null;
+  } };
+  mkFetch.bing = (u) => (u.includes("GetUrlLinks") ? new Response(JSON.stringify({ d: { Details: [{ Url: "https://blog.example/post", AnchorText: "great prints" }] } }), { status: 200 }) : null);
+  const ctx = mkCtx(mkFetch(qlShopify(), fakeSite(), outside).fetch, { BING_WEBMASTER_API_KEY: "bing-key-1234" }, { kv, now: () => NOW });
+  const save = await MK.handleMarketing(post({ store: "c3d", action: "competitors", competitors: ["www.rival.com", "down.example"] }), ctx);
+  assert.equal(save.status, 200, JSON.stringify(save.body));
+  assert.deepEqual(await kv.get("competitors:c3d", { type: "json" }), ["rival.com", "down.example"]);
+  assert.equal(await kv.get("competitors:ed"), null, "ED's list is untouched");
+  const own = await MK.handleMarketing(post({ store: "c3d", action: "competitors", competitors: ["charleston3d.com"] }), ctx);
+  assert.equal(own.status, 400);
+  const cmp = await MK.handleMarketing(post({ store: "c3d", action: "compare" }), ctx);
+  assert.equal(cmp.status, 200, JSON.stringify(cmp.body));
+  assert.equal(cmp.body.own.host, "charleston3d.com"); assert.equal(cmp.body.own.local, true);
+  assert.equal(cmp.body.competitors[0].title, "Rival Prints"); assert.equal(cmp.body.competitors[0].h1, 1);
+  assert.equal(cmp.body.competitors[1].error, "couldn't connect");
+  const ideas = await MK.handleMarketing(post({ store: "c3d", action: "ideas", seeds: ["3D Printing Charleston"] }), ctx);
+  assert.equal(ideas.status, 200, JSON.stringify(ideas.body));
+  assert.deepEqual(ideas.body.ideas.map((x) => [x.phrase, x.sources]), [["3d printing near me", ["Google", "Bing"]], ["3d printing charleston sc", ["Google"]]], "tracked phrases are left out, found by both first");
+  assert.equal(asked.length, 2);
+  for (const bad of [{ seeds: [] }, { seeds: ["<script>"] }, { seeds: Array(11).fill("tee") }, { seeds: ["tee"], extra: 1 }])
+    assert.equal((await MK.handleMarketing(post({ store: "c3d", action: "ideas", ...bad }), ctx)).status, 400, JSON.stringify(bad));
+  const links = await MK.handleMarketing(post({ store: "c3d", action: "links", url: "https://charleston3d.com/" }), ctx);
+  assert.equal(links.status, 200, JSON.stringify(links.body));
+  assert.deepEqual(links.body.links, [{ from: "https://blog.example/post", anchor: "great prints" }]);
+  const other = await MK.handleMarketing(post({ store: "c3d", action: "links", url: "https://elevatedshirts.com/" }), ctx);
+  assert.equal(other.status, 400, "a page on the other brand's site is refused");
+  const snap = await MK.handleMarketing(post({ store: "c3d", action: "snapshot" }), ctx);
+  assert.equal(snap.status, 503, "no snapshot without Search Console");
+  const nokv = await MK.handleMarketing(post({ store: "c3d", action: "competitors", competitors: ["rival.com"] }), mkCtx(mkFetch(qlShopify()).fetch, {}, { now: () => NOW }));
+  assert.equal(nokv.status, 503);
+  const nokey = await MK.handleMarketing(post({ store: "c3d", action: "compare" }, { "content-type": "application/json" }), ctx);
+  assert.equal(nokey.status, 401, "actions need the console key");
+  delete mkFetch.bing;
+});

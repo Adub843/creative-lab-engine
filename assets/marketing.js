@@ -79,6 +79,7 @@ export async function renderMarketing() {
     const [chgPanel, chgBox] = section("changes", "Changes and what they did", el("span", { class: "muted small" }, "Safe fixes run every morning, 11:30 UTC"));
     const [catPanel, catBox] = section("catalog", "Products and collections");
     const [kwPanel, kwBox] = section("keywords", "Keywords", el("span", { class: "muted small" }, "Google and Bing, last 28 days"));
+    const [trkPanel, trkBox] = section("tracker", "Rank tracker", el("span", { class: "muted small" }, "Positions over time, ideas, backlinks and competitors"));
     const [gscPanel, gscBox] = section("google", "Google Search Console", el("span", { class: "muted small" }, "Pages, devices, sitemaps and indexing"));
     const [holoPanel, holoBox] = section("holo", "Holo AI marketing", el("span", { class: "muted small" }, "Ads, social posts, emails and blog posts"));
     const [setPanel, setBox] = section("settings", "Site settings", el("span", { class: "muted small" }, "Changes the live theme"));
@@ -87,7 +88,7 @@ export async function renderMarketing() {
     const utm = utmPanel(s), tools = toolsPanel(s);
     utm.id = "mk-links"; tools.id = "mk-tools";
     panels.push(["links", "Link builder"], ["tools", "Tools"]);
-    body.replaceChildren(auditPanel, growPanel, chgPanel, catPanel, kwPanel, gscPanel, holoPanel, setPanel, trafPanel, searchPanel, utm, tools);
+    body.replaceChildren(auditPanel, growPanel, chgPanel, catPanel, kwPanel, trkPanel, gscPanel, holoPanel, setPanel, trafPanel, searchPanel, utm, tools);
     jump.replaceChildren(...panels.map(([k, t]) => el("a", { href: `#mk-${k}`, onclick: (e) => {
       e.preventDefault(); // the hash is the page's route, so scroll instead
       const target = document.getElementById(`mk-${k}`);
@@ -110,6 +111,7 @@ export async function renderMarketing() {
       },
       catalog: () => fetchPart("catalog").then((c) => live() && catBox.replaceChildren(...catalogView(s, c))).catch((e) => live() && catBox.replaceChildren(errorState(e, "products and collections", () => reload.catalog()))),
       keywords: () => fetchPart("keywords").then((k) => live() && kwBox.replaceChildren(...keywordsView(s, k))).catch((e) => live() && kwBox.replaceChildren(errorState(e, "keywords", () => reload.keywords()))),
+      tracker: () => fetchPart("tracker").then((t) => live() && trkBox.replaceChildren(...trackerView(s, t))).catch((e) => live() && trkBox.replaceChildren(errorState(e, "the rank tracker", () => reload.tracker()))),
       google: () => fetchPart("google").then((g) => live() && gscBox.replaceChildren(...googleView(s, g))).catch((e) => live() && gscBox.replaceChildren(errorState(e, "Search Console", () => reload.google()))),
       holo: () => fetchPart("holo").then((h) => live() && holoBox.replaceChildren(...holoView(s, h))).catch((e) => live() && holoBox.replaceChildren(errorState(e, "Holo", () => reload.holo()))),
       settings: () => fetchPart("settings").then((c) => live() && setBox.replaceChildren(settingsView(s, c))).catch((e) => live() && setBox.replaceChildren(errorState(e, "the site settings", () => reload.settings()))),
@@ -317,13 +319,180 @@ export async function renderMarketing() {
         const list = box.value.split(/\n|,/).map((x) => x.trim()).filter(Boolean);
         const r = await api("/api/marketing", { method: "POST", key: true, reason: KEY_REASON, body: { store: s, action: "keywords", keywords: list } });
         toast(`Tracking ${r.keywords.length} keyword${r.keywords.length === 1 ? "" : "s"}`);
-        state.reload.keywords();
+        state.reload.keywords(); state.reload.tracker();
       } catch (e) { toast(e.message); save.disabled = false; }
     });
     out.push(el("details", {}, el("summary", {}, "Change the keywords"),
       el("div", { class: "stack", style: "gap:8px" },
         el("span", { class: "small muted" }, "One per line, up to 30. Each store keeps its own list."), box,
         el("div", { class: "row" }, save, k.saveAvailable ? null : el("span", { class: "muted small" }, "Saving needs the console's storage, which isn't set up yet.")))));
+    return out;
+  }
+
+  // ---------- rank tracker ----------
+  const trackerPost = (s, body) => api("/api/marketing", { method: "POST", key: true, reason: KEY_REASON, body: { store: s, ...body } });
+  const pathOf = (u) => { try { return new URL(u).pathname; } catch { return u; } };
+  const pageLink = (u) => el("a", { href: u, target: "_blank", rel: "noopener", class: "wrap" }, pathOf(u));
+  const delta = (m, unit = "") => m == null ? el("span", { class: "muted" }, "–") : el("span", { class: `delta ${m > 0 ? "up" : m < 0 ? "down" : "flat"}` }, m === 0 ? "■ 0" : `${m > 0 ? "▲" : "▼"} ${num(Math.abs(m))}${unit}`);
+  // Position history as a small line; up is better (position 1 at the top).
+  function rankSpark(series) {
+    const vals = series.map((x) => x.position);
+    if (vals.filter((v) => v != null).length < 2) return null;
+    const W = 96, H = 24, worst = Math.max(20, ...vals.filter((v) => v != null));
+    const pts = vals.map((v, i) => v == null ? null : `${((i / (vals.length - 1)) * (W - 4) + 2).toFixed(1)},${(2 + ((v - 1) / (worst - 1)) * (H - 4)).toFixed(1)}`).filter(Boolean).join(" ");
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("width", W); svg.setAttribute("height", H); svg.setAttribute("aria-hidden", "true"); svg.classList.add("spark");
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    line.setAttribute("points", pts);
+    svg.append(line);
+    return svg;
+  }
+  function trackerView(s, t) {
+    const out = [];
+    const google = t.sources.google, bing = t.sources.bing;
+    const V = t.visibility.google, tracked = t.visibility.tracked;
+    const last = t.trend.at(-1), weekAgo = t.trend.at(-8);
+    const tile = (label, value, sub) => el("div", { class: "tile" }, el("span", { class: "eyebrow" }, label), el("b", { class: "num" }, value), sub);
+    if (!tracked) out.push(el("p", { class: "muted" }, "Add keywords in the Keywords section above to start tracking their positions."));
+    else {
+      out.push(el("div", { class: "tiles" },
+        tile("Visibility", last ? `${last.visibility}%` : "–", last && weekAgo ? delta(Math.round((last.visibility - weekAgo.visibility) * 10) / 10, " pts vs a week ago") : el("span", { class: "muted small" }, "100% = every keyword at #1")),
+        tile("Top 3", `${V.top3} / ${tracked}`, el("span", { class: "muted small" }, "keywords in Google")),
+        tile("Top 10", `${V.top3 + V.top10} / ${tracked}`, el("span", { class: "muted small" }, "first page")),
+        tile("Top 20", `${V.top3 + V.top10 + V.top20} / ${tracked}`, el("span", { class: "muted small" }, `${V.none} not showing yet`)),
+        t.visibility.bing ? tile("Bing top 10", `${t.visibility.bing.top3 + t.visibility.bing.top10} / ${tracked}`, el("span", { class: "muted small" }, "last 6 months")) : null));
+      if (t.trend.length >= 2)
+        out.push(chart({ points: t.trend.map((d) => ({ label: shortDay(d.date), value: d.visibility })), type: "line", format: (v) => `${Math.round(v ?? 0)}%`, title: "Google visibility of the tracked keywords per day" }),
+          numbersTable("Visibility per day", ["Day", "Visibility", "Average position", "Keywords showing"], t.trend.map((d) => [shortDay(d.date), `${d.visibility}%`, d.average ?? "–", `${d.seen} / ${tracked}`])));
+      else out.push(el("p", { class: "muted small" }, t.snapshot.latest ? `First snapshot taken ${shortDay(t.snapshot.latest)}. The trend chart starts once there are two days of history; a new snapshot is saved every morning.` : "No snapshot yet. One is saved every morning once Google Search Console is connected."));
+      const rows = t.keywords;
+      out.push(el("div", { class: "tbl cards trk-tbl" }, el("table", {},
+        el("caption", { class: "sr" }, "Position history for each tracked keyword"),
+        el("thead", {}, el("tr", {}, ["Keyword", "Google now", "7 days", "28 days", "Best", "Bing", "Trend"].map((h) => el("th", { scope: "col" }, h)))),
+        el("tbody", {}, rows.map((r) => el("tr", {},
+          el("td", { class: "lead" }, el("strong", {}, r.keyword)),
+          el("td", { class: "num", "data-label": "Google now" }, r.position ?? "–"),
+          el("td", { "data-label": "7 days" }, delta(r.change7)), el("td", { "data-label": "28 days" }, delta(r.change28)),
+          el("td", { class: "num", "data-label": "Best" }, r.best ?? "–"), el("td", { class: "num", "data-label": "Bing" }, r.bing ?? "–"),
+          el("td", { "data-label": "Trend" }, rankSpark(r.series) ?? el("span", { class: "muted small" }, "Building"))))))));
+      out.push(el("p", { class: "muted small" }, `Google position is the average spot over the 7 days ending 2 days ago (Search Console runs behind). ▲ means it moved up. ${t.snapshot.days} day${t.snapshot.days === 1 ? "" : "s"} of history so far.`));
+    }
+    const notes = [google.note ?? google.error, bing.note ?? bing.error].filter(Boolean);
+    if (notes.length) out.push(el("ul", { class: "muted small notes" }, notes.map((n) => el("li", {}, n))));
+    const snap = el("button", { class: "btn ghost", type: "button", disabled: google.connected && t.saveAvailable ? null : "" }, "Take a snapshot now");
+    snap.addEventListener("click", async () => {
+      snap.disabled = true;
+      try { const r = await trackerPost(s, { action: "snapshot" }); toast(`Snapshot saved for ${shortDay(r.date)}`); state.reload.tracker(); }
+      catch (e) { toast(e.message); snap.disabled = false; }
+    });
+    out.push(el("div", { class: "row" }, snap));
+
+    // Pages that gained or lost Google clicks.
+    if (t.pages) {
+      const moverList = (title, list, empty) => el("div", { class: "stack", style: "gap:6px;min-width:0" }, el("h3", {}, title),
+        list.length ? el("ul", { class: "movers" }, list.map((x) => el("li", {}, pageLink(x.page), el("span", { class: "muted small" }, ` ${num(x.clicks)} click${x.clicks === 1 ? "" : "s"} `), delta(x.change)))) : el("p", { class: "muted small" }, empty));
+      out.push(el("h3", {}, "Pages that moved"), el("p", { class: "muted small" }, "Google clicks in the last 28 days against the 28 days before."),
+        el("div", { class: "trk-split" }, moverList("Gaining", t.pages.winners, "No page gained clicks yet."), moverList("Losing", t.pages.losers, "No page lost clicks.")));
+    }
+
+    // Keyword ideas.
+    out.push(el("h3", {}, "Keyword ideas"));
+    const track = async (phrase, btn) => {
+      btn.disabled = true;
+      try {
+        const list = [...t.keywords.map((r) => r.keyword), phrase];
+        if (list.length > 30) throw new Error("The list is full (30). Remove a keyword in the Keywords section first.");
+        const r = await trackerPost(s, { action: "keywords", keywords: list });
+        toast(`Now tracking "${phrase}" (${r.keywords.length} keywords)`);
+        state.reload.keywords(); state.reload.tracker();
+      } catch (e) { toast(e.message); btn.disabled = false; }
+    };
+    const trackBtn = (phrase) => { const b = el("button", { class: "btn ghost small", type: "button", disabled: t.saveAvailable ? null : "" }, "Track"); b.addEventListener("click", () => track(phrase, b)); return b; };
+    if (t.ideas.length)
+      out.push(el("p", { class: "muted small" }, "Searches the site already shows up for in Google that no tracked keyword covers, most seen first."),
+        el("div", { class: "tbl cards trk-tbl" }, el("table", {},
+          el("caption", { class: "sr" }, "Searches not tracked yet"),
+          el("thead", {}, el("tr", {}, ["Search", "Shown", "Clicks", "Position", ""].map((h) => el("th", { scope: "col" }, h)))),
+          el("tbody", {}, t.ideas.slice(0, 15).map((x) => el("tr", {},
+            el("td", { class: "lead" }, x.query), el("td", { class: "num", "data-label": "Shown" }, num(x.impressions)), el("td", { class: "num", "data-label": "Clicks" }, num(x.clicks)),
+            el("td", { class: "num", "data-label": "Position" }, x.position ?? "–"), el("td", {}, trackBtn(x.query))))))));
+    else out.push(el("p", { class: "muted small" }, google.connected ? "No untracked searches yet." : "Ideas from Search Console appear once it's connected."));
+    const sugBox = el("div", { class: "stack", style: "gap:6px" });
+    const sugBtn = el("button", { class: "btn", type: "button", disabled: t.keywords.length ? null : "" }, "Get suggestions from Google and Bing");
+    sugBtn.addEventListener("click", async () => {
+      sugBtn.disabled = true; sugBox.replaceChildren(loading("Asking Google and Bing…"));
+      try {
+        const r = await trackerPost(s, { action: "ideas", seeds: t.keywords.slice(0, 10).map((k) => k.keyword) });
+        const list = r.ideas ?? [];
+        sugBox.replaceChildren(r.error && !list.length ? el("p", { class: "muted small" }, r.error) : list.length ? el("ul", { class: "ideas" }, list.slice(0, 40).map((x) => el("li", {}, el("span", {}, x.phrase), el("span", { class: "muted small" }, ` ${x.sources.join(" + ")} `), trackBtn(x.phrase))))
+          : el("p", { class: "muted small" }, "No new suggestions for these keywords."));
+      } catch (e) { sugBox.replaceChildren(el("p", { class: "muted small" }, e.message)); }
+      finally { sugBtn.disabled = false; }
+    });
+    out.push(el("div", { class: "row" }, sugBtn, el("span", { class: "muted small" }, "What people type around your first 10 keywords.")), sugBox);
+
+    // Backlinks.
+    out.push(el("h3", {}, "Backlinks"));
+    const bl = t.backlinks;
+    if (bl?.pages?.length) {
+      const who = el("div", { class: "stack", style: "gap:6px" });
+      out.push(el("p", { class: "muted small" }, `${num(bl.total)} link${bl.total === 1 ? "" : "s"} from other sites point at ${num(bl.pages.length)} page${bl.pages.length === 1 ? "" : "s"} here, as Bing sees them.`),
+        el("ul", { class: "movers" }, bl.pages.slice(0, 15).map((x) => {
+          const b = el("button", { class: "btn ghost small", type: "button" }, "Who links here");
+          b.addEventListener("click", async () => {
+            b.disabled = true; who.replaceChildren(loading(`Finding links to ${pathOf(x.url)}…`));
+            try {
+              const r = await trackerPost(s, { action: "links", url: x.url });
+              who.replaceChildren(el("strong", {}, `Links to ${pathOf(x.url)}`), r.links.length
+                ? el("ul", { class: "movers" }, r.links.slice(0, 25).map((l) => el("li", {}, el("a", { href: l.from, target: "_blank", rel: "noopener", class: "wrap" }, l.from), l.anchor ? el("span", { class: "muted small" }, ` "${l.anchor}"`) : null)))
+                : el("p", { class: "muted small" }, "Bing hasn't listed the linking pages yet."));
+            } catch (e) { who.replaceChildren(el("p", { class: "muted small" }, e.message)); }
+            finally { b.disabled = false; }
+          });
+          return el("li", {}, pageLink(x.url), el("span", { class: "muted small" }, ` ${num(x.links)} link${x.links === 1 ? "" : "s"} `), b);
+        })), who);
+    } else out.push(el("p", { class: "muted small" }, bl?.note ?? bl?.error ?? "Bing hasn't found links to the site yet."));
+
+    // Competitors.
+    out.push(el("h3", {}, "Competitors"));
+    const compBox = el("textarea", { class: "field", rows: "3", "aria-label": "Competitor websites, one per line" }, t.competitors.join("\n"));
+    const compSave = el("button", { class: "btn", type: "button", disabled: t.saveAvailable ? null : "" }, "Save competitors");
+    const compareBtn = el("button", { class: "btn brand", type: "button", disabled: t.competitors.length ? null : "" }, "Compare");
+    const compOut = el("div", { class: "stack", style: "gap:8px" });
+    compSave.addEventListener("click", async () => {
+      compSave.disabled = true;
+      try {
+        const r = await trackerPost(s, { action: "competitors", competitors: compBox.value.split(/\n|,/).map((x) => x.trim()).filter(Boolean) });
+        t.competitors = r.competitors; compBox.value = r.competitors.join("\n"); compareBtn.disabled = !r.competitors.length;
+        toast(`Saved ${r.competitors.length} competitor${r.competitors.length === 1 ? "" : "s"}`);
+      } catch (e) { toast(e.message); } finally { compSave.disabled = false; }
+    });
+    compareBtn.addEventListener("click", async () => {
+      compareBtn.disabled = true; compOut.replaceChildren(loading("Reading each home page…"));
+      try {
+        const r = await trackerPost(s, { action: "compare" });
+        const cards = [r.own, ...r.competitors];
+        const yes = (v) => v ? "Yes" : "No";
+        compOut.replaceChildren(el("div", { class: "tbl" }, el("table", {},
+          el("caption", { class: "sr" }, "Home pages side by side"),
+          el("thead", {}, el("tr", {}, el("th", { scope: "col" }, ""), cards.map((c, i) => el("th", { scope: "col" }, i ? c.host : `${c.host} (you)`)))),
+          el("tbody", {}, [
+            ["Loads", (c) => c.error ? `No (${c.error})` : "Yes"], ["Page title", (c) => c.title || "None"], ["Title length", (c) => `${c.titleLength} characters`],
+            ["Description", (c) => c.description || "None"], ["Description length", (c) => `${c.descriptionLength} characters`],
+            ["Main headings (H1)", (c) => num(c.h1)], ["Words on the page", (c) => num(c.words)], ["Structured data", (c) => c.schema.length ? c.schema.join(", ") : "None"],
+            ["Local details", (c) => yes(c.local)], ["Social share card", (c) => yes(c.socialCard)], ["Photos without alt text", (c) => `${num(c.imagesNoAlt)} of ${num(c.images)}`],
+          ].map(([label, f], i) => el("tr", {}, el("th", { scope: "row" }, label), cards.map((c) => el("td", { class: "wrap" }, c.error && i ? "–" : f(c)))))))));
+      } catch (e) { compOut.replaceChildren(el("p", { class: "muted small" }, e.message)); }
+      finally { compareBtn.disabled = !t.competitors.length; }
+    });
+    out.push(el("p", { class: "muted small" }, "Up to 5 websites. Compare reads their home pages next to yours."),
+      compBox, el("div", { class: "row" }, compSave, compareBtn), compOut);
+
+    out.push(el("details", {}, el("summary", {}, "What free data can't show"),
+      el("ul", { class: "muted small notes" },
+        el("li", {}, "How many people search a phrase each month. Google only shares that inside Google Ads; here \"Shown\" (how often the site appeared) stands in for it."),
+        el("li", {}, "Where a competitor ranks. Search Console and Bing only report your own site."),
+        el("li", {}, "Every backlink on the web. This list is what Bing has found, which is usually a good share but not all."))));
     return out;
   }
 

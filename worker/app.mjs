@@ -20,6 +20,7 @@ import { kvBlobStore } from "../lib/kv-store.mjs";
 import { handlePricing, scheduledPricing } from "../lib/pricing.mjs";
 import { handleMarketing, runScheduledAudits, runScheduledFixes } from "../lib/marketing.mjs";
 import { handlePromotions } from "../lib/promotions.mjs";
+import { runScheduledSnapshots } from "../lib/tracker.mjs";
 import { syncKittlLibrary, STATE_KEY as KITTL_STATE_KEY } from "../lib/kittl-sync.mjs";
 
 // The app pages: only its own scripts, Shopify's CDN for product photos, never framed.
@@ -126,7 +127,7 @@ export async function handleRequest(req, env) {
 }
 
 // The crons (wrangler.toml [triggers]): the daily site check for the Marketing page, half an hour
-// later the automatic SEO fixes (a run of their own, so each gets the full subrequest allowance),
+// later the rank snapshot and the automatic SEO fixes (a run of their own, so each gets the full subrequest allowance),
 // and every 15 minutes one step of the shirt price sync (lib/pricing.mjs).
 export const AUDIT_CRON = "0 11 * * *";
 export const AUTOFIX_CRON = "30 11 * * *";
@@ -134,7 +135,11 @@ export const AUTOFIX_CRON = "30 11 * * *";
 export const KITTL_CRON = "45 * * * *";
 export async function handleScheduled(env, cron) {
   if (!cron || cron === AUDIT_CRON) return runScheduledAudits(envReader(env), (input, init) => fetch(input, init), marketingKv(env));
-  if (cron === AUTOFIX_CRON) return runScheduledFixes(envReader(env), (input, init) => fetch(input, init), marketingKv(env));
+  if (cron === AUTOFIX_CRON) {
+    // Today's rank snapshot first (a few requests), then the fixes.
+    await runScheduledSnapshots(envReader(env), (input, init) => fetch(input, init), marketingKv(env)).catch(() => null);
+    return runScheduledFixes(envReader(env), (input, init) => fetch(input, init), marketingKv(env));
+  }
   if (cron === KITTL_CRON) return scheduledKittlSync(env);
   try {
     return await scheduledPricing({ env: envReader(env), kv: env?.PRICING ?? null, fetchImpl: (input, init) => fetch(input, init) });
