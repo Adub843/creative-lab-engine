@@ -891,6 +891,33 @@ async function main() {
     await page.click("#theme");
   });
 
+  await step("go to: the Design Studio and every site from every page, at 1280 and 390", async () => {
+    const want = ["https://epix3d.com", "https://charleston3d.com", "https://app.charleston3d.com", "https://elevatedshirts.com",
+      "https://design.elevatedshirts.com", "https://claude.ai/artifact/", "https://docs.google.com/spreadsheets/"];
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: width > 500 ? 900 : 844 });
+      for (const [k, r] of [["c3d", "home"], ["c3d", "products"], ["ed", "insights"], ["ed", "studio"]]) {
+        await page.goto(`${BASE}#${r}/${k}`);
+        await page.locator(".go-btn").click();
+        await page.waitForSelector("#go-menu:popover-open");
+        const links = await page.locator("#go-menu a").evaluateAll((as) => as.map((a) => [a.getAttribute("href"), a.target, a.rel]));
+        for (const w of want) assert.ok(links.some(([h]) => h.startsWith(w)), `${k}/${r} at ${width}: Go to is missing ${w}`);
+        for (const [h, t, rel] of links) { assert.ok(!/netlify/i.test(h)); assert.equal(t, "_blank"); assert.match(rel, /noopener/); }
+        const box = await page.locator("#go-menu").boundingBox();
+        assert.ok(box.x >= 0 && box.x + box.width <= width, `${k}/${r} at ${width}: Go to menu runs off the screen`);
+        if (r === "home" && SCREENS) await page.screenshot({ path: path.join(SCREENS, `go-to-${width}.png`) });
+        await page.keyboard.press("Escape");
+        assert.equal(await page.locator("#go-menu:popover-open").count(), 0);
+        await noOverflow(`go to ${k} ${r} ${width}`);
+      }
+      // the sidebar (the Menu on phones) links straight to the Design Studio
+      if (width < 500) await page.click("#more");
+      assert.equal(await page.locator('a.nav[data-route="design-studio"]').getAttribute("href"), "https://epix3d.com");
+      if (width < 500) await page.click("#more");
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+  });
+
   await step("mobile 390px: nav fits, every link is reachable and works", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
     for (const [k, routes] of [["c3d", ["home", "products", "insights", "share", "map", "maker", "nameplate"]], ["ed", ["home", "studio", "library", "share"]]]) {

@@ -83,6 +83,24 @@ kbd { font-family: var(--f-mono); font-size: 12px; border: 1px solid var(--line)
 .search:hover { border-color: var(--accent); color: var(--fg); }
 .store-links { display: flex; gap: 6px; }
 .store-links .btn { padding: 6px 10px; font-size: 13px; }
+/* The Go to menu: the Design Studio, both shops, both apps and the reference pages, from every page. */
+.go-ico { font-size: 14px; line-height: 1; }
+.go-menu { position: fixed; inset: auto; top: 58px; right: 16px; margin: 0; width: min(340px, calc(100vw - 32px)); max-height: calc(100vh - 80px); overflow-y: auto;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--fg); padding: 8px; box-shadow: 0 16px 40px rgba(21, 34, 63, .22); }
+.go-group { display: grid; gap: 1px; padding: 4px 0; }
+.go-group + .go-group { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 8px; }
+.go-group .eyebrow { padding: 2px 10px 4px; }
+.go-link { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; color: var(--fg); text-decoration: none; }
+.go-link:hover, .go-link:focus-visible { background: var(--sunk); }
+.go-text { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.go-text strong { font-weight: 500; font-size: 14px; }
+.go-text .muted { font-size: 12.5px; }
+.go-link .ext { font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
+/* Phones: the top bar scrolls away, so the menu opens as a sheet at the bottom of the screen. */
+@media (max-width: 760px) {
+  .go-menu { top: auto; bottom: max(12px, env(safe-area-inset-bottom, 0px)); left: 12px; right: 12px; width: auto; max-height: calc(100vh - 96px); }
+  .go-menu::backdrop { background: rgba(11, 18, 34, .35); }
+}
 main { padding-block: 26px 64px; padding-left: max(24px, env(safe-area-inset-left, 0px)); padding-right: max(24px, env(safe-area-inset-right, 0px)); display: grid; gap: 22px; align-content: start; max-width: 1240px; width: 100%; outline: none; }
 main.framed { max-width: none; padding-block: 18px 18px; gap: 14px; grid-template-rows: auto 1fr; }
 .tool-head h1 { font-size: 24px; }
