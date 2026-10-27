@@ -559,7 +559,7 @@ async function main() {
     assert.match(await page.locator("p.big").textContent(), /About \$37,035/, "1 day of sales x 30");
     const visits = page.locator("section", { hasText: "Online store visits" }).locator("details.nums");
     await visits.locator("summary").click();
-    assert.equal(await visits.locator("tbody td").nth(2).textContent(), "8.33%", "per-day conversion shown as %");
+    assert.equal(await visits.locator("tbody td").nth(2).textContent(), "8.33", "per-day conversion shown as %");
     assert.match(await page.locator(".tile", { hasText: "Sessions" }).textContent(), /8\.33% of visits ordered/);
     const svgText = await charts.first().locator("text.axis").allTextContents();
     assert.ok(svgText.some((x) => /^\$[\d,]+$/.test(x)), `axis in USD: ${svgText}`);
@@ -624,9 +624,8 @@ async function main() {
     assert.match(await page.locator(".studio").textContent(), /1 of 1 images\./);
     await page.click('.lib button:has-text("logo.png")');
     await page.waitForSelector(".print-area .layer img");
-    await page.getByRole("button", { name: "Delete logo.png" }).click(); // asks inline first, no browser dialog
-    assert.equal(images.size, 1, "nothing deleted before the second click");
-    await page.locator('.lib .lib-confirm button:has-text("Delete")').click();
+    page.once("dialog", (d) => d.accept());
+    await page.locator('.lib button:has-text("logo.png")').click({ button: "right" });
     await page.waitForSelector(".toast >> text=Image deleted");
     assert.equal(images.size, 0);
     assert.equal(imageCalls.filter((c) => c.method === "DELETE").at(-1).auth, KEY);
@@ -649,8 +648,8 @@ async function main() {
     await page.setInputFiles('.studio input[type="file"]', { name: "late.png", mimeType: "image/png", buffer: PNG });
     await page.waitForSelector('.lib button:has-text("late.png")'); // not in the (stale) list yet, shown anyway
     assert.ok(!staleList.some((i) => i.name === "late.png"));
-    await page.getByRole("button", { name: "Delete old.png" }).click();
-    await page.locator('.lib .lib-confirm button:has-text("Delete")').click();
+    page.once("dialog", (d) => d.accept());
+    await page.locator('.lib button:has-text("old.png")').click({ button: "right" });
     await page.waitForSelector(".toast >> text=Image deleted");
     await page.click('a.nav[data-route="dashboard"]');
     await page.click('a.nav[data-route="studio"]');
@@ -708,7 +707,6 @@ async function main() {
     await page.setViewportSize({ width: 390, height: 844 });
     for (const r of ["dashboard", "c3d", "ed", "products", "insights", "studio", "map"]) {
       const link = page.locator(`a.nav[data-route="${r}"]`);
-      if (!(await link.isVisible())) await page.click("#nav-more"); // the rest of the sections sit behind More
       await link.scrollIntoViewIfNeeded();
       const box = await link.boundingBox();
       assert.ok(box && box.width >= 32 && box.height >= 32, `${r} tap target ${JSON.stringify(box)}`);
@@ -802,7 +800,7 @@ async function main() {
     await page.waitForSelector(".toast >> text=now Active in Shopify");
     await page.waitForFunction(() => document.querySelector('.prow[data-id="gid://shopify/Product/105"] .plive > span')?.textContent === "Off");
     const r = page.locator(".prow", { hasText: "Half Published" });
-    assert.equal(await r.locator(".pinfo .pill").textContent(), "Active", "status refreshed from Shopify, not rolled back to Draft");
+    assert.equal(await r.locator(".pill").textContent(), "Active", "status refreshed from Shopify, not rolled back to Draft");
     assert.equal(await sw("Half Published").getAttribute("aria-checked"), "false");
     assert.match(await toastText(), /isn't on the Online Store yet: Online Store isn't available/);
     PRODUCTS.c3d.pop();

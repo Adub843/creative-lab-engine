@@ -49,11 +49,13 @@ const RECENT_MS = 5 * 60 * 1000;
 const recentAdds = new Map(), recentDeletes = new Map(); // key -> { item?, at }
 const fresh = (m) => { for (const [k, v] of m) if (Date.now() - v.at > RECENT_MS) m.delete(k); return m; };
 
+let cloudLocked = false; // the online library answered 401/403: no (or a wrong) console key
 export async function listImages() {
-  let cloud = [], locked = false;
+  let cloud = [];
+  cloudLocked = false;
   try {
     const res = await fetch(API, { headers: { accept: "application/json", ...keyHeader() } });
-    locked = res.status === 401 || res.status === 403;
+    cloudLocked = res.status === 401 || res.status === 403;
     if (res.ok && res.headers.get("content-type")?.includes("json")) {
       cloud = ((await res.json()).items ?? []).filter((i) => !fresh(recentDeletes).has(i.key));
       const seen = new Set(cloud.map((i) => i.key));
@@ -61,9 +63,7 @@ export async function listImages() {
     }
   } catch { /* offline or not deployed */ }
   const local = await listLocal();
-  const out = [...cloud, ...local].sort((a, b) => (b.added ?? 0) - (a.added ?? 0));
-  out.locked = locked; // the online library answered 401/403: no (or a wrong) console key
-  return out;
+  return [...cloud, ...local].sort((a, b) => (b.added ?? 0) - (a.added ?? 0));
 }
 
 // item.url is a signed link from the API, so private images load in <img> without the key.
@@ -76,7 +76,7 @@ async function upload(file, tags) {
       headers: { "content-type": file.type, "x-filename": file.name, "x-tags": tags, ...keyHeader() },
       body: file,
     });
-    if (res.status === 401 || res.status === 403) throw Object.assign(new Error(res.status === 401 ? "Wrong or missing console key. Add it under Settings below." : "Uploads are off until a console key is set up for this console in Cloudflare."), { stop: true });
+    if (res.status === 401 || res.status === 403) throw Object.assign(new Error(res.status === 401 ? "Wrong or missing console key. Add it under Settings below." : "Uploads are off until CONSOLE_KEY is set for this console."), { stop: true });
     if (res.ok) {
       const { item } = await res.json();
       recentAdds.set(item.key, { item, at: Date.now() });
@@ -126,10 +126,11 @@ export async function renderStudio() {
 
   // library column
   const fileIn = el("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif,image/svg+xml", multiple: true, hidden: true });
-  const tagsIn = el("input", { class: "field", type: "text", placeholder: "Tags for new uploads, e.g. halloween, logo", "aria-label": "Tags for new uploads" });
-  const drop = el("div", { class: "drop" }, "Or drop image files here");
+  const tagsIn = el("input", { class: "field", type: "text", placeholder: "Tags for new uploads, e.g. halloween, logo" });
+  const drop = el("div", { class: "drop" }, "Drop images here or ",
+    el("button", { class: "btn ghost", type: "button", onclick: () => fileIn.click() }, "choose files"));
   const search = el("input", { class: "field", type: "search", placeholder: "Search by name or tag", "aria-label": "Search images" });
-  const countLine = el("p", { class: "muted small" }, "Loading images…");
+  const countLine = el("p", { class: "muted small" });
   const lib = el("div", { class: "lib", role: "list" });
 
   // stage column
@@ -142,56 +143,32 @@ export async function renderStudio() {
   const opIn = el("input", { type: "range", min: 10, max: 100, value: 100 });
   const swatches = el("div", { class: "swatches" });
   const guide = el("input", { type: "checkbox", checked: true });
-  const selBtns = []; // Center, Forward, Back, Duplicate, Remove: only with an image selected
-  const keyIn = el("input", { class: "field", type: "password", placeholder: "Your console key", autocomplete: "off", value: consoleKey.get() });
+  const keyIn = el("input", { class: "field", type: "password", placeholder: "The CONSOLE_KEY value", autocomplete: "off", value: consoleKey.get() });
 
   // ----- library -----
-  let confirming = null; // key of the tile asking "Delete?"
-  const deleteItem = async (i) => {
-    try {
-      await remove(i);
-      state.items = state.items.filter((x) => x !== i);
-      confirming = null; drawLib(); toast("Image deleted");
-      search.focus();
-    } catch (err) { toast(err.message); }
-  };
-  const askDelete = (i) => {
-    confirming = i.key; drawLib();
-    lib.querySelector(`[data-key="${CSS.escape(i.key)}"] .lib-keep`)?.focus();
-  };
   const drawLib = () => {
-    if (!state.loaded) { countLine.textContent = "Loading images…"; lib.replaceChildren(); return; }
     const q = state.q.toLowerCase();
     const shown = state.items.filter((i) => !q || `${i.name} ${i.tags ?? ""}`.toLowerCase().includes(q));
     const localCount = state.items.filter((i) => i.local).length;
     countLine.textContent = `${shown.length} of ${state.items.length} images` +
       (localCount ? `. ${localCount} saved only in this browser.` : ".") +
-      (state.locked ? " Enter the console key under Settings to see the online library." : "");
+      (cloudLocked ? " Enter the console key under Settings to see the online library." : "");
     lib.replaceChildren(...shown.map((i) => {
-      const add = el("button", { type: "button", class: "lib-add", draggable: "true", title: `${i.name}${i.tags ? ` · ${i.tags}` : ""}\nClick to add, or drag onto the shirt`,
-        "aria-label": `Add ${i.name} to the shirt`, onclick: () => addLayer(i) },
-        el("img", { src: imageUrl(i), alt: "", loading: "lazy" }), el("span", { class: "nm", "aria-hidden": "true" }, i.name));
-      add.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/bc-image", i.key));
-      add.addEventListener("contextmenu", (e) => { e.preventDefault(); askDelete(i); });
-      const tile = el("div", { class: "lib-tile", role: "listitem", "data-key": i.key }, add,
-        el("button", { type: "button", class: "lib-del", "aria-label": `Delete ${i.name}`, title: "Delete from the library", onclick: () => askDelete(i) }, "×"));
-      if (confirming === i.key)
-        tile.append(el("div", { class: "lib-confirm", role: "group", "aria-label": `Delete ${i.name}?` },
-          el("span", {}, "Delete?"),
-          el("button", { type: "button", class: "btn danger lib-yes", onclick: () => deleteItem(i) }, "Delete"),
-          el("button", { type: "button", class: "btn lib-keep", onclick: () => { confirming = null; drawLib(); lib.querySelector(`[data-key="${CSS.escape(i.key)}"] .lib-del`)?.focus(); } }, "Keep")));
-      return tile;
+      const b = el("button", { type: "button", draggable: "true", title: `${i.name}${i.tags ? ` · ${i.tags}` : ""}\nClick to add, or drag onto the shirt`,
+        onclick: () => addLayer(i), role: "listitem" },
+        el("img", { src: imageUrl(i), alt: i.name, loading: "lazy" }), el("span", { class: "nm" }, i.name));
+      b.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/bc-image", i.key));
+      b.addEventListener("contextmenu", async (e) => {
+        e.preventDefault();
+        if (!confirm(`Delete "${i.name}" from the library?`)) return;
+        try { await remove(i); state.items = state.items.filter((x) => x !== i); drawLib(); toast("Image deleted"); }
+        catch (err) { toast(err.message); }
+      });
+      return b;
     }));
     if (!shown.length) lib.append(el("p", { class: "muted small" }, state.items.length ? "No images match that search." : "No images yet. Upload some to start your catalog."));
   };
-  // Only the newest list is drawn, so a slow answer can't overwrite a newer one.
-  let listSeq = 0;
-  const refresh = async () => {
-    const n = ++listSeq;
-    const items = await listImages();
-    if (n !== listSeq) return;
-    state.items = items; state.locked = items.locked; state.loaded = true; drawLib(); drawStage();
-  };
+  const refresh = async () => { state.items = await listImages(); drawLib(); };
 
   const uploadFiles = async (files) => {
     const list = [...files].filter((f) => f.type.startsWith("image/"));
@@ -250,7 +227,7 @@ export async function renderStudio() {
         layerSrc(l) ? el("img", { src: layerSrc(l), alt: "" }) : null, el("span", {}, l.name))));
     if (!state.layers.length) layersList.append(el("p", { class: "muted small" }, "Click or drag an image from the library to put it on the shirt."));
     const s = selected();
-    [sizeIn, rotIn, opIn, ...selBtns].forEach((i) => (i.disabled = !s));
+    [sizeIn, rotIn, opIn].forEach((i) => (i.disabled = !s));
     if (s) { sizeIn.value = Math.round(s.w * 100); rotIn.value = Math.round(s.rot); opIn.value = Math.round(s.op * 100); }
     swatches.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.c === state.color)));
   }
@@ -350,30 +327,27 @@ export async function renderStudio() {
   }
 
   const btn = (label, fn, cls = "btn") => el("button", { class: cls, type: "button", onclick: fn }, label);
-  const selBtn = (label, fn) => { const b = btn(label, fn); selBtns.push(b); return b; };
   const page = el("div", { class: "studio" },
     el("section", { class: "panel stack", "aria-label": "Image library" },
-      el("div", { class: "panel-head" }, el("h2", {}, "Image library"), btn("Upload images", () => fileIn.click(), "btn primary")),
+      el("div", { class: "panel-head" }, el("h2", {}, "Image library"), btn("Upload", () => fileIn.click(), "btn primary")),
       drop, fileIn, tagsIn, search, countLine, lib,
-      el("p", { class: "muted small" }, "Click an image to put it on the shirt. × deletes it from the library (it asks first).")),
+      el("p", { class: "muted small" }, "Right-click an image to delete it.")),
     el("section", { class: "stage-wrap", "aria-label": "Shirt designer" },
       el("div", { class: "panel" }, stage),
       el("div", { class: "panel controls" },
         el("div", { class: "panel-head" }, el("h2", {}, "Design"), btn("Download print file", exportPng, "btn primary")),
-        el("fieldset", { class: "swatch-set" }, el("legend", {}, "Shirt color"), swatches),
+        el("label", {}, "Shirt color", swatches),
         el("label", {}, "Size", sizeIn), el("label", {}, "Rotation", rotIn), el("label", {}, "Opacity", opIn),
         el("div", { class: "row" },
-          selBtn("Center", center), selBtn("Forward", () => reorder(1)), selBtn("Back", () => reorder(-1)),
-          selBtn("Duplicate", dup), selBtn("Remove", del),
+          btn("Center", center), btn("Forward", () => reorder(1)), btn("Back", () => reorder(-1)),
+          btn("Duplicate", dup), btn("Remove", del),
           btn("Clear shirt", () => { if (confirm("Remove every image from the shirt?")) { state.layers = []; state.sel = null; drawStage(); save(); } }, "btn ghost")),
         el("label", { class: "row" }, guide, "Show print area guide"),
         el("h3", {}, "Layers, top first"), layersList,
         el("details", {}, el("summary", {}, "Settings"), el("label", {}, "Console key", keyIn)),
         el("p", { class: "muted small" }, "Drag to move, the corner dot resizes, the top dot rotates (hold Shift to snap). Arrow keys nudge, Delete removes."))));
 
-  // The page shows at once; the library fills in when the list arrives.
-  drawLib();
+  await refresh();
   drawStage();
-  refresh().catch(() => { countLine.textContent = "Couldn't load the image library. Try again in a moment."; });
   return page;
 }

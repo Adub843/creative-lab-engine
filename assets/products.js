@@ -62,12 +62,11 @@ export async function renderProducts() {
         "aria-disabled": p.pendingCustom ? "true" : null, onclick: () => toggleCustom(p),
       }, el("span", { class: "knob", "aria-hidden": "true" })),
       el("span", {}, p.pendingCustom ? "Saving…" : "Customizable")) : null;
-    // Shopify's status, colored by the switch: green only when the product is actually on the site.
-    const statusPill = el("span", { class: `pill ${p.status === "ARCHIVED" ? "s-blind" : p.live ? "s-live" : "s-empty"}` },
+    const statusPill = el("span", { class: `pill ${p.status === "ACTIVE" ? "s-live" : p.status === "ARCHIVED" ? "s-blind" : "s-empty"}` },
       { ACTIVE: "Active", DRAFT: "Draft", ARCHIVED: "Archived" }[p.status] ?? p.status);
     const view = p.live
       ? el("a", { class: "btn", href: p.url, target: "_blank", rel: "noopener", "data-act": "view" }, "View on site", el("span", { class: "ext", "aria-hidden": "true" }, "↗"))
-      : el("span", { class: "pill s-empty off-site", title: "Switch it on to put it on the site" }, "Not on site");
+      : el("span", { class: "btn is-off", "aria-disabled": "true", title: "Switch it on to put it on the site" }, "Not on site");
     return el("div", { class: `prow${p.pending || p.pendingCustom ? " pending" : ""}`, role: "listitem", "data-id": p.id },
       p.image ? el("img", { src: thumb(p.image), alt: "", width: "56", height: "56", loading: "lazy" }) : el("span", { class: "noimg", "aria-hidden": "true" }, "▢"),
       el("div", { class: "pinfo" },
@@ -173,7 +172,7 @@ export async function renderProducts() {
     const id = ++state.req;
     state.loading = true; state.error = null; draw();
     try {
-      const out = await api(`${API}?store=${encodeURIComponent(state.store)}`, { key: true, reason: "The product list includes drafts and stock levels, so it needs your console key (it's in your password manager, and in the console's settings in Cloudflare)." });
+      const out = await api(`${API}?store=${encodeURIComponent(state.store)}`, { key: true, reason: "The product list includes drafts and stock levels, so it needs the console key (the CONSOLE_KEY value set for this console)." });
       if (id !== state.req) return;
       state.products = out.products ?? [];
     } catch (e) {
