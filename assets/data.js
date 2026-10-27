@@ -28,7 +28,8 @@ export const BRANDS = {
 // The Design Studio and everywhere else the team works, one click from every page: the Go to menu in
 // the top bar, the Design Studio link in the sidebar and the jump palette. Keep it in step with the
 // studio's own Go to menu.
-export const STUDIO_URL = "https://epix3d.com";
+// epix3d.com does not reach the studio yet (its DNS still points at GitHub Pages), so use the worker address
+export const STUDIO_URL = "https://design-studio.business-console.workers.dev";
 export const GO_TO = [
   { group: "Back office", links: [
     { label: "Design Studio", note: "Art for every brand and the shirt designer", url: STUDIO_URL }] },
@@ -90,9 +91,9 @@ export const SERVICES = [
     note: "Not connected to the store yet, so theme changes are uploaded by hand. Connect it in Shopify (Online Store, Themes, Add theme, Connect from GitHub) to deploy on every commit.",
     links: [{ label: "Open repository", url: "https://github.com/Adub843/elevated-designs-site" }] },
   { id: "studio", name: "Design Studio", brand: "ed", kind: "Web app · Cloudflare Worker", status: "live",
-    does: "The art library and shirt designer for every brand, each with its own library, at epix3d.com. It shares this console's image library, so a design saved there shows up here and in the shirt apps. Its key is the same as this console's.",
-    source: "GitHub: Adub843/design-studio (deployed by hand from the PC). epix3d.com's DNS is on Cloudflare; the domain is registered at Wix. Backup address: design-studio.business-console.workers.dev",
-    links: [{ label: "Open Design Studio", url: "https://epix3d.com" }, { label: "Design library in this console", url: "#designs/ed" }, { label: "Shirt designer in this console", url: "#studio/ed" },
+    does: "The art library and shirt designer for every brand, each with its own library. It shares this console's image library, so a design saved there shows up here and in the shirt apps. Its key is the same as this console's.",
+    source: "GitHub: Adub843/design-studio (deployed by hand from the PC). Live at design-studio.business-console.workers.dev. epix3d.com is meant to serve it, but its DNS at Wix still points at GitHub Pages.",
+    links: [{ label: "Open Design Studio", url: STUDIO_URL }, { label: "Design library in this console", url: "#designs/ed" }, { label: "Shirt designer in this console", url: "#studio/ed" },
       { label: "Open repository", url: "https://github.com/Adub843/design-studio" }] },
   { id: "publish", name: "Products and Insights", brand: "other", kind: "In this console · both stores", status: "live",
     does: "Switch products on or off each store's Shopify site, choose which Charleston 3D products are customizable (the theme then asks for a name to print), list a library design on Elevated Designs in one click, and see sales, visits, a 30-day forecast and next steps for each store.",
