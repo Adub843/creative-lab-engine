@@ -76,7 +76,7 @@ export const SERVICES = [
     does: "The art library and shirt designer for every brand, each with its own library, on its own address. It shares this console's image library, so a design saved there shows up here and in the shirt apps. It moves to epix3d.com once that domain is on Cloudflare.",
     note: "Set its key once: in Desktop\\design-studio run npx.cmd wrangler secret put CONSOLE_KEY and type the console's key.",
     source: "GitHub: Adub843/design-studio (deployed by hand from the PC)",
-    links: [{ label: "Open Design Studio", url: "https://design-studio.business-console.workers.dev" }, { label: "Shirt designer in this console", url: "#studio" },
+    links: [{ label: "Open Design Studio", url: "https://design-studio.business-console.workers.dev" }, { label: "Design library in this console", url: "#designs/ed" }, { label: "Shirt designer in this console", url: "#studio/ed" },
       { label: "Open repository", url: "https://github.com/Adub843/design-studio" }] },
   { id: "publish", name: "Products and Insights", brand: "other", kind: "In this console · both stores", status: "live",
     does: "Switch products on or off each store's Shopify site, choose which Charleston 3D products are customizable (the theme then asks for a name to print), list a library design on Elevated Designs in one click, and see sales, visits, a 30-day forecast and next steps for each store.",

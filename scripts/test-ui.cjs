@@ -5,6 +5,7 @@ const { chromium } = require("playwright");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
 const fs = require("node:fs");
+const os = require("node:os");
 const assert = require("node:assert/strict");
 
 const ROOT = path.resolve(__dirname, "..");
@@ -118,6 +119,13 @@ async function main() {
       return json(201, { item });
     }
     if (req.method() === "DELETE") { images.delete(key); return json(200, { deleted: key }); }
+    if (req.method() === "PATCH" && images.has(key)) {
+      const patch = JSON.parse(req.postData() || "{}"), item = images.get(key);
+      if ("name" in patch) item.name = patch.name;
+      if ("category" in patch) { if (patch.category) item.category = patch.category; else delete item.category; }
+      if ("public" in patch) item.public = patch.public === true;
+      return json(200, { item });
+    }
     return json(405, { error: "Not supported" });
   });
   await page.route("**/api/products**", async (route) => {
@@ -657,9 +665,9 @@ async function main() {
     await page.click('a.nav[data-route="home"]');
     await page.click('.seg-btn[data-store="ed"]');
     await page.click('a.nav[data-route="studio"]');
-    await page.waitForSelector('.lib .tile:has-text("palm-tree.png")');
+    await page.waitForSelector('.lib .tile:has-text("palm-tree")');
     assert.equal(await page.locator("dialog.keydlg[open]").count(), 0, "no key prompt just to design");
-    assert.equal(await page.locator('.lib .tile:has-text("secret.png")').count(), 0, "private images stay hidden without the key");
+    assert.equal(await page.locator('.lib .tile:has-text("secret")').count(), 0, "private images stay hidden without the key");
     assert.equal(imageCalls.filter((c) => c.method === "GET" && !c.key).at(-1).auth, null, "the list is read without the key");
     assert.match(await page.locator(".editor").textContent(), /1 of 1 images\. These are the shirt app images\./);
     assert.match(await page.locator(".editor").textContent(), /Kittl sync .*: 8 added, 0 removed\. Runs every hour\./);
@@ -674,7 +682,7 @@ async function main() {
     assert.match(await page.locator(".ed-stage .ed-base").getAttribute("src"), /blanks\/tee-front\.jpg$/);
     assert.match(await page.locator(".ed-stage .ed-shade").getAttribute("src"), /blanks\/tee-front-shade\.jpg$/);
     assert.equal(await page.locator(".ed-stage .ed-shade").evaluate((n) => getComputedStyle(n).mixBlendMode), "multiply");
-    await page.click('.lib .tile:has-text("palm-tree.png")');
+    await page.click('.lib .tile:has-text("palm-tree")');
     await page.waitForSelector(".ed-print .ed-pl");
     await page.waitForSelector(".print-area .layer.sel");
     assert.match(await page.locator(".ed-side").textContent(), /Selected image/);
@@ -714,8 +722,8 @@ async function main() {
     await page.click('a.nav[data-route="home"]');
     await page.click('.seg-btn[data-store="ed"]');
     await page.click('a.nav[data-route="studio"]');
-    await page.waitForSelector('.lib .tile:has-text("tiny.png")');
-    await page.click('.lib .tile:has-text("tiny.png")');
+    await page.waitForSelector('.lib .tile:has-text("tiny")');
+    await page.click('.lib .tile:has-text("tiny")');
     await page.waitForSelector(".print-area .layer.sel");
     assert.match(await page.locator(".ed-checks").textContent(), /Print quality: low/, "a 1 px image warns it will print soft");
     // a slider keeps working through a whole drag (it isn't rebuilt under the pointer)
@@ -763,7 +771,7 @@ async function main() {
     assert.ok(saved && saved.public === false && saved.type === "image/png", "saved as a private PNG");
     await page.click('.ed-rail [data-tool="library"]');
     page.once("dialog", (d) => d.accept());
-    await page.locator('.lib-item:has-text("Holy-City-Tees.png") .lib-del').click({ force: true });
+    await page.locator('.lib-item:has-text("Holy-City-Tees") .lib-del').click({ force: true });
     await page.waitForSelector(".toast >> text=Image deleted");
     await page.evaluate(() => localStorage.removeItem("bc-design-2"));
     for (const k of [...images.keys()]) images.delete(k);
@@ -786,7 +794,7 @@ async function main() {
     await page.waitForSelector("dialog.keydlg[open] #key-in");
     await page.fill("#key-in", KEY);
     await page.click("#key-save");
-    await page.waitForSelector('.lib .tile:has-text("logo.png")');
+    await page.waitForSelector('.lib .tile:has-text("logo")');
     const up = imageCalls.filter((c) => c.method === "POST").at(-1);
     assert.equal(up.auth, KEY);
     const saved = [...images.values()][0];
@@ -796,9 +804,9 @@ async function main() {
     await page.click('a.nav[data-route="home"]');
     await page.click('.seg-btn[data-store="ed"]');
     await page.click('a.nav[data-route="studio"]');
-    await page.waitForSelector('.lib .tile:has-text("secret.png")'); // with the key, private images show too
+    await page.waitForSelector('.lib .tile:has-text("secret")'); // with the key, private images show too
     page.once("dialog", (d) => d.accept());
-    await page.locator('.lib-item:has-text("secret.png") .lib-del').click({ force: true });
+    await page.locator('.lib-item:has-text("secret") .lib-del').click({ force: true });
     await page.waitForSelector(".toast >> text=Image deleted");
     assert.ok(!images.has("k-priv-0123abcd"));
     assert.equal(imageCalls.filter((c) => c.method === "DELETE").at(-1).auth, KEY);
@@ -812,26 +820,26 @@ async function main() {
     await page.click('a.nav[data-route="home"]');
     await page.click('.seg-btn[data-store="ed"]');
     await page.click('a.nav[data-route="studio"]');
-    await page.waitForSelector('.lib .tile:has-text("old.png")');
+    await page.waitForSelector('.lib .tile:has-text("old")');
     await clearToasts();
     await page.click('.ed-rail [data-tool="upload"]');
     await page.setInputFiles('.editor input[type="file"]', { name: "late.png", mimeType: "image/png", buffer: PNG });
-    await page.waitForSelector('.lib .tile:has-text("late.png")'); // not in the (stale) list yet, shown anyway
+    await page.waitForSelector('.lib .tile:has-text("late")'); // not in the (stale) list yet, shown anyway
     assert.ok(!staleList.some((i) => i.name === "late.png"));
     page.once("dialog", (d) => d.accept());
-    await page.locator('.lib .tile:has-text("old.png")').click({ button: "right" });
+    await page.locator('.lib .tile:has-text("old")').click({ button: "right" });
     await page.waitForSelector(".toast >> text=Image deleted");
     await page.click('a.nav[data-route="home"]');
     await page.click('.seg-btn[data-store="ed"]');
     await page.click('a.nav[data-route="studio"]');
-    await page.waitForSelector('.lib .tile:has-text("late.png")');
-    assert.equal(await page.locator('.lib .tile:has-text("old.png")').count(), 0, "a deleted image stays gone though the list still has it");
+    await page.waitForSelector('.lib .tile:has-text("late")');
+    assert.equal(await page.locator('.lib .tile:has-text("old")').count(), 0, "a deleted image stays gone though the list still has it");
     staleList = null;
     for (const k of [...images.keys()]) images.delete(k);
   });
 
   await step("home pages: store links go to the Shopify sites, not Netlify", async () => {
-    const pages = ["home", "products", "insights", "marketing", "promote", "studio", "map", "share", "team", "trends", "nameplate", "hypechain", "maker", "files"];
+    const pages = ["home", "products", "insights", "marketing", "promote", "studio", "map", "share", "team", "trends", "nameplate", "hypechain", "maker", "files", "maker3d", "designs"];
     const hashes = new Set();
     for (const [k, site, app] of [["c3d", "https://charleston3d.com", "https://app.charleston3d.com"], ["ed", "https://elevatedshirts.com", "https://design.elevatedshirts.com"]]) {
       await page.click('a.nav[data-route="home"]');
@@ -916,7 +924,7 @@ async function main() {
       const name = req.headers()["x-filename"];
       if (!/\.(stl|3mf|obj|step|stp|png|jpe?g|webp)$/i.test(name)) return json(415, { error: "Send a 3D file or a photo." });
       const k = `t${files.size}-0123abcd`;
-      const item = { key: k, name, type: /\.stl$/i.test(name) ? "model/stl" : "model/step", size: req.postDataBuffer().length, added: Date.now(), store: "c3d", url: `/api/files/${k}?exp=1&sig=x` };
+      const item = { key: k, name, type: /\.stl$/i.test(name) ? "model/stl" : /\.3mf$/i.test(name) ? "model/3mf" : "model/step", size: req.postDataBuffer().length, added: Date.now(), store: "c3d", url: `/api/files/${k}?exp=1&sig=x` };
       files.set(k, item);
       return json(201, { item });
     }
@@ -963,6 +971,74 @@ async function main() {
     await noOverflow("files 1280");
     await page.setViewportSize({ width: 390, height: 844 });
     await noOverflow("files 390");
+    await page.setViewportSize({ width: 1280, height: 900 });
+  });
+
+  // ---------- Charleston 3D: 3D maker (Meshy) ----------
+  const mJobs = [], mCalls = [];
+  const PNG1 = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+  await page.route("**/api/meshy**", async (route) => {
+    const req = route.request(), url = new URL(req.url()), [, , , section, id, action, fmt] = url.pathname.split("/");
+    const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    const body = req.postData() ? JSON.parse(req.postData()) : null;
+    mCalls.push([req.method(), url.pathname, body]);
+    if (req.headers()["x-console-key"] !== KEY) return json(401, { error: "Wrong or missing console key.", code: "bad_key" });
+    if (!section) return json(200, { configured: true, balance: 300, jobs: mJobs.map(({ polls, ...j }) => j) });
+    if (req.method() === "POST" && !id) {
+      const j = { id: `0193bfc5-0000-7000-8000-00000000000${mJobs.length + 1}`, kind: body.mode === "words" ? "words" : body.images.length > 1 ? "photos" : "photo",
+        name: body.name, color: !!body.color, detail: body.detail, created: Date.now(), cost: 20, status: "PENDING", progress: 0, formats: [], polls: 0 };
+      mJobs.unshift(j);
+      return json(201, { job: j });
+    }
+    const j = mJobs.find((x) => x.id === id);
+    if (!j) return json(404, { error: "That job isn't on the list." });
+    if (req.method() === "GET" && !action) {
+      if (++j.polls >= 1) Object.assign(j, { status: "SUCCEEDED", progress: 100, formats: ["glb", "stl", "3mf", "obj"], picture: true, expiresAt: Date.now() + 71 * 3600000 });
+      return json(200, { job: j });
+    }
+    if (action === "file") return route.fulfill({ status: 200, contentType: fmt === "picture" ? "image/png" : "application/octet-stream", body: fmt === "picture" ? PNG1 : cubeStl() });
+    if (action === "save") { j.saved = "m1-0123abcd"; files.set("m1-0123abcd", { key: "m1-0123abcd", name: `${j.name}.3mf`, type: "model/3mf", size: 9, added: Date.now(), store: "c3d", url: "/api/files/m1-0123abcd?exp=1&sig=x" }); return json(201, { item: files.get("m1-0123abcd") }); }
+    return json(405, { error: "Not supported" });
+  });
+  await step("3D maker: Charleston 3D only; photos in, two clicks to spend credits, model shows in 3D, save to the library", async () => {
+    await page.click('a.nav[data-route="home"]');
+    await page.click('.seg-btn[data-store="ed"]');
+    await page.waitForSelector('.seg-btn[data-store="ed"][aria-pressed="true"]');
+    await page.waitForSelector('a.nav[data-route="studio"]');
+    assert.equal(await page.locator('a.nav[data-route="maker3d"]').count(), 0, "no 3D maker on Elevated Designs");
+    await page.click('.seg-btn[data-store="c3d"]');
+    await page.click('a.nav[data-route="maker3d"]');
+    await page.waitForSelector("text=Nothing made yet");
+    await page.waitForSelector("text=300 Meshy credits left");
+    assert.ok(await page.locator(".m3d-go").isDisabled(), "nothing to make until a photo is added");
+    await page.setInputFiles("#m3d-photos", { name: "pineapple-ornament.png", mimeType: "image/png", buffer: PNG1 });
+    await page.waitForSelector(".m3d-thumb img");
+    assert.equal(await page.inputValue("#m3d-name"), "pineapple ornament", "the name comes from the photo");
+    await page.click('.m3d .seg-btn:has-text("With color")');
+    assert.match(await page.locator(".m3d-go").textContent(), /30 credits/);
+    await page.click('.m3d .seg-btn:has-text("Plain")');
+    await page.click(".m3d-go");
+    assert.match(await page.locator(".m3d-go").textContent(), /Click again to spend 20 credits/);
+    assert.equal(mCalls.filter(([m]) => m === "POST").length, 0, "the first click only asks");
+    await page.click(".m3d-go");
+    await page.waitForSelector('.m3d-row:has-text("pineapple ornament")');
+    const start = mCalls.find(([m]) => m === "POST")[2];
+    assert.deepEqual([start.mode, start.color, start.images.length], ["photos", false, 1]);
+    assert.match(start.images[0], /^data:image\/png;base64,/);
+    await page.waitForSelector('.m3d-row .m3d-st:has-text("Ready")', { timeout: 15000 });
+    await page.waitForSelector(".m3d-stage canvas", { timeout: 15000 });
+    assert.ok(await page.locator('.m3d-acts button:has-text("Download 3MF")').isVisible());
+    assert.ok(await page.locator('.m3d-acts button:has-text("Download OBJ")').isVisible(), "OBJ download too");
+    await page.click('.m3d-acts button:has-text("Save to 3D file library")');
+    await page.waitForSelector('.m3d-acts a:has-text("Open in 3D file library")');
+    assert.ok(mCalls.some(([m, p, b]) => m === "POST" && p.endsWith("/save") && b.format === "3mf"), "saved as a 3MF");
+    await page.click('.m3d .seg-btn:has-text("From words")');
+    assert.equal(await page.locator('.m3d .seg-btn:has-text("With color")').isVisible(), false, "words pick color after the shape");
+    await page.fill("#m3d-prompt", "a palmetto tree desk ornament");
+    assert.ok(!(await page.locator(".m3d-go").isDisabled()));
+    await noOverflow("3D maker 1280");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await noOverflow("3D maker 390");
     await page.setViewportSize({ width: 1280, height: 900 });
   });
 
@@ -1073,7 +1149,7 @@ async function main() {
     assert.match(await page.locator("#lib-count").textContent(), /3 of 3 designs/);
     assert.equal(await card("logo-vector").locator("button").count(), 0, "SVG has no list button");
     assert.match(await card("logo-vector").textContent(), /Export it as a PNG/);
-    assert.equal(await card("lowcountry").locator('button[data-act="list"]').getAttribute("aria-label"), "Add lowcountry_sunset-FINAL.png to Elevated Designs");
+    assert.equal(await card("lowcountry").locator('button[data-act="list"]').getAttribute("aria-label"), "Add lowcountry_sunset-FINAL to Elevated Designs");
     await page.fill("#lib-q", "palmetto");
     assert.equal(await page.locator(".lcard").count(), 1);
     await page.fill("#lib-q", "");
@@ -1940,6 +2016,176 @@ async function main() {
     await page.waitForSelector('.prow:has-text("Rainbow Row")');
     assert.equal(await page.locator('.switch[data-field="builder"]').count(), 0);
     assert.equal(await page.locator('#prod-filter option[value="builder"]').isDisabled(), true);
+  });
+
+  await step("design library: every Elevated Designs image with categories, filters, edit one, move several; no logos or Charleston 3D in List a design", async () => {
+    for (const k of [...images.keys()]) images.delete(k);
+    const put = (key, o) => images.set(key, { key, type: "image/png", size: 2048, added: 5000 - images.size, tags: "", ...o });
+    put("d1-0123abcd", { name: "kittl-cmaaaaaaaaaaaaaaaaaaaaaaaa", category: "Clipped Images", source: "kittl", public: true, tags: "kittl:cmaaaaaaaaaaaaaaaaaaaaaaaa" });
+    put("d2-0123abcd", { name: "Palmetto Moon.png", category: "Lowcountry", public: true });
+    put("d3-0123abcd", { name: "Shrimp Boat.png", category: "Lowcountry", public: false });
+    put("d4-0123abcd", { name: "kittl-cmbbbbbbbbbbbbbbbbbbbbbbbb", category: "Clipped Images", source: "kittl", public: false, tags: "kittl:cmbbbbbbbbbbbbbbbbbbbbbbbb" });
+    put("d5-0123abcd", { name: "c3d-wordmark.png", category: "Charleston3D", public: false });
+    put("d6-0123abcd", { name: "Holy City Tee.png", public: false, tags: "studio" });
+    await page.goto(`${BASE}#designs/ed`);
+    await page.waitForSelector(".dl-tile");
+    assert.equal(await page.locator(".dl-tile").count(), 5, "Charleston 3D art is kept out");
+    assert.match(await page.locator("#dl-count").textContent(), /5 of 5 images/);
+    assert.match(await page.locator(".dl").textContent(), /1 Charleston 3D image is stored in this library/);
+    const chips = await page.locator(".dl .cat-row .chip").evaluateAll((b) => b.map((x) => x.dataset.cat));
+    assert.deepEqual(chips, ["", "Clipped Images", "Lowcountry", "Saved designs", "Brand logos"], "categories, logos last");
+    await page.click('.dl .cat-row .chip[data-cat="Lowcountry"]');
+    assert.equal(await page.locator(".dl-tile").count(), 2);
+    await page.selectOption("#dl-show", "app");
+    assert.equal(await page.locator(".dl-tile").count(), 1, "only the shirt-app one");
+    await page.selectOption("#dl-show", "");
+    await page.click('.dl .cat-row .chip[data-cat=""]');
+    await page.fill("#dl-q", "shrimp");
+    assert.equal(await page.locator(".dl-tile").count(), 1);
+    await page.fill("#dl-q", "");
+    // open one, rename, move it and show it in the shirt app
+    await page.click('.dl-tile:has-text("Shrimp Boat")');
+    await page.waitForSelector("#dl-sheet[open] #dl-name");
+    await page.fill("#dl-name", "Shrimp Boat Sunset");
+    await page.fill("#dl-cat", "Coastal");
+    await page.check("#dl-pub");
+    await page.click("#dl-save");
+    await page.waitForSelector("#dl-sheet:not([open])", { state: "hidden" });
+    assert.deepEqual([images.get("d3-0123abcd").name, images.get("d3-0123abcd").category, images.get("d3-0123abcd").public], ["Shrimp Boat Sunset", "Coastal", true]);
+    await page.waitForSelector('.dl .cat-row .chip[data-cat="Coastal"]');
+    // several at once
+    await page.click("#dl-select");
+    await page.click('.dl-tile:has-text("Palmetto Moon")');
+    await page.click('.dl-tile:has-text("Holy City Tee")');
+    assert.match(await page.locator(".dl-bulk").textContent(), /2 selected/);
+    await page.fill("#dl-bulk-cat", "Coastal");
+    await page.click("#dl-bulk-move");
+    await page.waitForFunction(() => document.querySelectorAll('.dl-tile').length && !document.querySelector(".dl-bulk").textContent.includes("2 selected"));
+    assert.equal(images.get("d2-0123abcd").category, "Coastal");
+    assert.equal(images.get("d6-0123abcd").category, "Coastal");
+    await page.click("#dl-select");
+    for (const w of [1280, 390]) {
+      await page.setViewportSize({ width: w, height: 860 });
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `no sideways scroll at ${w}`);
+      if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, `design-library-${w}.png`), fullPage: true }); }
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    // List a design: designs only, with their pictures
+    await page.goto(`${BASE}#products/ed/list`);
+    await page.click("#lib-refresh");
+    await page.waitForSelector(".lcard");
+    const names = await page.locator(".lcard strong").allTextContents();
+    assert.equal(names.length, 4, `logos and Charleston 3D art left out: ${names}`);
+    assert.ok(!names.some((n) => /wordmark/.test(n)));
+    assert.ok(names.some((n) => /^Clipped Images [0-9A-Z]{4}$/.test(n)), "Kittl imports get a readable name");
+    if (SCREENS) for (const w of [1280, 390]) { await page.setViewportSize({ width: w, height: 860 }); await page.screenshot({ path: path.join(SCREENS, `list-design-${w}.png`) }); }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.click('.lib-tools .chip[data-cat="Coastal"]');
+    assert.equal(await page.locator(".lcard").count(), 3);
+    // shirt designer: same categories, Put on a shirt from the library
+    await page.goto(`${BASE}#designs/ed`);
+    await page.click('.dl-tile:has-text("Palmetto Moon")');
+    await page.click("#dl-shirt");
+    await page.waitForSelector(".ed-print .ed-pl");
+    assert.match(await page.locator(".ed-side").textContent(), /Selected image/);
+    assert.ok(await page.locator('.ed-pane .cat-row .chip[data-cat="Brand logos"]').count(), "logos have their own category in the designer");
+  });
+
+  await step("shirt designer: edit an image (remove a white background, adjust, one color, crop) and the print file matches", async () => {
+    const out = await page.evaluate(async () => {
+      const { applyFx } = await import("./assets/studio.js");
+      const px = new Uint8ClampedArray([255, 255, 255, 255, 10, 20, 200, 255, 250, 250, 250, 255, 100, 100, 100, 255]);
+      const fx = { knock: "white", tol: 10, bright: 0, contrast: 0, sat: 0, hue: 0, gray: false, invert: false, ink: "", crop: [0, 0, 0, 0] };
+      const a = [...applyFx(px.slice(), 2, 2, fx)];
+      const b = [...applyFx(px.slice(), 2, 2, { ...fx, knock: "", invert: true })];
+      const c = [...applyFx(px.slice(), 2, 2, { ...fx, knock: "", ink: "#b8892a" })];
+      const d = [...applyFx(px.slice(), 2, 2, { ...fx, knock: "", gray: true })];
+      return { a, b, c, d };
+    });
+    assert.equal(out.a[3], 0, "white goes clear");
+    assert.equal(out.a[11], 0, "near-white goes clear too");
+    assert.equal(out.a[7], 255, "the art stays");
+    assert.deepEqual(out.b.slice(4, 7), [245, 235, 55], "invert");
+    assert.deepEqual(out.c.slice(4, 8), [184, 137, 42, 255], "one color keeps the shape");
+    assert.equal(out.d[4], out.d[5], "black and white");
+    // in the editor
+    await page.waitForSelector("#fx-panel");
+    const before = await page.locator(".ed-print .ed-pl").last().getAttribute("src");
+    await page.click('#fx-panel [data-knock="white"]');
+    await page.waitForFunction((b) => { const s = [...document.querySelectorAll(".ed-print .ed-pl")].at(-1)?.getAttribute("src"); return s && s !== b && s.startsWith("blob:"); }, before);
+    assert.match(await page.locator("#fx-panel summary").textContent(), /Edited/);
+    const h0 = await page.locator(".print-area .layer.sel").evaluate((n) => n.getBoundingClientRect().height);
+    await page.locator('#fx-panel input[data-crop="1"]').fill("40");
+    const h1 = await page.locator(".print-area .layer.sel").evaluate((n) => n.getBoundingClientRect().height);
+    assert.ok(h1 < h0, "cropping the top makes it shorter");
+    if (SCREENS) for (const w of [1280, 390]) {
+      await page.setViewportSize({ width: w, height: 900 });
+      await page.waitForTimeout(200);
+      await page.locator("#fx-panel").scrollIntoViewIfNeeded();
+      await page.screenshot({ path: path.join(SCREENS, `designer-edit-${w}.png`), fullPage: w === 390 });
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.click('#fx-panel [data-fx="gray"]');
+    assert.equal(await page.locator('#fx-panel [data-fx="gray"]').getAttribute("aria-pressed"), "true");
+    await page.click('.ed-side button:has-text("Flip upside down")');
+    assert.match(await page.locator(".ed-print .ed-pl").last().evaluate((n) => n.style.transform), /scaleY\(-1\)/);
+    const [dl] = await Promise.all([page.waitForEvent("download"), page.click('.ed-side button:has-text("Download print file")')]);
+    assert.match(dl.suggestedFilename(), /^print-front-/);
+    await page.click('.ed-side button:has-text("Undo all image edits")');
+    await page.waitForFunction(() => !document.querySelector("#fx-panel summary").textContent.includes("Edited"));
+  });
+
+  await step("3D file library: add a whole folder: only its 3MF files, none twice", async () => {
+    await page.goto(`${BASE}#files/c3d`);
+    await page.waitForSelector("#folder-add");
+    const zip = Buffer.from([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]);
+    const before = files.size;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "c3d-folder-"));
+    fs.writeFileSync(path.join(dir, "keychain.3mf"), zip);
+    fs.writeFileSync(path.join(dir, "vase.3mf"), zip);
+    fs.writeFileSync(path.join(dir, "notes.txt"), "hi");
+    fs.writeFileSync(path.join(dir, "part.stl"), "solid x\nendsolid x");
+    await page.setInputFiles("#folder-in", dir);
+    await page.waitForSelector(".toast >> text=Saved 2 files");
+    if (SCREENS) for (const w of [1280, 390]) { await page.setViewportSize({ width: w, height: 860 }); await page.screenshot({ path: path.join(SCREENS, `files-folder-${w}.png`), fullPage: true }); }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    assert.equal(files.size - before, 2, "only the 3MF files");
+    const again = fs.mkdtempSync(path.join(os.tmpdir(), "c3d-folder-"));
+    fs.writeFileSync(path.join(again, "keychain.3mf"), zip);
+    await page.setInputFiles("#folder-in", again);
+    await page.waitForSelector(".toast >> text=already in the library");
+    assert.equal(files.size - before, 2, "not added twice");
+  });
+
+  await step("back button: on every page but Home; goes back in the console, or Home when opened directly", async () => {
+    for (const k of ["c3d", "ed"]) {
+      await page.goto(`${BASE}#home/${k}`);
+      await page.waitForSelector('a.nav[data-route="home"][aria-current="page"]');
+      assert.equal(await page.locator("#view .back-btn").count(), 0, "no Back on Home");
+      const routes = await page.locator("#navs a.nav[href^='#']").evaluateAll((as) => as.map((a) => a.dataset.route).filter((r) => r && r !== "home"));
+      assert.ok(routes.length > 5, `${k} has pages`);
+      for (const r of routes) {
+        await page.click(`a.nav[data-route="${r}"]`);
+        await page.waitForFunction((x) => document.querySelector(`a.nav[data-route="${x}"]`)?.getAttribute("aria-current") === "page", r);
+        await page.waitForSelector("#view .back-btn", { state: "attached", timeout: 15000 }).catch(() => { throw new Error(`${k}/${r} has no Back button`); });
+        assert.equal(await page.locator("#view .back-btn").count(), 1, `${k}/${r}: one Back button`);
+      }
+      // Back returns to the page before
+      await page.click('a.nav[data-route="insights"]');
+      await page.waitForFunction(() => location.hash.startsWith("#insights"));
+      await page.click('a.nav[data-route="share"]');
+      await page.waitForSelector('#view .back-btn');
+      await page.waitForFunction(() => location.hash.startsWith("#share"));
+      await page.click("#view .back-btn");
+      await page.waitForFunction(() => location.hash.startsWith("#insights"));
+    }
+    // opened straight from a link: Back goes to that brand's Home
+    const fresh = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await fresh.goto(`${BASE}#share/ed`);
+    await fresh.waitForSelector("#view .back-btn");
+    await fresh.click("#view .back-btn");
+    await fresh.waitForFunction(() => location.hash === "#home/ed");
+    await fresh.close();
   });
 
   await step("no console errors", async () => {

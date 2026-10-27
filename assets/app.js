@@ -2,6 +2,7 @@ import { BRANDS, STATUS, SERVICES, ROUTES, CLEANUP, TOPOLOGY } from "./data.js";
 import { GROUPS, TOOLS, toolsFor } from "./tools.js";
 import { takeStoreHandler, cancelKeyPrompt, consoleKey } from "./api.js";
 import { filesPage } from "./files.js";
+import { meshyPage } from "./meshy.js";
 
 // ---------- helpers ----------
 export const el = (tag, attrs = {}, ...kids) => {
@@ -115,7 +116,8 @@ function alertsList(list) {
 }
 async function recentImages(n = 12) {
   const { listImages, imageUrl } = await import("./studio.js");
-  const items = (await listImages()).slice(0, n);
+  const { isLogo, isOtherBrand } = await import("./image-filters.js");
+  const items = (await listImages()).filter((i) => !isLogo(i) && !isOtherBrand(i)).slice(0, n);
   if (!items.length) return el("p", { class: "muted" }, "No images yet. Add them in the Design Studio.");
   return el("div", { class: "thumbs" }, items.map((i) => el("img", { src: imageUrl(i), alt: i.name, loading: "lazy" })));
 }
@@ -236,7 +238,7 @@ function home() {
       el("section", { class: "panel" }, el("div", { class: "panel-head" }, el("h2", {}, "Needs you"), el("a", { class: "btn ghost", href: `#map/${k}` }, "Service map")), alertsList(attn)),
       el("section", { class: "panel" }, el("div", { class: "panel-head" }, el("h2", {}, "Your tasks")), tasks)),
     k === "ed" ? el("section", { class: "panel" },
-      el("div", { class: "panel-head" }, el("h2", {}, "Latest designs"), el("a", { class: "btn ghost", href: "#studio/ed/library" }, "Open library")), imgs) : null,
+      el("div", { class: "panel-head" }, el("h2", {}, "Latest designs"), el("a", { class: "btn ghost", href: "#designs/ed" }, "Open library")), imgs) : null,
   ];
 }
 
@@ -400,9 +402,30 @@ async function sharePage() {
       el("form", { class: "row", onsubmit: make }, field, el("button", { class: "btn", type: "submit" }, "Make QR")), out)];
 }
 
+// Each page this console shows gets a place in the browser history, so Back can tell whether
+// there is a console page to go back to, or whether it should go to this brand's Home instead.
+let lastStep = -1;
+function markStep() {
+  const i = history.state?.step;
+  lastStep = Number.isInteger(i) ? i : lastStep + 1;
+  if (!Number.isInteger(i)) history.replaceState({ ...history.state, step: lastStep }, "");
+}
+function backButton(k) {
+  const home = `#home/${k}`;
+  return el("a", { class: "back-btn", href: home, onclick: (e) => { if (lastStep > 0) { e.preventDefault(); history.back(); } } },
+    el("span", { "aria-hidden": "true" }, "‹"), " Back");
+}
+// Every page but Home gets a Back button at the top of its heading.
+function addBack(nodes, k) {
+  const head = nodes.find((n) => n?.classList?.contains("page-head"));
+  if (head) head.firstElementChild?.prepend(backButton(k));
+  else nodes.unshift(el("div", { class: "back-bar" }, backButton(k)));
+}
+
 async function render() {
   let [route = "", second] = location.hash.slice(1).split("/");
   if (route === "c3d" || route === "ed") { store.set("bc-store", route); history.replaceState(null, "", `#home/${route}`); route = "home"; }
+  markStep();
   if (!route || route === "dashboard") route = "home";
   if (STORE_KEYS.includes(second)) store.set("bc-store", second);
   pageStoreHandler = null;
@@ -411,8 +434,8 @@ async function render() {
   const k = currentStore();
   const frameTool = TOOLS.find((t) => t.frame && t.id === route);
   // A tool of the other store: show this store's Home rather than mixing the brands.
-  if (frameTool && frameTool.store !== k) { location.hash = `#home/${k}`; return; }
-  if ((route === "studio" && k !== "ed") || (route === "files" && k !== "c3d")) { location.hash = `#home/${k}`; return; }
+  if (frameTool && frameTool.store !== k) { location.replace(`#home/${k}`); return; }
+  if (((route === "studio" || route === "designs") && k !== "ed") || ((route === "files" || route === "maker3d") && k !== "c3d")) { location.replace(`#home/${k}`); return; }
   const pages = {
     home,
     map: () => mapPage(pendingFilter ?? k),
@@ -424,13 +447,16 @@ async function render() {
     share: sharePage,
     team: teamPage,
     files: () => filesPage(header),
+    designs: async () => (await import("./design-library.js")).designLibraryPage(header),
+    maker3d: () => meshyPage(header),
   };
   const make = frameTool ? () => framePage(frameTool) : pages[route] ?? home;
-  const nodes = await make();
+  const nodes = [await make()].flat().filter(Boolean);
+  if (make !== home) addBack(nodes, k);
   pageStoreHandler = takeStoreHandler();
   pendingFilter = null;
-  view.replaceChildren(...[nodes].flat().filter(Boolean));
-  view.classList.toggle("wide", route === "studio" || !!frameTool);
+  view.replaceChildren(...nodes);
+  view.classList.toggle("wide", route === "studio" || route === "maker3d" || !!frameTool);
   view.classList.toggle("framed", !!frameTool);
   const t = activeTool();
   document.title = `${t ? t.name : "Home"} · ${BRANDS[k].name} · Business Console`;

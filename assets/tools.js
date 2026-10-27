@@ -30,13 +30,15 @@ export const TOOLS = [
   { id: "hypechain", group: "make", store: "c3d", name: "Hype chain maker", ico: "◇",
     sub: "Custom pendant designer: logo or text to a printable chain pendant",
     frame: "tools/hype-chain-maker/" },
+  { id: "maker3d", group: "make", store: "c3d", name: "3D maker", ico: "◈", page: "maker3d",
+    sub: "Photos or a few words in, a printable 3D model out (Meshy)" },
   { id: "maker", group: "make", store: "c3d", name: "Maker", ico: "◫",
     sub: "Picture in, Bambu file out: light boxes, keychains, signs and lithophanes",
     frame: "tools/maker/" },
 
   // Library
-  { id: "library", group: "library", store: "ed", name: "Design library", ico: "▦", page: "studio", path: "library",
-    sub: "Every Elevated Designs image; ticked ones feed the shirt app" },
+  { id: "library", group: "library", store: "ed", name: "Design library", ico: "▦", page: "designs",
+    sub: "Every Elevated Designs image, with categories; ticked ones feed the shirt app" },
   { id: "files", group: "library", store: "c3d", name: "3D file library", ico: "▦", page: "files",
     sub: "Every print file (STL, 3MF, OBJ, STEP) and photo, with a preview of each model" },
 
