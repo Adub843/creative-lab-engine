@@ -1,4 +1,7 @@
 import { BRANDS, STATUS, SERVICES, ROUTES, CLEANUP, TOPOLOGY } from "./data.js";
+import { GROUPS, TOOLS, toolsFor } from "./tools.js";
+import { takeStoreHandler, cancelKeyPrompt } from "./api.js";
+import { filesPage } from "./files.js";
 
 // ---------- helpers ----------
 export const el = (tag, attrs = {}, ...kids) => {
@@ -58,29 +61,23 @@ document.getElementById("d-close").addEventListener("click", closeDrawer);
 scrim.addEventListener("click", closeDrawer);
 
 // ---------- jump palette ----------
-const PAGES = [
-  { name: "Dashboard", url: "#dashboard", kind: "Page" },
-  { name: "Charleston 3D", url: "#c3d", kind: "Page" },
-  { name: "Products", url: "#products", kind: "Page" },
-  { name: "Insights", url: "#insights", kind: "Page" },
-  { name: "Marketing: SEO, Bing, AI search", url: "#marketing", kind: "Page" },
-  { name: "Promotions: discounts, gift cards, segments", url: "#promote", kind: "Page" },
-  { name: "Elevated Designs", url: "#ed", kind: "Page" },
-  { name: "Design Studio", url: "#studio", kind: "Page" },
-  { name: "Service Map", url: "#map", kind: "Page" },
+const PAGES = () => [
+  { name: "Home", url: `#home/${currentStore()}`, kind: "Page" },
+  ...["c3d", "ed"].flatMap((k) => toolsFor(k).filter((t) => t.store === k || k === currentStore())
+    .map((t) => ({ name: t.store ? t.name : `${t.name}: ${BRANDS[k].name}`, url: toolHref(t, k), kind: t.store ? BRANDS[t.store].name : "Page", store: k }))),
 ];
 const pal = document.getElementById("palette");
 const palQ = document.getElementById("pal-q");
 const palList = document.getElementById("pal-list");
 function palItems(q) {
-  const all = [...PAGES, ...SERVICES.flatMap((s) => s.links.map((l) => ({ name: `${s.name}: ${l.label}`, url: l.url, kind: BRANDS[s.brand].name })))];
+  const all = [...PAGES(), ...SERVICES.flatMap((s) => s.links.map((l) => ({ name: `${s.name}: ${l.label}`, url: l.url, kind: BRANDS[s.brand].name })))];
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   return all.filter((i) => words.every((w) => i.name.toLowerCase().includes(w))).slice(0, 12);
 }
 function drawPal() {
   const items = palItems(palQ.value);
   palList.replaceChildren(...items.map((i, n) => el("li", { role: "option", "aria-selected": String(n === 0) },
-    el("a", { href: i.url, target: ext(i.url) ? "_blank" : null, rel: "noopener", onclick: () => pal.close() },
+    el("a", { href: i.url, target: ext(i.url) ? "_blank" : null, rel: "noopener", onclick: () => { if (i.store) setStore(i.store, false); pal.close(); } },
       el("span", {}, i.name), el("span", { class: "muted" }, i.kind)))));
   if (!items.length) palList.append(el("li", { class: "muted" }, "Nothing matches."));
 }
@@ -133,12 +130,6 @@ function todoWidget(key, seed) {
   return el("div", { class: "stack" }, box, el("div", { class: "add-row" }, input, el("button", { class: "btn", type: "button", onclick: add }, "Add")),
     el("p", { class: "muted", style: "font-size:12.5px" }, "Saved on this device."));
 }
-function quickLinks(brand, links) {
-  return el("div", { class: `quick brand-${brand}` }, links.map(([label, sub, url]) =>
-    el("a", { href: url, target: ext(url) ? "_blank" : null, rel: "noopener" },
-      el("span", { class: "q-t" }, el("strong", {}, label), el("small", {}, sub)),
-      el("span", { class: "q-go", "aria-hidden": "true" }, ext(url) ? "↗" : "›"))));
-}
 async function recentImages(n = 12) {
   const { listImages, imageUrl } = await import("./studio.js");
   const items = (await listImages()).slice(0, n);
@@ -146,43 +137,87 @@ async function recentImages(n = 12) {
   return el("div", { class: "thumbs" }, items.map((i) => el("img", { src: imageUrl(i), alt: i.name, loading: "lazy" })));
 }
 
-// ---------- pages ----------
-// Each brand's tools, grouped the way a store admin groups them. [label, what it's for, link]
-const C3D_GROUPS = [
-  ["Sell", [
-    ["Products", "Pick what's on the site and the app", "#products/c3d"],
-    ["Orders and requests", "Shopify admin", `${BRANDS.c3d.site}/admin/orders`],
-    ["Order app", "Shop and custom requests", BRANDS.c3d.app]]],
-  ["Grow", [
-    ["Insights", "Sales, visits, forecast", "#insights/c3d"],
-    ["Marketing", "SEO, Bing, AI search", "#marketing/c3d"],
-    ["Promotions", "Discounts, gift cards, segments", "#promote/c3d"]]],
-  ["Storefront", [
-    ["Website", "charleston3d.com · Shopify", BRANDS.c3d.site],
-    ["Theme", "Shopify theme editor", `${BRANDS.c3d.site}/admin/themes`],
-    ["Shopify admin", "Everything else in the store", BRANDS.c3d.admin.url]]],
-];
-const ED_GROUPS = [
-  ["Sell", [
-    ["Products", "Pick what's on the site", "#products/ed"],
-    ["List a design", "One click to the store", "#products/ed/list"],
-    ["Design Studio", "Library and shirt designer", "#studio"],
-    ["Orders", "Shopify admin", `${BRANDS.ed.site}/admin/orders`]]],
-  ["Grow", [
-    ["Insights", "Sales, visits, forecast", "#insights/ed"],
-    ["Marketing", "SEO, Bing, AI search", "#marketing/ed"],
-    ["Promotions", "Discounts, gift cards, segments", "#promote/ed"]]],
-  ["Storefront", [
-    ["Website", "elevatedshirts.com · Shopify", BRANDS.ed.site],
-    ["Shirt app", "design.elevatedshirts.com", BRANDS.ed.app],
-    ["Theme", "Shopify theme editor", `${BRANDS.ed.site}/admin/themes`],
-    ["Shopify admin", "Everything else in the store", BRANDS.ed.admin.url]]],
-];
-// The four the dashboard shows for each brand.
-const C3D_TOP = [["Website", "charleston3d.com", BRANDS.c3d.site], ["Order app", "Shop and custom requests", BRANDS.c3d.app], ...C3D_GROUPS[0][1].slice(0, 1), ...C3D_GROUPS[1][1].slice(0, 1)];
-const ED_TOP = [["Website", "elevatedshirts.com", BRANDS.ed.site], ["Shirt app", "Design your own shirt", BRANDS.ed.app], ...ED_GROUPS[0][1].slice(0, 1), ...ED_GROUPS[1][1].slice(0, 1)];
+// ---------- store, sidebar and top bar ----------
+// The store is picked once in the sidebar and every page follows it. It lives in the address
+// (#marketing/ed) so a link opens the same store, and on this device for next time.
+const STORE_KEYS = ["c3d", "ed"];
+export function currentStore() {
+  const fromHash = location.hash.slice(1).split("/")[1];
+  if (STORE_KEYS.includes(fromHash)) return fromHash;
+  const saved = store.get("bc-store", "c3d");
+  return STORE_KEYS.includes(saved) ? saved : "c3d";
+}
+export const toolHref = (t, k = currentStore()) =>
+  t.url ? t.url(BRANDS[k]) : `#${t.page ?? t.id}/${k}${t.path ? `/${t.path}` : ""}`;
+// The tool the address points at: the page route, plus its sub-path (List a design is #products/ed/list).
+function activeTool() {
+  const [route, , sub] = location.hash.slice(1).split("/");
+  const k = currentStore();
+  return toolsFor(k).find((t) => (t.page ?? t.id) === route && (t.path ?? null) === (sub ?? null))
+    ?? toolsFor(k).find((t) => (t.page ?? t.id) === route && !t.path);
+}
 
-// The brand's logo (Aaron's picks, 26 Oct 2026) on its own dark tile, so it reads in both themes.
+const seg = document.getElementById("store-seg");
+const navs = document.getElementById("navs");
+STORE_KEYS.forEach((k) => seg.append(el("button", { type: "button", class: `seg-btn brand-${k}`, "data-store": k, "aria-label": BRANDS[k].name, onclick: () => setStore(k) },
+  el("span", { class: "dot", "aria-hidden": "true" }), el("span", { class: "long" }, BRANDS[k].name),
+  el("span", { class: "short", "aria-hidden": "true" }, k === "ed" ? "Elevated" : "Charleston 3D"))));
+
+function drawNav() {
+  const k = currentStore();
+  document.documentElement.dataset.store = k;
+  seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.store === k)));
+  const route = location.hash.slice(1).split("/")[0] || "home";
+  const active = activeTool();
+  const link = (id, label, ico, href) => el("a", { class: "nav", href, "data-route": id, target: ext(href) ? "_blank" : null, rel: ext(href) ? "noopener" : null,
+    "aria-current": (active ? active.id === id : route === id) ? "page" : null },
+    el("span", { class: "ico", "aria-hidden": "true" }, ico), el("span", {}, label), ext(href) ? el("span", { class: "nav-ext", "aria-hidden": "true" }, "↗") : null);
+  navs.replaceChildren(
+    link("home", "Home", "⌂", `#home/${k}`),
+    ...GROUPS.map((g) => {
+      const items = toolsFor(k).filter((t) => t.group === g.id);
+      return items.length ? el("div", { class: "nav-group" }, el("span", { class: "nav-label" }, g.name),
+        items.map((t) => link(t.id, t.name, t.ico, toolHref(t, k)))) : null;
+    }).filter(Boolean));
+  const b = BRANDS[k];
+  document.getElementById("store-links").replaceChildren(
+    el("a", { class: "btn ghost", href: b.site, target: "_blank", rel: "noopener" }, "Live site", el("span", { class: "ext", "aria-hidden": "true" }, "↗")),
+    el("a", { class: "btn ghost", href: b.admin.url, target: "_blank", rel: "noopener" }, "Shopify", el("span", { class: "ext", "aria-hidden": "true" }, "↗")),
+    b.app ? el("a", { class: "btn ghost hide-sm", href: b.app, target: "_blank", rel: "noopener" }, "App", el("span", { class: "ext", "aria-hidden": "true" }, "↗")) : null);
+  const crumb = document.getElementById("crumb");
+  const g = active && GROUPS.find((x) => x.id === active.group);
+  crumb.replaceChildren(el("span", { class: `crumb-store brand-${k}` }, b.name),
+    ...(g ? [el("span", { "aria-hidden": "true" }, "/"), el("span", {}, g.name)] : []),
+    el("span", { "aria-hidden": "true" }, "/"), el("strong", {}, active ? active.name : route === "home" ? "Home" : "Home"));
+}
+
+// Switching store: pages that show one store's data reload in place; a tool only the other store
+// has (the shirt designer, the nameplate maker) gives way to Home.
+export function setStore(k, navigate = true) {
+  if (!STORE_KEYS.includes(k)) return;
+  store.set("bc-store", k);
+  if (!navigate) return;
+  const [route, , ...rest] = location.hash.slice(1).split("/");
+  const r = route || "home";
+  const t = activeTool();
+  const keeps = r === "home" || r === "map" || (t && !t.store);
+  const next = keeps ? `#${[r, k, ...rest].join("/")}` : `#home/${k}`;
+  const handler = keeps && r !== "home" && r !== "map" ? pageStoreHandler : null;
+  if (handler) { history.replaceState(null, "", next); drawNav(); handler(k); }
+  else location.hash = next;
+}
+let pageStoreHandler = null;
+
+document.getElementById("search").addEventListener("click", () => openPalette());
+const moreBtn = document.getElementById("more");
+moreBtn.addEventListener("click", () => {
+  const open = !document.body.classList.contains("nav-open");
+  document.body.classList.toggle("nav-open", open);
+  moreBtn.setAttribute("aria-expanded", String(open));
+});
+navs.addEventListener("click", (e) => { if (e.target.closest("a")) { document.body.classList.remove("nav-open"); moreBtn.setAttribute("aria-expanded", "false"); } });
+
+// ---------- pages ----------
 const brandLogo = (key) => el("img", { class: `brand-logo logo-${key}`, src: BRANDS[key].logo, alt: "", width: 120, height: 40 });
 
 function header(eyebrow, title, sub, actions = []) {
@@ -191,47 +226,57 @@ function header(eyebrow, title, sub, actions = []) {
     el("div", { class: "row" }, actions));
 }
 
-function dashboard() {
-  const attn = SERVICES.filter((s) => s.status === "attn");
+// One row per tool: what it does, one click to open.
+function toolList(list, k) {
+  return el("div", { class: "tool-list" }, list.map((t) => {
+    const href = toolHref(t, k);
+    return el("a", { class: "tool-row", href, target: ext(href) ? "_blank" : null, rel: ext(href) ? "noopener" : null },
+      el("span", { class: "tool-ico", "aria-hidden": "true" }, t.ico),
+      el("span", { class: "tool-t" }, el("strong", {}, t.name), el("small", {}, t.sub)),
+      el("span", { class: "q-go", "aria-hidden": "true" }, ext(href) ? "↗" : "›"));
+  }));
+}
+
+function home() {
+  const k = currentStore();
+  const b = BRANDS[k];
+  const mine = SERVICES.filter((s) => s.brand === k);
+  const attn = mine.filter((s) => s.status === "attn");
   const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  const tools = toolsFor(k);
+  const byGroup = (id) => tools.filter((t) => t.group === id);
+  const sections = [["research", "Research", "Find what to make and sell"], ["make", "Make", "Design it and get it on the store"],
+    ["library", "Library", "Everything you've made, saved online"], ["grow", "Stats & marketing", "See what's working and push it"]].filter(([id]) => byGroup(id).length);
   const imgs = el("div", {}, el("p", { class: "muted" }, "Loading images…"));
-  recentImages().then((n) => imgs.replaceChildren(n)).catch(() => imgs.replaceChildren(el("p", { class: "muted" }, "Couldn't load images.")));
+  if (k === "ed") recentImages().then((n) => imgs.replaceChildren(n)).catch(() => imgs.replaceChildren(el("p", { class: "muted" }, "Couldn't load images.")));
+  const primary = k === "ed" ? el("a", { class: "btn primary", href: "#products/ed/list" }, "List a design")
+    : el("a", { class: "btn primary", href: "#nameplate/c3d" }, "Make a nameplate");
   return [
-    header(today, "Dashboard", "Both businesses at a glance. Press / to jump anywhere.",
-      [el("button", { class: "btn", type: "button", onclick: openPalette }, "Jump to… ", el("kbd", {}, "/")),
-       el("a", { class: "btn primary", href: "#studio" }, "New design")]),
-    el("div", { class: "kpis" },
-      el("button", { class: "kpi warn", type: "button", onclick: () => go("map", "attn") }, el("b", {}, String(attn.length)), el("span", {}, "need attention")),
-      el("button", { class: "kpi", type: "button", onclick: () => go("map", "live") }, el("b", {}, String(count((s) => s.status === "live"))), el("span", {}, "live services")),
-      el("button", { class: "kpi bad", type: "button", onclick: () => go("map", "blind") }, el("b", {}, String(count((s) => s.status === "blind"))), el("span", {}, "not connected"))),
-    el("div", { class: "grid-2" },
-      el("section", { class: "panel brand-c3d brand-band" },
-        el("div", { class: "panel-head" }, el("h2", { class: "brand-title" }, brandLogo("c3d"), "Charleston 3D"), el("a", { class: "btn ghost", href: "#c3d" }, "Open")),
-        el("p", { class: "muted" }, BRANDS.c3d.tagline), quickLinks("c3d", C3D_TOP)),
-      el("section", { class: "panel brand-ed brand-band" },
-        el("div", { class: "panel-head" }, el("h2", { class: "brand-title" }, brandLogo("ed"), "Elevated Designs"), el("a", { class: "btn ghost", href: "#ed" }, "Open")),
-        el("p", { class: "muted" }, BRANDS.ed.tagline), quickLinks("ed", ED_TOP))),
+    el("div", { class: `home-head brand-${k}` }, el("div", { class: `brand-chip logo-${k}` }, brandLogo(k)),
+      header(today, b.name, b.tagline, [el("button", { class: "btn", type: "button", onclick: openPalette }, "Jump to… ", el("kbd", {}, "/")), primary])),
+    el("div", { class: "home-cols" }, sections.map(([id, title, sub]) =>
+      el("section", { class: "panel" }, el("div", { class: "panel-head" }, el("h2", {}, title), el("span", { class: "muted small" }, sub)), toolList(byGroup(id), k)))),
     el("div", { class: "grid-2" },
       el("section", { class: "panel" }, el("h2", {}, "Needs you"), alertsList(attn)),
       el("section", { class: "panel" }, el("h2", {}, "Today's tasks"),
-        todoWidget("bc-todo", [{ t: "Pick which products are live on each store", d: false }, { t: "Check Insights for both stores", d: false }]))),
-    el("section", { class: "panel" },
-      el("div", { class: "panel-head" }, el("h2", {}, "Latest images"), el("a", { class: "btn ghost", href: "#studio" }, "Open library")), imgs),
+        todoWidget(`bc-todo-${k}`, k === "ed"
+          ? [{ t: "List a new design", d: false }, { t: "Check Insights", d: false }]
+          : [{ t: "Check new custom requests", d: false }, { t: "Check Insights", d: false }]))),
+    k === "ed" ? el("section", { class: "panel" },
+      el("div", { class: "panel-head" }, el("h2", {}, "Latest designs"), el("a", { class: "btn ghost", href: "#studio/ed" }, "Open library")), imgs) : null,
+    el("section", { class: "panel" }, el("div", { class: "panel-head" }, el("h2", {}, `Everything behind ${b.name}`), el("a", { class: "btn ghost", href: `#map/${k}` }, "Service map")),
+      serviceCards(mine)),
   ];
 }
 
-function brandPage(key, groups, extra = []) {
-  const b = BRANDS[key];
-  const mine = SERVICES.filter((s) => s.brand === key);
+// A self-contained tool app (assets in /tools/<slug>/), shown full size inside the console.
+function framePage(t) {
+  const frame = el("iframe", { class: "tool-frame", src: t.frame, title: t.name, loading: "eager", allow: "clipboard-write; fullscreen" });
   return [
-    b.logo ? el("div", { class: `brand-hero logo-${key}` }, el("img", { src: b.logo, alt: `${b.name} logo`, width: 240, height: 80 })) : null,
-    header("Business", b.name, b.tagline, [linkBtn(b.admin, "btn"), b.app ? linkBtn({ label: "Open app", url: b.app }, "btn") : null,
-      linkBtn({ label: "View live site", url: b.site }, `btn brand brand-${key}`)]),
-    el("div", { class: "agroups" }, groups.map(([title, links]) =>
-      el("section", { class: `panel brand-${key} brand-band` }, el("h2", {}, title), quickLinks(key, links)))),
-    ...extra,
-    el("section", { class: "panel" }, el("h2", {}, "Needs attention"), alertsList(mine.filter((s) => s.status === "attn"))),
-    el("section", { class: "stack" }, el("h2", {}, `Everything for ${b.name}`), serviceCards(mine)),
+    el("header", { class: "page-head tool-head" },
+      el("div", { class: "stack" }, el("h1", {}, t.name), el("p", { class: "muted" }, t.sub)),
+      el("div", { class: "row" }, el("a", { class: "btn ghost", href: t.frame, target: "_blank", rel: "noopener" }, "Open full screen", el("span", { class: "ext", "aria-hidden": "true" }, "↗")))),
+    frame,
   ];
 }
 
@@ -296,57 +341,125 @@ function topologySection() {
 
 async function productsPage() {
   const { renderProducts } = await import("./products.js");
-  return [header("Both stores", "Products", "Pick which designs are live on each store's Shopify site. Switching one on makes it active and publishes it to the Online Store, so it shows up right away."), await renderProducts()];
+  if (location.hash.split("/")[2] === "list") setTimeout(() => document.getElementById("lib-title")?.scrollIntoView({ block: "start" }), 400);
+  return [header(BRANDS[currentStore()].name, "Products", "Pick which designs are live on each store's Shopify site. Switching one on makes it active and publishes it to the Online Store, so it shows up right away."), await renderProducts()];
 }
 
 async function insightsPage() {
   const { renderInsights } = await import("./insights.js");
-  return [header("Both stores", "Insights", "Sales, visits and a 30-day forecast from Shopify, with what to do next."), await renderInsights()];
+  return [header(BRANDS[currentStore()].name, "Insights", "Sales, visits and a 30-day forecast from Shopify, with what to do next."), await renderInsights()];
 }
 
 async function marketingPage() {
   const { renderMarketing } = await import("./marketing.js");
-  return [header("Both stores, one at a time", "Marketing", "Search, local, Bing and AI-assistant health for each site, checked every morning, with the fixes right here."), await renderMarketing()];
+  return [header(BRANDS[currentStore()].name, "Marketing", "Search, local, Bing and AI-assistant health for each site, checked every morning, with the fixes right here."), await renderMarketing()];
 }
 
 async function promotePage() {
   const { renderPromotions } = await import("./promotions.js");
-  return [header("Both stores, one at a time", "Promotions", "Shopify's marketing tools for each store: discounts, gift cards, customer groups, campaigns, sales channels and abandoned checkouts."), await renderPromotions()];
+  return [header(BRANDS[currentStore()].name, "Promotions", "Shopify's marketing tools for each store: discounts, gift cards, customer groups, campaigns, sales channels and abandoned checkouts."), await renderPromotions()];
 }
 
 async function studioPage() {
   const { renderStudio } = await import("./studio.js");
-  return [header("Elevated Designs", "Design Studio", "Pick art from the library, place it on a real shirt photo, and download the print file or a mockup. No key needed to design."), await renderStudio()];
+  return [header("Elevated Designs", "Shirt designer", "Pick art from the library, place it on a real shirt photo, and download the print file or a mockup. No key needed to design."), await renderStudio()];
 }
 
 // ---------- router ----------
+// #<page>/<store>[/<sub>]. Old addresses keep working: #dashboard is Home, #c3d and #ed are Home for that store.
 const view = document.getElementById("view");
 let pendingFilter = null;
-export function go(route, filter) { pendingFilter = filter ?? null; location.hash = route; }
+export function go(route, filter) { pendingFilter = filter ?? null; location.hash = `${route}/${currentStore()}`; }
+// Share & QR: this store's links, each with a QR code made in the browser (tools/vendor/qrcode.js).
+let qrLib;
+const loadQr = () => qrLib ??= new Promise((ok, fail) => {
+  const s = document.createElement("script");
+  s.src = "tools/vendor/qrcode.js"; s.onload = () => ok(window.qrcode); s.onerror = () => { qrLib = null; fail(new Error("QR library didn't load")); };
+  document.head.append(s);
+});
+function qrCanvas(qr, url, cell) {
+  const q = qr(0, "M"); q.addData(url); q.make();
+  const n = q.getModuleCount(), pad = 4, size = (n + pad * 2) * cell;
+  const c = el("canvas", { width: size, height: size, role: "img", "aria-label": `QR code for ${url}` });
+  const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, size, size); g.fillStyle = "#000";
+  for (let r = 0; r < n; r++) for (let col = 0; col < n; col++) if (q.isDark(r, col)) g.fillRect((col + pad) * cell, (r + pad) * cell, cell, cell);
+  return c;
+}
+function shareCard(qr, { label, url, note }) {
+  const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const save = () => qrCanvas(qr, url, 24).toBlob((blob) => {
+    const a = el("a", { href: URL.createObjectURL(blob), download: `${slug}-qr.png` }); document.body.append(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+  }, "image/png");
+  const copy = () => navigator.clipboard.writeText(url).then(() => toast("Link copied"), () => toast("Couldn't copy. Press and hold the link instead."));
+  return el("section", { class: "panel share-card" },
+    el("div", { class: "share-qr" }, qrCanvas(qr, url, 6)),
+    el("div", { class: "stack" }, el("h2", {}, label), note ? el("p", { class: "muted small" }, note) : null,
+      el("a", { class: "share-url", href: url, target: "_blank", rel: "noopener" }, url.replace(/^https:\/\//, "")),
+      el("div", { class: "row" },
+        el("button", { class: "btn primary", type: "button", onclick: save }, "Download QR"),
+        el("button", { class: "btn", type: "button", onclick: copy }, "Copy link"),
+        navigator.share ? el("button", { class: "btn", type: "button", onclick: () => navigator.share({ title: label, url }).catch(() => {}) }, "Send") : null)));
+}
+async function sharePage() {
+  const k = currentStore(), b = BRANDS[k];
+  const head = header("Stats & marketing", "Share & QR", `Every ${b.name} link with a QR code. Print them on market signs, packing slips and cards.`);
+  let qr;
+  try { qr = await loadQr(); } catch { return [head, el("p", { class: "muted" }, "The QR maker didn't load. Reload the page to try again.")]; }
+  const links = [{ label: `${b.name} store`, url: b.site, note: "The shop, with Shopify checkout." },
+    { label: k === "ed" ? "Shirt builder app" : "Order app", url: b.app, note: k === "ed" ? "Customers build their own shirt and order it." : "Shop, or request a custom print." }];
+  const grid = el("div", { class: "share-grid" }, links.map((l) => shareCard(qr, l)));
+  const out = el("div");
+  const field = el("input", { class: "field", type: "url", placeholder: "https://…", "aria-label": "Any link", style: "max-width:420px" });
+  const make = (e) => {
+    e.preventDefault();
+    let url = field.value.trim();
+    if (url && !/^https?:\/\//i.test(url)) url = `https://${url}`;
+    try { new URL(url); } catch { toast("That doesn't look like a link."); return; }
+    out.replaceChildren(shareCard(qr, { label: "Your link", url }));
+  };
+  return [head, grid,
+    el("section", { class: "panel stack" }, el("h2", {}, "QR for any link"),
+      el("p", { class: "muted small" }, "Paste a product page, a collection or a sale link."),
+      el("form", { class: "row", onsubmit: make }, field, el("button", { class: "btn", type: "submit" }, "Make QR")), out)];
+}
+
 async function render() {
-  const route = (location.hash.slice(1) || "dashboard").split("/")[0];
-  document.querySelectorAll(".nav").forEach((a) => a.dataset.route === route ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));
+  let [route = "", second] = location.hash.slice(1).split("/");
+  if (route === "c3d" || route === "ed") { store.set("bc-store", route); history.replaceState(null, "", `#home/${route}`); route = "home"; }
+  if (!route || route === "dashboard") route = "home";
+  if (STORE_KEYS.includes(second)) store.set("bc-store", second);
+  pageStoreHandler = null;
+  takeStoreHandler();
+  drawNav();
+  const k = currentStore();
+  const frameTool = TOOLS.find((t) => t.frame && t.id === route);
+  // A tool of the other store: show this store's Home rather than mixing the brands.
+  if (frameTool && frameTool.store !== k) { location.hash = `#home/${k}`; return; }
+  if ((route === "studio" && k !== "ed") || (route === "files" && k !== "c3d")) { location.hash = `#home/${k}`; return; }
   const pages = {
-    dashboard,
-    c3d: () => brandPage("c3d", C3D_GROUPS),
-    ed: () => brandPage("ed", ED_GROUPS, [el("section", { class: "panel brand-ed" },
-      el("div", { class: "panel-head" }, el("h2", {}, "Design Studio"), el("a", { class: "btn brand", href: "#studio" }, "Open studio")),
-      el("p", { class: "muted" }, "Your image library and shirt designer. Images are stored online, so you can design from any device."))]),
-    map: () => mapPage(pendingFilter ?? "all"),
+    home,
+    map: () => mapPage(pendingFilter ?? k),
     studio: studioPage,
     products: productsPage,
     insights: insightsPage,
     marketing: marketingPage,
     promote: promotePage,
+    share: sharePage,
+    files: () => filesPage(header),
   };
-  const make = pages[route] ?? dashboard;
+  const make = frameTool ? () => framePage(frameTool) : pages[route] ?? home;
   const nodes = await make();
+  pageStoreHandler = takeStoreHandler();
   pendingFilter = null;
   view.replaceChildren(...[nodes].flat().filter(Boolean));
-  view.classList.toggle("wide", route === "studio");
-  document.title = `${{ dashboard: "Dashboard", c3d: "Charleston 3D", ed: "Elevated Designs", map: "Service Map", studio: "Design Studio", products: "Products", insights: "Insights", marketing: "Marketing", promote: "Promotions" }[route] ?? "Dashboard"} · Business Console`;
+  view.classList.toggle("wide", route === "studio" || !!frameTool);
+  view.classList.toggle("framed", !!frameTool);
+  const t = activeTool();
+  document.title = `${t ? t.name : "Home"} · ${BRANDS[k].name} · Business Console`;
+  drawNav();
   view.focus({ preventScroll: true });
   window.scrollTo(0, 0);
 }
-addEventListener("hashchange", render);
+addEventListener("hashchange", () => { cancelKeyPrompt(); render(); });
 render();

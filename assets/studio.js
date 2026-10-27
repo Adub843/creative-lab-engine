@@ -539,7 +539,7 @@ export async function renderStudio() {
       btn("Download mockup photo", exportMockup, "btn"),
       btn("Save to library for listing", saveToLibrary, "btn"),
       el("p", { class: "muted small" }, `Print file: ${PW * DPI} × ${PH * DPI} px transparent PNG, ${PW} × ${PH} in at ${DPI} dpi, ${state.side} side. Saved designs show under Elevated Designs, List a design.`),
-      layers().length ? confirmButton("Clear this side", "Click again to clear", () => { state.sides[state.side] = []; state.sel = null; drawStage(); save(); toast("Side cleared. Undo brings it back."); }) : null);
+      layers().length ? confirmButton("Clear this side", "Click again to clear", () => { state.sides[state.side] = []; state.sel = null; drawStage(); save(); toast("Side cleared. Undo brings it back."); }) : "");
   }
 
   // drag, resize and rotate with one pointer handler

@@ -83,6 +83,7 @@ async function main() {
   await new Promise((r) => setTimeout(r, 800));
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  if (process.env.UI_TIMEOUT) page.setDefaultTimeout(Number(process.env.UI_TIMEOUT));
   const errors = [];
   // Responses the test provokes on purpose (401, 422, 502, 503) are logged by Chrome as resource errors; anything else counts.
   const expected = /Failed to load resource: the server responded with a status of (401|422|502|503)/;
@@ -421,20 +422,27 @@ async function main() {
   });
 
   await step("other pages still render and every nav link works", async () => {
-    for (const r of ["dashboard", "c3d", "ed", "products", "insights", "studio", "map"]) {
+    const visit = async (r) => {
       await page.click(`a.nav[data-route="${r}"]`);
       await page.waitForFunction((rt) => document.querySelector(`a.nav[data-route="${rt}"]`)?.getAttribute("aria-current") === "page", r);
       await page.waitForTimeout(100);
       await noOverflow(`${r} 1280`);
-    }
-    await page.click('a.nav[data-route="c3d"]');
-    assert.equal(await page.locator(".quick a", { hasText: "Insights" }).getAttribute("href"), "#insights/c3d");
-    await page.click(".quick a:has-text('Products')");
+    };
+    await page.click('.seg-btn[data-store="c3d"]');
+    for (const r of ["home", "products", "insights", "share", "map", "trends", "nameplate", "hypechain", "maker"]) await visit(r);
+    assert.equal(await page.locator('a.nav[data-route="studio"]').count(), 0, "the shirt designer is Elevated Designs only");
+    await page.click('.seg-btn[data-store="ed"]');
+    for (const r of ["home", "studio", "library", "share"]) await visit(r);
+    assert.equal(await page.locator('a.nav[data-route="nameplate"]').count(), 0, "the 3D makers are Charleston 3D only");
+    await page.click('.seg-btn[data-store="c3d"]');
+    await page.click('a.nav[data-route="home"]');
+    assert.equal(await page.locator(".tool-row", { hasText: "Insights" }).getAttribute("href"), "#insights/c3d");
+    await page.click('a.nav[data-route="products"]');
     await page.waitForSelector('.prow:has-text("Rainbow Row")');
-    await page.click('a.nav[data-route="ed"]');
-    await page.click(".quick a:has-text('Products')");
+    await page.click('.seg-btn[data-store="ed"]');
     await page.waitForSelector('.prow:has-text("Lowcountry Tee")');
     assert.equal(await page.locator('.seg-btn[data-store="ed"]').getAttribute("aria-pressed"), "true");
+    assert.match(page.url(), /#products\/ed$/);
   });
 
   // ---------- QA: edge cases and every remaining button ----------
@@ -614,7 +622,8 @@ async function main() {
     images.set("k-pub-0123abcd", { key: "k-pub-0123abcd", name: "palm-tree.png", type: "image/png", size: 10, tags: "palm, zzq-only-tag", category: "Charleston", public: true, added: 2 });
     images.set("k-priv-0123abcd", { key: "k-priv-0123abcd", name: "secret.png", type: "image/png", size: 10, tags: "", public: false, added: 1 });
     await page.evaluate(() => { localStorage.removeItem("bc-console-key"); localStorage.removeItem("bc-design-2"); });
-    await page.click('a.nav[data-route="dashboard"]');
+    await page.click('a.nav[data-route="home"]');
+    await page.click('.seg-btn[data-store="ed"]');
     await page.click('a.nav[data-route="studio"]');
     await page.waitForSelector('.lib .tile:has-text("palm-tree.png")');
     assert.equal(await page.locator("dialog.keydlg[open]").count(), 0, "no key prompt just to design");
@@ -670,7 +679,8 @@ async function main() {
     for (const k of [...images.keys()]) images.delete(k);
     images.set("k-pub-0123abcd", { key: "k-pub-0123abcd", name: "tiny.png", type: "image/png", size: 10, tags: "", public: true, added: 2 });
     await page.evaluate(() => { localStorage.removeItem("bc-console-key"); localStorage.removeItem("bc-design-2"); });
-    await page.click('a.nav[data-route="dashboard"]');
+    await page.click('a.nav[data-route="home"]');
+    await page.click('.seg-btn[data-store="ed"]');
     await page.click('a.nav[data-route="studio"]');
     await page.waitForSelector('.lib .tile:has-text("tiny.png")');
     await page.click('.lib .tile:has-text("tiny.png")');
@@ -730,7 +740,8 @@ async function main() {
   await step("studio: uploading asks for the key, then upload, see private images, delete", async () => {
     for (const k of [...images.keys()]) images.delete(k);
     await page.evaluate(() => localStorage.removeItem("bc-console-key"));
-    await page.click('a.nav[data-route="dashboard"]');
+    await page.click('a.nav[data-route="home"]');
+    await page.click('.seg-btn[data-store="ed"]');
     await page.click('a.nav[data-route="studio"]');
     await page.waitForSelector(".editor");
     await page.click('.ed-rail [data-tool="upload"]');
@@ -750,7 +761,8 @@ async function main() {
     assert.equal(saved.tags, "logo, test");
     assert.equal(saved.public, true, "Show in the shirt app library is ticked by default");
     images.set("k-priv-0123abcd", { key: "k-priv-0123abcd", name: "secret.png", type: "image/png", size: 10, tags: "", public: false, added: 1 });
-    await page.click('a.nav[data-route="dashboard"]');
+    await page.click('a.nav[data-route="home"]');
+    await page.click('.seg-btn[data-store="ed"]');
     await page.click('a.nav[data-route="studio"]');
     await page.waitForSelector('.lib .tile:has-text("secret.png")'); // with the key, private images show too
     page.once("dialog", (d) => d.accept());
@@ -765,7 +777,8 @@ async function main() {
     const old = { key: "k0-0123abcd", name: "old.png", type: "image/png", size: 10, tags: "", public: true, added: 1 };
     images.set(old.key, old);
     staleList = [old];
-    await page.click('a.nav[data-route="dashboard"]');
+    await page.click('a.nav[data-route="home"]');
+    await page.click('.seg-btn[data-store="ed"]');
     await page.click('a.nav[data-route="studio"]');
     await page.waitForSelector('.lib .tile:has-text("old.png")');
     await clearToasts();
@@ -776,7 +789,8 @@ async function main() {
     page.once("dialog", (d) => d.accept());
     await page.locator('.lib .tile:has-text("old.png")').click({ button: "right" });
     await page.waitForSelector(".toast >> text=Image deleted");
-    await page.click('a.nav[data-route="dashboard"]');
+    await page.click('a.nav[data-route="home"]');
+    await page.click('.seg-btn[data-store="ed"]');
     await page.click('a.nav[data-route="studio"]');
     await page.waitForSelector('.lib .tile:has-text("late.png")');
     assert.equal(await page.locator('.lib .tile:has-text("old.png")').count(), 0, "a deleted image stays gone though the list still has it");
@@ -784,45 +798,34 @@ async function main() {
     for (const k of [...images.keys()]) images.delete(k);
   });
 
-  await step("dashboard and brand pages: store links go to the Shopify sites, not Netlify", async () => {
-    for (const [route, site] of [["dashboard", null], ["c3d", "https://charleston3d.com"], ["ed", "https://elevatedshirts.com"]]) {
-      await page.click(`a.nav[data-route="${route}"]`);
-      await page.waitForFunction((r) => document.querySelector(`a.nav[data-route="${r}"]`)?.getAttribute("aria-current") === "page", route);
-      const hrefs = await page.locator("#view a[href]").evaluateAll((as) => as.map((a) => ({ t: a.textContent.trim(), h: a.getAttribute("href"), target: a.getAttribute("target") })));
-      for (const a of hrefs) {
-        if (/^(Website|View live site|Open live site)/.test(a.t)) assert.ok(!/netlify/.test(a.h), `${route}: ${a.t} -> ${a.h}`);
-        if (/netlify\.app/.test(a.h)) assert.ok(!/charleston3d-site|elevated-designs-site/.test(a.h), `stale store site link ${a.h}`);
-        if (/^https?:/.test(a.h)) assert.equal(a.target, "_blank", `${a.t} opens in a new tab`);
-      }
-      if (site) {
-        assert.equal(await page.locator(".quick a", { hasText: "Website" }).getAttribute("href"), site);
-        assert.equal(await page.locator("a", { hasText: "View live site" }).getAttribute("href"), site);
-      }
-    }
-    await page.click('a.nav[data-route="dashboard"]');
-    await page.waitForSelector("h1:has-text('Dashboard')");
-    const quick = await page.locator(".quick a").evaluateAll((as) => as.map((a) => a.getAttribute("href")));
-    assert.deepEqual(quick, ["https://charleston3d.com", "https://app.charleston3d.com", "#products/c3d", "#insights/c3d",
-      "https://elevatedshirts.com", "https://design.elevatedshirts.com", "#products/ed", "#insights/ed"]);
-    // nothing anywhere in the console points at Netlify any more
-    for (const route of ["dashboard", "c3d", "ed", "map"]) {
-      await page.click(`a.nav[data-route="${route}"]`);
-      await page.waitForFunction((r) => document.querySelector(`a.nav[data-route="${r}"]`)?.getAttribute("aria-current") === "page", route);
-      const bad = await page.locator("#view a[href]").evaluateAll((as) => as.map((a) => a.getAttribute("href")).filter((h) => /netlify/i.test(h)));
-      assert.deepEqual(bad, [], `${route} has no Netlify links`);
-    }
-    // every in-console link opens a real page
+  await step("home pages: store links go to the Shopify sites, not Netlify", async () => {
+    const pages = ["home", "products", "insights", "marketing", "promote", "studio", "map", "share", "trends", "nameplate", "hypechain", "maker", "files"];
     const hashes = new Set();
-    for (const route of ["dashboard", "c3d", "ed", "map"]) {
-      await page.click(`a.nav[data-route="${route}"]`);
-      await page.waitForFunction((r) => document.querySelector(`a.nav[data-route="${r}"]`)?.getAttribute("aria-current") === "page", route);
-      (await page.locator("#view a[href^='#']").evaluateAll((as) => as.map((a) => a.getAttribute("href")))).forEach((h) => hashes.add(h));
+    for (const [k, site, app] of [["c3d", "https://charleston3d.com", "https://app.charleston3d.com"], ["ed", "https://elevatedshirts.com", "https://design.elevatedshirts.com"]]) {
+      await page.click('a.nav[data-route="home"]');
+      await page.click(`.seg-btn[data-store="${k}"]`);
+      for (const route of ["home", "map", "share"]) {
+        await page.click(`a.nav[data-route="${route}"]`);
+        await page.waitForFunction((r) => document.querySelector(`a.nav[data-route="${r}"]`)?.getAttribute("aria-current") === "page", route);
+        const hrefs = await page.locator("#view a[href], #store-links a[href], #navs a[href]").evaluateAll((as) => as.map((a) => ({ t: a.textContent.trim(), h: a.getAttribute("href"), target: a.getAttribute("target") })));
+        for (const a of hrefs) {
+          assert.ok(!/netlify/i.test(a.h), `${k}/${route}: ${a.t} -> ${a.h}`);
+          if (/^https?:/.test(a.h)) assert.equal(a.target, "_blank", `${a.t} opens in a new tab`);
+          if (a.h.startsWith("#")) hashes.add(a.h);
+        }
+      }
+      assert.equal(await page.locator("#store-links a", { hasText: "Live site" }).getAttribute("href"), site);
+      assert.equal(await page.locator("#store-links a", { hasText: "App" }).getAttribute("href"), app);
+      // a store's pages never link to the other store's pages
+      const other = k === "c3d" ? "ed" : "c3d";
+      assert.deepEqual([...hashes].filter((h) => h.split("/")[1] === other && !h.startsWith("#map")), [], `${k} links stay in ${k}`);
+      hashes.clear();
     }
-    const pages = { dashboard: "Dashboard", c3d: "Charleston 3D", ed: "Elevated Designs", products: "Products", insights: "Insights", marketing: "Marketing", promote: "Promotions", studio: "Design Studio", map: "Service Map" };
-    for (const h of hashes) {
-      const r = h.slice(1).split("/")[0];
-      assert.ok(pages[r], `${h} is a console page`);
+    for (const k of ["c3d", "ed"]) {
+      await page.click(`.seg-btn[data-store="${k}"]`);
+      (await page.locator("#navs a[href^='#']").evaluateAll((as) => as.map((a) => a.getAttribute("href")))).forEach((h) => hashes.add(h));
     }
+    for (const h of hashes) assert.ok(pages.includes(h.slice(1).split("/")[0]), `${h} is a console page`);
   });
 
   await step("dashboard: jump palette, service drawer and theme switch", async () => {
@@ -834,6 +837,7 @@ async function main() {
     await page.waitForFunction(() => location.hash.startsWith("#insights"));
     assert.equal(await page.locator("#palette[open]").count(), 0);
     await page.click('a.nav[data-route="map"]');
+    await page.click('.seg-btn[data-store="c3d"]');
     await page.locator(".card", { hasText: "charleston3d.com" }).first().click();
     await page.waitForSelector("#drawer:not([hidden])");
     assert.equal(await page.evaluate(() => document.activeElement?.id), "d-close");
@@ -849,16 +853,84 @@ async function main() {
 
   await step("mobile 390px: nav fits, every link is reachable and works", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
-    for (const r of ["dashboard", "c3d", "ed", "products", "insights", "studio", "map"]) {
-      const link = page.locator(`a.nav[data-route="${r}"]`);
-      await link.scrollIntoViewIfNeeded();
-      const box = await link.boundingBox();
-      assert.ok(box && box.width >= 32 && box.height >= 32, `${r} tap target ${JSON.stringify(box)}`);
-      await link.click();
-      await page.waitForFunction((rt) => document.querySelector(`a.nav[data-route="${rt}"]`)?.getAttribute("aria-current") === "page", r);
-      await page.waitForTimeout(150);
-      await noOverflow(`${r} 390`);
+    for (const [k, routes] of [["c3d", ["home", "products", "insights", "share", "map", "maker", "nameplate"]], ["ed", ["home", "studio", "library", "share"]]]) {
+      await page.goto(`${BASE}#home/${k}`);
+      for (const r of routes) {
+        await page.click("#more");
+        const link = page.locator(`a.nav[data-route="${r}"]`);
+        await link.scrollIntoViewIfNeeded();
+        const box = await link.boundingBox();
+        assert.ok(box && box.width >= 32 && box.height >= 32, `${r} tap target ${JSON.stringify(box)}`);
+        await link.click();
+        await page.waitForFunction((rt) => document.querySelector(`a.nav[data-route="${rt}"]`)?.getAttribute("aria-current") === "page", r);
+        assert.equal(await page.locator(`a.nav[data-route="${r}"]`).isVisible(), false, "the menu closes after a pick");
+        await page.waitForTimeout(150);
+        await noOverflow(`${k} ${r} 390`);
+      }
     }
+    await page.setViewportSize({ width: 1280, height: 900 });
+  });
+
+  // ---------- Charleston 3D: 3D file library ----------
+  const files = new Map(), fileCalls = [];
+  await page.route("**/api/files**", async (route) => {
+    const req = route.request(), url = new URL(req.url()), [, , , key, part] = url.pathname.split("/");
+    const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    fileCalls.push([req.method(), url.pathname]);
+    if (req.headers()["x-console-key"] !== KEY && !url.searchParams.get("sig")) return json(401, { error: "Wrong or missing console key.", code: "bad_key" });
+    if (req.method() === "GET" && !key) return json(200, { items: [...files.values()].reverse() });
+    if (req.method() === "GET" && part === "thumb") return route.fulfill({ status: 200, contentType: "image/png", body: files.get(key).png });
+    if (req.method() === "POST") {
+      const name = req.headers()["x-filename"];
+      if (!/\.(stl|3mf|obj|step|stp|png|jpe?g|webp)$/i.test(name)) return json(415, { error: "Send a 3D file or a photo." });
+      const k = `t${files.size}-0123abcd`;
+      const item = { key: k, name, type: /\.stl$/i.test(name) ? "model/stl" : "model/step", size: req.postDataBuffer().length, added: Date.now(), store: "c3d", url: `/api/files/${k}?exp=1&sig=x` };
+      files.set(k, item);
+      return json(201, { item });
+    }
+    if (req.method() === "PUT" && part === "thumb") {
+      const f = files.get(key); f.png = req.postDataBuffer(); f.thumb = true; f.thumbUrl = `/api/files/${key}/thumb?exp=1&sig=x`;
+      return json(200, { item: { ...f, png: undefined } });
+    }
+    if (req.method() === "DELETE") { files.delete(key); return json(200, { deleted: key }); }
+    return json(405, { error: "Not supported" });
+  });
+  // a 10 mm cube as a binary STL
+  const cubeStl = () => {
+    const P = [[0,0,0],[10,0,0],[10,10,0],[0,10,0],[0,0,10],[10,0,10],[10,10,10],[0,10,10]];
+    const F = [[0,2,1],[0,3,2],[4,5,6],[4,6,7],[0,1,5],[0,5,4],[1,2,6],[1,6,5],[2,3,7],[2,7,6],[3,0,4],[3,4,7]];
+    const b = Buffer.alloc(84 + 50 * F.length); b.writeUInt32LE(F.length, 80);
+    F.forEach((f, i) => f.forEach((v, j) => P[v].forEach((c, k) => b.writeFloatLE(c, 84 + i * 50 + 12 + j * 12 + k * 4))));
+    return b;
+  };
+  await step("3D file library: Charleston 3D only; upload makes a preview; search and two-click delete", async () => {
+    await page.click('a.nav[data-route="home"]');
+    await page.click('.seg-btn[data-store="ed"]');
+    assert.equal(await page.locator('a.nav[data-route="files"]').count(), 0, "no 3D file library on Elevated Designs");
+    await page.click('.seg-btn[data-store="c3d"]');
+    await page.click('a.nav[data-route="files"]');
+    await page.waitForSelector("text=No files yet");
+    await page.setInputFiles("#file-in", [{ name: "Pineapple Ornament.stl", mimeType: "model/stl", buffer: cubeStl() },
+      { name: "Bracket.step", mimeType: "application/octet-stream", buffer: Buffer.from("ISO-10303-21;\nHEADER;") }]);
+    await page.waitForSelector('.file-card:has-text("Bracket.step")');
+    await page.waitForSelector('.file-card:has-text("Pineapple Ornament.stl") .file-pic img');
+    assert.ok(fileCalls.some(([m, p]) => m === "PUT" && p.endsWith("/thumb")), "a preview was sent for the STL");
+    const png = [...files.values()].find((f) => f.name.endsWith(".stl")).png;
+    assert.ok(png && png.subarray(1, 4).toString() === "PNG" && png.length > 1000, "the preview is a real PNG");
+    assert.equal(await page.locator('.file-card:has-text("Bracket.step") .file-pic img').count(), 0, "STEP shows its type, not a picture");
+    assert.equal(await page.locator('.file-card:has-text("Bracket.step") a', { hasText: "Download" }).getAttribute("download"), "Bracket.step");
+    await page.fill('input[aria-label="Search files"]', "pineapple");
+    assert.equal(await page.locator(".file-card").count(), 1);
+    await page.fill('input[aria-label="Search files"]', "");
+    const del = page.locator('.file-card:has-text("Bracket.step") button', { hasText: "Delete" });
+    await del.click();
+    assert.equal(files.size, 2, "the first click only asks");
+    await page.locator('.file-card:has-text("Bracket.step") button', { hasText: "Delete it?" }).click();
+    await page.waitForFunction(() => document.querySelectorAll(".file-card").length === 1);
+    assert.equal(files.size, 1);
+    await noOverflow("files 1280");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await noOverflow("files 390");
     await page.setViewportSize({ width: 1280, height: 900 });
   });
 
@@ -1334,14 +1406,16 @@ async function main() {
   });
 
   await step("list a design: Elevated Designs page links straight to it; Service Map shows the route", async () => {
-    await page.click('a.nav[data-route="ed"]');
-    await page.click(".quick a:has-text('List a design')");
+    await page.click('.seg-btn[data-store="ed"]');
+    await page.click('a.nav[data-route="home"]');
+    await page.click(".tool-row:has-text('List a design')");
     await page.waitForSelector('.lcard:has-text("palmetto")');
     assert.equal(await page.locator('.seg-btn[data-store="ed"]').getAttribute("aria-pressed"), "true");
     const top = await page.locator("#list-design").evaluate((e) => e.getBoundingClientRect().top);
     assert.ok(top < 900, `panel scrolled into view (${top})`);
-    await page.click('a.nav[data-route="c3d"]');
-    assert.equal(await page.locator(".quick a", { hasText: "List a design" }).count(), 0, "no listing link on Charleston 3D");
+    await page.click('.seg-btn[data-store="c3d"]');
+    await page.click('a.nav[data-route="home"]');
+    assert.equal(await page.locator(".tool-row", { hasText: "List a design" }).count(), 0, "no listing link on Charleston 3D");
     await page.click('a.nav[data-route="map"]');
     assert.match(await page.locator(".route.brand-ed").textContent(), /List in one click/);
     assert.match(await page.locator(".route.brand-c3d").textContent(), /set customizable/);

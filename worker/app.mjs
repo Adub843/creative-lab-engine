@@ -16,6 +16,7 @@ import { handleProducts, HttpError } from "../lib/shopify.mjs";
 import { handleInsights } from "../lib/insights.mjs";
 import { handleListings, libraryReader } from "../lib/listings.mjs";
 import { handleImages } from "../lib/images.mjs";
+import { handleFiles } from "../lib/files.mjs";
 import { kvBlobStore } from "../lib/kv-store.mjs";
 import { handlePricing, scheduledPricing } from "../lib/pricing.mjs";
 import { handleMarketing, runScheduledAudits, runScheduledFixes } from "../lib/marketing.mjs";
@@ -31,6 +32,17 @@ export const SITE_HEADERS = {
   "x-frame-options": "DENY",
   "cross-origin-opener-policy": "same-origin",
   "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=()",
+};
+// The tool apps in tools/ (nameplate maker, hype chain maker, print trends) are single files with
+// their own inline scripts, and run framed inside the console, so they get their own policy:
+// same-origin framing only, no outside connections except the fonts and the web image search.
+export const TOOL_HEADERS = {
+  "content-security-policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' blob: data: https://*.wikipedia.org https://commons.wikimedia.org https://upload.wikimedia.org; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'",
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "strict-origin-when-cross-origin",
+  "x-frame-options": "SAMEORIGIN",
+  "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=()",
+  "x-robots-tag": "noindex, nofollow",
 };
 // API answers: JSON that is never sniffed, cached, framed or run as a page.
 const API_HEADERS = {
@@ -112,6 +124,11 @@ export async function handleRequest(req, env) {
     }
     if (pathname === "/api/images" || pathname.startsWith("/api/images/"))
       return await handleImages(req, { blobs: imageStore(env), env: envReader(env) });
+    // Charleston 3D's 3D files live in the same KV namespace under their own prefixes, never in the image list.
+    if (pathname === "/api/files" || pathname.startsWith("/api/files/")) {
+      imageStore(env); // same binding check and message as the image library
+      return await handleFiles(req, { blobs: kvBlobStore(env.IMAGES, "c3d-file:"), thumbs: kvBlobStore(env.IMAGES, "c3d-thumb:"), env: envReader(env) });
+    }
     if (pathname === "/api" || pathname.startsWith("/api/")) return json({ error: "Not found" }, 404);
   } catch (e) {
     if (e instanceof HttpError) return json({ error: e.message, code: e.code }, e.status);
@@ -122,7 +139,7 @@ export async function handleRequest(req, env) {
   if (!env?.ASSETS) return new Response("Not found", { status: 404, headers: SITE_HEADERS });
   const res = await env.ASSETS.fetch(req);
   const out = new Response(res.body, res);
-  for (const [k, v] of Object.entries(SITE_HEADERS)) out.headers.set(k, v);
+  for (const [k, v] of Object.entries(pathname.startsWith("/tools/") ? TOOL_HEADERS : SITE_HEADERS)) out.headers.set(k, v);
   return out;
 }
 

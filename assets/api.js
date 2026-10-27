@@ -59,6 +59,9 @@ export function askForKey(reason = "Changes to the stores need the console key (
   return asking;
 }
 
+// Leaving a page while it asks for the key cancels the question, so it never sits over the next page.
+export function cancelKeyPrompt() { if (dlg?.open) dlg.close(""); }
+
 // ---------- API calls ----------
 export class ApiError extends Error {
   constructor(status, code, message, details) { super(message); this.status = status; this.code = code; this.details = details; }
@@ -103,19 +106,15 @@ export function initialStore() {
   const saved = store.get("bc-store", "c3d");
   return STORES[saved] ? saved : "c3d";
 }
+// The store is picked once, in the sidebar (assets/app.js). A page that shows one store's data registers
+// what to do when the store changes, so switching reloads that page's data in place.
+let storeHandler = null;
+export const takeStoreHandler = () => { const h = storeHandler; storeHandler = null; return h; };
 export function storeSwitcher(current, onChange) {
-  const group = el("div", { class: "seg", role: "group", "aria-label": "Store" });
-  const paint = () => group.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.store === current)));
-  for (const [k, s] of Object.entries(STORES))
-    group.append(el("button", { type: "button", class: `seg-btn brand-${k}`, "data-store": k, onclick: () => {
-      if (k === current) return;
-      current = k; store.set("bc-store", k); paint();
-      const [route] = location.hash.slice(1).split("/");
-      history.replaceState(null, "", `#${route || "products"}/${k}`);
-      onChange(k);
-    } }, s.name));
-  paint();
-  return group;
+  storeHandler = onChange;
+  const marker = document.createElement("span");
+  marker.hidden = true;
+  return marker;
 }
 
 export const money = (n, currency = "USD", digits = 2) => n == null ? "–"
