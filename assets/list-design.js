@@ -75,7 +75,7 @@ export function listPanel({ onListed = () => {} } = {}) {
   async function load() {
     state.loading = true; state.error = null; draw();
     try {
-      const out = await api("/api/images", { key: true, reason: "The image library needs your console key (it's in your password manager, and in the console's settings in Cloudflare)." });
+      const out = await api("/api/images", { key: true, reason: "The image library needs the console key (the CONSOLE_KEY value set for this console)." });
       state.items = out.items ?? [];
     } catch (e) {
       state.items = []; state.error = e;
@@ -255,7 +255,7 @@ function makeSheet() {
       busy = true; submit.disabled = true; cancel.disabled = true; submit.textContent = "Listing…"; f.setAttribute("aria-busy", "true");
       let out;
       try {
-        out = await api("/api/listings", { method: "POST", key: true, body, reason: "Listing a design on the store needs your console key (it's in your password manager, and in the console's settings in Cloudflare)." });
+        out = await api("/api/listings", { method: "POST", key: true, body, reason: "Listing a design on the store needs the console key (the CONSOLE_KEY value set for this console)." });
       } catch (e2) {
         busy = false; cancel.disabled = false; submit.textContent = "List it"; f.removeAttribute("aria-busy"); update();
         showErr(e2.message, e2.details?.product?.adminUrl);
@@ -344,7 +344,7 @@ function makeSheet() {
     dlg.replaceChildren(head(item), el("p", { class: "muted", id: "ls-loading", role: "status" }, "Getting the listing template…"));
     if (!dlg.open) dlg.showModal();
     try {
-      template ??= (await api("/api/listings?store=ed", { key: true, reason: "Listing a design on the store needs your console key (it's in your password manager, and in the console's settings in Cloudflare)." })).template;
+      template ??= (await api("/api/listings?store=ed", { key: true, reason: "Listing a design on the store needs the console key (the CONSOLE_KEY value set for this console)." })).template;
     } catch (e) {
       if (!dlg.open) return;
       return fail(item, e);
