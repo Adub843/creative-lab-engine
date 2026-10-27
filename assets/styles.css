@@ -689,3 +689,31 @@ textarea.field { resize: vertical; font-family: var(--f-body); }
 .fx-range output { font-variant-numeric: tabular-nums; }
 .fx .btn[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 .swatches .sw-none { display: grid; place-items: center; font-size: 14px; color: var(--muted); background: var(--surface); }
+
+/* ---------- Team ---------- */
+.team-cols { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .team-cols { grid-template-columns: 1fr; } }
+.task-add .field:first-child { flex: 1 1 auto; }
+.task-add select.field, .tasks select.field { flex: 0 0 auto; width: auto; }
+.tasks .task { display: flex; gap: 10px; align-items: center; padding: 8px 4px; border-top: 1px solid var(--line); }
+.tasks .task:first-child { border-top: 0; }
+.tasks .task input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent); flex: none; }
+.task-t { display: grid; gap: 1px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.task-t small { font-size: 12px; }
+.tasks .done .task-t { text-decoration: line-through; color: var(--muted); }
+.tasks select.owner { padding: 4px 8px; font-size: 13px; }
+.roster { display: grid; gap: 0; }
+.member { display: grid; gap: 4px; padding: 12px 0; border-top: 1px solid var(--line); }
+.member:first-child { border-top: 0; padding-top: 0; }
+.member-head { display: flex; gap: 8px; align-items: center; }
+.member-head .btn { margin-left: auto; padding: 3px 10px; font-size: 12.5px; }
+.jobs { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; display: grid; gap: 2px; }
+.home-tasks { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+@media (max-width: 560px) {
+  .task-add { flex-wrap: wrap; }
+  .task-add .field:first-child { flex-basis: 100%; }
+  .task-add select.field { flex: 1 1 auto; }
+  .tasks .task { flex-wrap: wrap; }
+  .tasks .task .task-t { flex-basis: calc(100% - 60px); }
+  .tasks select.owner { margin-left: 27px; }
+}

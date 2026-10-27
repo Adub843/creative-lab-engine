@@ -28,14 +28,14 @@ const product = (store, n, o = {}) => {
     status: o.status ?? "ACTIVE", live: o.live ?? false, url: `${site}/products/${handle}`,
     adminUrl: `https://admin.shopify.com/store/${shop}/products/${store === "c3d" ? 100 + n : 200 + n}`,
     image: null, price: 24 + n, currency: "USD", inventory: o.inventory ?? null, updatedAt: "2026-10-20T10:00:00Z",
-    ...(store === "c3d" ? { customizable: o.customizable ?? false } : {}) };
+    ...(store === "c3d" ? { customizable: o.customizable ?? false } : { builder: o.builder ?? false }) };
 };
 const PRODUCTS = {
   c3d: [product("c3d", 1, { title: "Personalized Name Ornament", type: "Ornament", live: true, handle: "name-ornament", customizable: true }),
     product("c3d", 2, { title: "Rainbow Row Keychain", type: "Keychain", status: "DRAFT", inventory: 12 }),
     product("c3d", 3, { title: "Pineapple Desk Sign With A Very Long Name That Should Wrap Nicely On Phones", type: "Home" }),
     product("c3d", 4, { title: "Broken Publish Product", type: "Test" })],
-  ed: [product("ed", 1, { title: "Lowcountry Tee", type: "Shirt", live: true, handle: "lowcountry-tee" }),
+  ed: [product("ed", 1, { title: "Lowcountry Tee", type: "Shirt", live: true, handle: "lowcountry-tee", builder: true }),
     product("ed", 2, { title: "Pluff Mud Hoodie", type: "Hoodie" })],
 };
 
@@ -152,6 +152,11 @@ async function main() {
       p.customizable = body.customizable;
       return json(200, { store: "c3d", id: p.id, customizable: p.customizable, product: { ...p } });
     }
+    if ("builder" in body) {
+      if (body.store !== "ed") return json(400, { error: "The shirt builder is an Elevated Designs setting.", code: "wrong_store" });
+      p.builder = body.builder;
+      return json(200, { store: "ed", id: p.id, builder: p.builder, product: { ...p } });
+    }
     if (p.title.startsWith("Half")) {
       Object.assign(p, { status: "ACTIVE", live: false });
       return json(422, { error: "It's now Active in Shopify, but it isn't on the Online Store yet: Online Store isn't available. Try the switch again, or publish it in Shopify.", code: "partly_published", details: { product: { ...p } } });
@@ -160,6 +165,32 @@ async function main() {
     const out = { ...p, live: body.live, status: body.live ? "ACTIVE" : p.status };
     Object.assign(p, out); // the store remembers it, like Shopify would
     return json(200, { store: body.store, id: p.id, live: body.live, url: p.url, product: out, indexNow: { sent: true } });
+  });
+  // Team task boards: one per store, kept in memory like the MARKETING KV.
+  const boards = { c3d: [], ed: [] };
+  const teamCalls = [];
+  const ROSTER_ALL = [["aaron", "Aaron", "You"], ["ops", "ops", "OpenClaw"], ["c3d", "c3d", "OpenClaw", "c3d"], ["ed", "ed", "OpenClaw", "ed"], ["marketing", "marketing", "OpenClaw"], ["builder", "builder", "Claude Code"], ["admin", "admin", "OpenClaw"]]
+    .map(([id, name, runs, store]) => ({ id, name, runs, store, role: `${name} role`, jobs: id === "aaron" ? [] : [`Daily: ${name} job`] }));
+  await page.route("**/api/team**", async (route) => {
+    const req = route.request();
+    const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    if (req.headers()["x-console-key"] !== KEY) return json(401, { error: "Wrong or missing console key.", code: "bad_key" });
+    const body = req.method() === "GET" ? { store: new URL(req.url()).searchParams.get("store") } : JSON.parse(req.postData());
+    teamCalls.push({ method: req.method(), body });
+    const tasks = boards[body.store];
+    const roster = ROSTER_ALL.filter((m) => !m.store || m.store === body.store);
+    if (req.method() === "GET") return json(200, { store: body.store, roster, consoleJobs: ["Every 15 min: prices"], tasks });
+    if (req.method() === "POST") {
+      const added = (body.tasks ?? [body]).map((t, i) => ({ id: `t${Date.now()}${i}${tasks.length}`, text: t.text, owner: t.owner ?? "aaron", done: !!t.done, createdAt: "2026-10-27T12:00:00Z", ...(t.done ? { doneAt: "2026-10-27T12:00:00Z" } : {}) }));
+      tasks.push(...added);
+      return json(201, { store: body.store, added, tasks });
+    }
+    const t = tasks.find((x) => x.id === body.id);
+    if (!t) return json(404, { error: "That task isn't on the board any more.", code: "not_found" });
+    if (req.method() === "DELETE") { tasks.splice(tasks.indexOf(t), 1); return json(200, { store: body.store, tasks }); }
+    for (const k of ["done", "owner", "text"]) if (k in body) t[k] = body[k];
+    if (body.done) t.doneAt = "2026-10-27T13:00:00Z";
+    return json(200, { store: body.store, task: t, tasks });
   });
   await page.route("**/api/insights**", async (route) => {
     const u = new URL(route.request().url());
@@ -444,7 +475,8 @@ async function main() {
     assert.equal(await page.locator('a.nav[data-route="nameplate"]').count(), 0, "the 3D makers are Charleston 3D only");
     await page.click('.seg-btn[data-store="c3d"]');
     await page.click('a.nav[data-route="home"]');
-    assert.equal(await page.locator(".tool-row", { hasText: "Insights" }).getAttribute("href"), "#insights/c3d");
+    assert.equal(await page.locator(".tool-row").count(), 0, "Home doesn't repeat the sidebar's tools");
+    assert.equal(await page.locator('a.nav[data-route="insights"]').getAttribute("href"), "#insights/c3d");
     await page.click('a.nav[data-route="products"]');
     await page.waitForSelector('.prow:has-text("Rainbow Row")');
     await page.click('.seg-btn[data-store="ed"]');
@@ -807,7 +839,7 @@ async function main() {
   });
 
   await step("home pages: store links go to the Shopify sites, not Netlify", async () => {
-    const pages = ["home", "products", "insights", "marketing", "promote", "studio", "map", "share", "trends", "nameplate", "hypechain", "maker", "files", "maker3d", "designs"];
+    const pages = ["home", "products", "insights", "marketing", "promote", "studio", "map", "share", "team", "trends", "nameplate", "hypechain", "maker", "files", "maker3d", "designs"];
     const hashes = new Set();
     for (const [k, site, app] of [["c3d", "https://charleston3d.com", "https://app.charleston3d.com"], ["ed", "https://elevatedshirts.com", "https://design.elevatedshirts.com"]]) {
       await page.click('a.nav[data-route="home"]');
@@ -1483,14 +1515,14 @@ async function main() {
   await step("list a design: Elevated Designs page links straight to it; Service Map shows the route", async () => {
     await page.click('.seg-btn[data-store="ed"]');
     await page.click('a.nav[data-route="home"]');
-    await page.click(".tool-row:has-text('List a design')");
+    await page.click(".home-head a:has-text('List a design')");
     await page.waitForSelector('.lcard:has-text("palmetto")');
     assert.equal(await page.locator('.seg-btn[data-store="ed"]').getAttribute("aria-pressed"), "true");
     const top = await page.locator("#list-design").evaluate((e) => e.getBoundingClientRect().top);
     assert.ok(top < 900, `panel scrolled into view (${top})`);
     await page.click('.seg-btn[data-store="c3d"]');
     await page.click('a.nav[data-route="home"]');
-    assert.equal(await page.locator(".tool-row", { hasText: "List a design" }).count(), 0, "no listing link on Charleston 3D");
+    assert.equal(await page.locator("#view a", { hasText: "List a design" }).count(), 0, "no listing link on Charleston 3D");
     await page.click('a.nav[data-route="map"]');
     assert.match(await page.locator(".route.brand-ed").textContent(), /List in one click/);
     assert.match(await page.locator(".route.brand-c3d").textContent(), /set customizable/);
@@ -1917,6 +1949,72 @@ async function main() {
     assert.ok(box && box.x + box.width <= 390, `Delete is on screen (${JSON.stringify(box)})`);
     if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "promotions-390.png"), fullPage: true }); }
     await page.setViewportSize({ width: 1280, height: 900 });
+  });
+
+  await step("team: shared board per store, add for an agent, done, reassign, remove; old device list moves onto it", async () => {
+    await page.click('.seg-btn[data-store="c3d"]');
+    await page.evaluate(() => localStorage.setItem("bc-todo-c3d", JSON.stringify([{ t: "Check Insights", d: false }, { t: "Call the print shop", d: false }])));
+    await page.click('a.nav[data-route="team"]');
+    await page.waitForSelector(".tasks .task");
+    assert.deepEqual(await page.locator(".tasks .task-t").evaluateAll((n) => n.map((x) => x.firstChild.textContent)), ["Call the print shop"], "only typed tasks move, not the starter ones");
+    assert.equal(await page.evaluate(() => localStorage.getItem("bc-todo-c3d")), null);
+    assert.equal(await page.locator('#task-owner option[value="ed"]').count(), 0, "no Elevated Designs agent on the Charleston 3D board");
+    await page.fill("#task-new", "Reprint the sign");
+    await page.selectOption("#task-owner", "c3d");
+    await page.click("#task-add");
+    await page.waitForFunction(() => document.querySelectorAll(".tasks .task").length === 2);
+    assert.deepEqual(teamCalls.at(-1).body, { store: "c3d", text: "Reprint the sign", owner: "c3d" });
+    const task = (t) => page.locator(".tasks .task", { hasText: t });
+    await task("Call the print shop").locator("input[type=checkbox]").check();
+    await page.waitForFunction(() => document.querySelectorAll(".tasks .task").length === 1);
+    assert.equal(boards.c3d.find((t) => t.text === "Call the print shop").done, true);
+    await page.click("#task-done-toggle");
+    await page.waitForSelector(".tasks .task.done");
+    await task("Reprint the sign").locator("select.owner").selectOption("marketing");
+    await page.waitForFunction(() => document.querySelector('.member[data-id="marketing"] .member-head .btn')?.textContent === "1 open");
+    await task("Call the print shop").locator("button.x").click();
+    await page.waitForFunction(() => document.querySelectorAll(".tasks .task").length === 1);
+    assert.equal(await page.locator(".member", { hasText: "Console" }).count(), 1, "the console's own jobs are listed too");
+    await noOverflow("team 1280");
+    if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "team-c3d-1280.png"), fullPage: true }); }
+    await page.click('.seg-btn[data-store="ed"]');
+    await page.waitForFunction(() => document.querySelector("#board-title")?.textContent === "Elevated Designs tasks");
+    assert.equal(await page.locator(".tasks .task").count(), 0, "the boards never mix");
+    assert.equal(await page.locator('.member[data-id="c3d"]').count(), 0);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.fill("#task-new", "Order more Gildan 5000 in navy");
+    await page.click("#task-add");
+    await page.waitForSelector(".tasks .task");
+    await noOverflow("team 390");
+    if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "team-ed-390.png"), fullPage: true }); }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.click('a.nav[data-route="home"]');
+    await page.waitForSelector(".home-tasks li");
+    assert.equal(await page.locator(".home-tasks li").first().textContent(), "Order more Gildan 5000 in navy");
+  });
+
+  await step("shirt builder: a switch per Elevated Designs product, none on Charleston 3D; off sends only the tag", async () => {
+    await page.click('a.nav[data-route="products"]');
+    await page.waitForSelector('.prow:has-text("Lowcountry Tee")');
+    const bsw = (t) => page.locator(".prow", { hasText: t }).locator('.switch[data-field="builder"]');
+    assert.equal(await bsw("Lowcountry Tee").getAttribute("aria-checked"), "true");
+    await page.selectOption("#prod-filter", "builder");
+    assert.equal(await page.locator(".prow").count(), 1);
+    await page.selectOption("#prod-filter", "all");
+    const before = posts.length;
+    await bsw("Lowcountry Tee").click();
+    await page.waitForFunction(() => document.querySelector('.prow[data-id$="/201"] .pcust > span')?.textContent === "Shirt builder");
+    assert.deepEqual(posts.at(-1).body, { store: "ed", id: PRODUCTS.ed[0].id, builder: false });
+    assert.equal(posts.length - before, 1);
+    assert.equal(await bsw("Lowcountry Tee").getAttribute("aria-checked"), "false");
+    assert.match(await toastText(), /Lowcountry Tee is out of the shirt builder/);
+    assert.equal(await page.locator(".prow", { hasText: "Lowcountry Tee" }).locator('.switch[data-field="live"]').getAttribute("aria-checked"), "true", "still live on the site");
+    await bsw("Lowcountry Tee").click();
+    await page.waitForFunction(() => document.querySelector('.prow[data-id$="/201"] .switch[data-field="builder"]')?.getAttribute("aria-checked") === "true" && !document.querySelector(".prow.pending"));
+    await page.click('.seg-btn[data-store="c3d"]');
+    await page.waitForSelector('.prow:has-text("Rainbow Row")');
+    assert.equal(await page.locator('.switch[data-field="builder"]').count(), 0);
+    assert.equal(await page.locator('#prod-filter option[value="builder"]').isDisabled(), true);
   });
 
   await step("design library: every Elevated Designs image with categories, filters, edit one, move several; no logos or Charleston 3D in List a design", async () => {

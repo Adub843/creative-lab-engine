@@ -53,6 +53,7 @@ export const TOOLS = [
   { id: "orders", group: "store", name: "Orders", ico: "▣", url: (b) => `${b.site}/admin/orders`, sub: "Shopify admin" },
 
   // System
+  { id: "team", group: "system", name: "Team", ico: "☰", page: "team", sub: "Tasks for you and the agents, and when each job runs" },
   { id: "map", group: "system", name: "Service map", ico: "⇄", page: "map", sub: "Where every site, store and tool lives" },
 ];
 

@@ -1,6 +1,6 @@
 import { BRANDS, STATUS, SERVICES, ROUTES, CLEANUP, TOPOLOGY } from "./data.js";
 import { GROUPS, TOOLS, toolsFor } from "./tools.js";
-import { takeStoreHandler, cancelKeyPrompt } from "./api.js";
+import { takeStoreHandler, cancelKeyPrompt, consoleKey } from "./api.js";
 import { filesPage } from "./files.js";
 import { meshyPage } from "./meshy.js";
 
@@ -114,23 +114,6 @@ function alertsList(list) {
     el("div", { class: "stack", style: "gap:2px" }, el("strong", {}, s.name), el("p", {}, s.note || s.does)),
     el("button", { class: "btn ghost", type: "button", onclick: () => openService(s) }, "Open"))));
 }
-function todoWidget(key, seed) {
-  let items = store.get(key, seed);
-  const box = el("div", { class: "todo" });
-  const input = el("input", { class: "field", id: `${key}-new`, placeholder: "Add a task and press Enter", "aria-label": "New task" });
-  const save = () => { store.set(key, items); draw(); };
-  const add = () => { const t = input.value.trim(); if (!t) return; items.push({ t, d: false }); input.value = ""; save(); };
-  input.addEventListener("keydown", (e) => e.key === "Enter" && add());
-  function draw() {
-    box.replaceChildren(...items.map((it, i) => el("label", { class: it.d ? "done" : "" },
-      el("input", { type: "checkbox", checked: it.d, onchange: () => { it.d = !it.d; save(); } }),
-      el("span", {}, it.t),
-      el("button", { class: "x", type: "button", "aria-label": `Remove ${it.t}`, onclick: (e) => { e.preventDefault(); items.splice(i, 1); save(); } }, "×"))));
-  }
-  draw();
-  return el("div", { class: "stack" }, box, el("div", { class: "add-row" }, input, el("button", { class: "btn", type: "button", onclick: add }, "Add")),
-    el("p", { class: "muted", style: "font-size:12.5px" }, "Saved on this device."));
-}
 async function recentImages(n = 12) {
   const { listImages, imageUrl } = await import("./studio.js");
   const { isLogo, isOtherBrand } = await import("./image-filters.js");
@@ -205,7 +188,13 @@ export function setStore(k, navigate = true) {
   const keeps = r === "home" || r === "map" || (t && !t.store);
   const next = keeps ? `#${[r, k, ...rest].join("/")}` : `#home/${k}`;
   const handler = keeps && r !== "home" && r !== "map" ? pageStoreHandler : null;
-  if (handler) { history.replaceState(null, "", next); drawNav(); handler(k); }
+  if (handler) {
+    history.replaceState(null, "", next); drawNav(); handler(k);
+    // The page heading names the store; keep it in step with the page that just reloaded in place.
+    const eyebrow = view.querySelector(".page-head .eyebrow");
+    if (eyebrow && STORE_KEYS.some((s) => BRANDS[s].name === eyebrow.textContent)) eyebrow.textContent = BRANDS[k].name;
+    document.title = document.title.replace(/· [^·]+ · Business Console$/, `· ${BRANDS[k].name} · Business Console`);
+  }
   else location.hash = next;
 }
 let pageStoreHandler = null;
@@ -228,46 +217,28 @@ function header(eyebrow, title, sub, actions = []) {
     el("div", { class: "row" }, actions));
 }
 
-// One row per tool: what it does, one click to open.
-function toolList(list, k) {
-  return el("div", { class: "tool-list" }, list.map((t) => {
-    const href = toolHref(t, k);
-    return el("a", { class: "tool-row", href, target: ext(href) ? "_blank" : null, rel: ext(href) ? "noopener" : null },
-      el("span", { class: "tool-ico", "aria-hidden": "true" }, t.ico),
-      el("span", { class: "tool-t" }, el("strong", {}, t.name), el("small", {}, t.sub)),
-      el("span", { class: "q-go", "aria-hidden": "true" }, ext(href) ? "↗" : "›"));
-  }));
-}
-
+// Home: what needs Aaron today. The tools themselves are in the sidebar (More on a phone), and every
+// service is on the Service map, so Home doesn't repeat them.
 function home() {
   const k = currentStore();
   const b = BRANDS[k];
-  const mine = SERVICES.filter((s) => s.brand === k);
-  const attn = mine.filter((s) => s.status === "attn");
+  const attn = SERVICES.filter((s) => s.brand === k && s.status === "attn");
   const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-  const tools = toolsFor(k);
-  const byGroup = (id) => tools.filter((t) => t.group === id);
-  const sections = [["research", "Research", "Find what to make and sell"], ["make", "Make", "Design it and get it on the store"],
-    ["library", "Library", "Everything you've made, saved online"], ["grow", "Stats & marketing", "See what's working and push it"]].filter(([id]) => byGroup(id).length);
+  const tasks = el("div", {}, el("p", { class: "muted" }, "Loading tasks…"));
+  import("./team.js").then(({ homeTasks }) => homeTasks(k, !!consoleKey.get())).then((n) => tasks.replaceChildren(...[n].flat()))
+    .catch(() => tasks.replaceChildren(el("a", { class: "btn ghost", href: `#team/${k}` }, "Open the Team board")));
   const imgs = el("div", {}, el("p", { class: "muted" }, "Loading images…"));
   if (k === "ed") recentImages().then((n) => imgs.replaceChildren(n)).catch(() => imgs.replaceChildren(el("p", { class: "muted" }, "Couldn't load images.")));
   const primary = k === "ed" ? el("a", { class: "btn primary", href: "#products/ed/list" }, "List a design")
     : el("a", { class: "btn primary", href: "#nameplate/c3d" }, "Make a nameplate");
   return [
     el("div", { class: `home-head brand-${k}` }, el("div", { class: `brand-chip logo-${k}` }, brandLogo(k)),
-      header(today, b.name, b.tagline, [el("button", { class: "btn", type: "button", onclick: openPalette }, "Jump to… ", el("kbd", {}, "/")), primary])),
-    el("div", { class: "home-cols" }, sections.map(([id, title, sub]) =>
-      el("section", { class: "panel" }, el("div", { class: "panel-head" }, el("h2", {}, title), el("span", { class: "muted small" }, sub)), toolList(byGroup(id), k)))),
+      header(today, b.name, b.tagline, [primary])),
     el("div", { class: "grid-2" },
-      el("section", { class: "panel" }, el("h2", {}, "Needs you"), alertsList(attn)),
-      el("section", { class: "panel" }, el("h2", {}, "Today's tasks"),
-        todoWidget(`bc-todo-${k}`, k === "ed"
-          ? [{ t: "List a new design", d: false }, { t: "Check Insights", d: false }]
-          : [{ t: "Check new custom requests", d: false }, { t: "Check Insights", d: false }]))),
+      el("section", { class: "panel" }, el("div", { class: "panel-head" }, el("h2", {}, "Needs you"), el("a", { class: "btn ghost", href: `#map/${k}` }, "Service map")), alertsList(attn)),
+      el("section", { class: "panel" }, el("div", { class: "panel-head" }, el("h2", {}, "Your tasks")), tasks)),
     k === "ed" ? el("section", { class: "panel" },
       el("div", { class: "panel-head" }, el("h2", {}, "Latest designs"), el("a", { class: "btn ghost", href: "#designs/ed" }, "Open library")), imgs) : null,
-    el("section", { class: "panel" }, el("div", { class: "panel-head" }, el("h2", {}, `Everything behind ${b.name}`), el("a", { class: "btn ghost", href: `#map/${k}` }, "Service map")),
-      serviceCards(mine)),
   ];
 }
 
@@ -360,6 +331,11 @@ async function marketingPage() {
 async function promotePage() {
   const { renderPromotions } = await import("./promotions.js");
   return [header(BRANDS[currentStore()].name, "Promotions", "Shopify's marketing tools for each store: discounts, gift cards, customer groups, campaigns, sales channels and abandoned checkouts."), await renderPromotions()];
+}
+
+async function teamPage() {
+  const { renderTeam } = await import("./team.js");
+  return [header(BRANDS[currentStore()].name, "Team", "Your tasks and the agents', saved online so every device sees the same board, plus when each scheduled job runs."), await renderTeam()];
 }
 
 async function studioPage() {
@@ -469,6 +445,7 @@ async function render() {
     marketing: marketingPage,
     promote: promotePage,
     share: sharePage,
+    team: teamPage,
     files: () => filesPage(header),
     designs: async () => (await import("./design-library.js")).designLibraryPage(header),
     maker3d: () => meshyPage(header),
