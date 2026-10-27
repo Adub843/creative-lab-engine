@@ -1268,6 +1268,22 @@ async function main() {
       campaigns: [{ source: "qr", medium: "print", campaign: "ed-builder", sessions: 4, conversionRate: 0 }] },
     google: { connected: false, note: "Connect Google Search Console to see Google searches here (see the setup guide)." },
     bing: { connected: true, clicks: 3, impressions: 120, start: "2026-09-26", end: "2026-10-25", queries: [{ query: "charleston 3d printing", impressions: 60, clicks: 2, position: 7.5 }], opportunities: [{ query: "charleston 3d printing", position: 7.5 }] } };
+  let mkCompetitors = [];
+  const mkTracker = (store) => {
+    const site = store === "ed" ? "https://elevatedshirts.com" : "https://charleston3d.com";
+    const trend = Array.from({ length: 14 }, (_, k) => ({ date: mkDay(13 - k), average: 14 - k * 0.5, seen: 1, visibility: 2 + k * 0.6 }));
+    const series = (start) => trend.map((d, k) => ({ date: d.date, position: start == null ? null : Math.max(1, start - k * 0.5) }));
+    return { store, site, saveAvailable: true, sources: { google: { connected: true }, bing: { connected: true } },
+      snapshot: { latest: mkDay(0), days: 14, taken: false },
+      visibility: { google: { top3: 0, top10: 1, top20: 0, beyond: 0, none: mkKeywords.length - 1 }, bing: { top3: 1, top10: 0, top20: 0, beyond: 0, none: mkKeywords.length - 1 }, tracked: mkKeywords.length },
+      trend,
+      keywords: mkKeywords.map((k, i) => ({ keyword: k, position: i ? null : 7.5, week: i ? null : 11, month: null, best: i ? null : 7.5, change7: i ? null : 3.5, change28: null, clicks: i ? 0 : 4, impressions: i ? 0 : 120, series: series(i ? null : 14), bing: i ? null : 3 })),
+      pages: { winners: [{ page: `${site}/products/rainbow-row-ornament`, clicks: 12, clicksBefore: 4, impressions: 300, impressionsBefore: 200, position: 6, positionBefore: 9, change: 8, shownChange: 100 }],
+        losers: [{ page: `${site}/pages/about`, clicks: 1, clicksBefore: 6, impressions: 50, impressionsBefore: 80, position: 20, positionBefore: 12, change: -5, shownChange: -30 }] },
+      ideas: [{ query: "rainbow row ornament", clicks: 2, impressions: 260, position: 11.4 }, { query: "holy city keychain", clicks: 0, impressions: 30, position: 24 }],
+      backlinks: { connected: true, pages: [{ url: `${site}/`, links: 3 }, { url: `${site}/products/rainbow-row-ornament`, links: 1 }], total: 4 },
+      competitors: mkCompetitors };
+  };
   await page.route("**/api/marketing**", async (route) => {
     const req = route.request();
     const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
@@ -1291,10 +1307,18 @@ async function main() {
           posts: [{ title: "Rainbow Row ornaments for the holidays", url: "https://charleston3d.com/blogs/news/rainbow-row-ornaments", published: "2026-10-20T14:00:00Z" }] });
       if (part === "keywords") return json(200, { store, saveAvailable: true, keywords: mkKeywords.map((k, i) => ({ keyword: k, google: i ? null : { clicks: 4, impressions: 120, position: 8.4, page: "https://charleston3d.com/pages/custom", searches: 3 }, googlePrev: null, bing: { clicks: 1, impressions: 9, position: 5, page: "", searches: 1 }, moved: i ? null : 2.1 })),
         sources: { google: { connected: true }, bing: { connected: true } } });
+      if (part === "tracker") return json(200, mkTracker(store));
       return json(400, { error: "bad part" });
     }
     const b = JSON.parse(req.postData());
     mkPosts.push(b);
+    if (b.action === "competitors") { mkCompetitors = b.competitors.map((c) => c.replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "").toLowerCase()); return json(200, { store: b.store, competitors: mkCompetitors }); }
+    if (b.action === "compare") return json(200, { store: b.store,
+      own: { host: "charleston3d.com", title: "Charleston3D | 3D Printed Gifts Made in Charleston, SC", titleLength: 54, description: "Custom 3D printed gifts made in Charleston.", descriptionLength: 43, h1: 1, words: 420, schema: ["LocalBusiness", "OnlineStore"], local: true, socialCard: true, images: 12, imagesNoAlt: 0 },
+      competitors: mkCompetitors.map((h, i) => (i ? { host: h, error: "couldn't connect" } : { host: h, title: "Rival Prints", titleLength: 12, description: "", descriptionLength: 0, h1: 2, words: 180, schema: [], local: false, socialCard: false, images: 6, imagesNoAlt: 4 })) });
+    if (b.action === "ideas") return json(200, { store: b.store, error: null, ideas: [{ phrase: "3d printing near me", from: b.seeds[0], sources: ["Google", "Bing"] }, { phrase: "3d printing charleston sc", from: b.seeds[0], sources: ["Google"] }] });
+    if (b.action === "links") return json(200, { store: b.store, url: b.url, links: [{ from: "https://blog.example/best-gifts", anchor: "Charleston3D" }] });
+    if (b.action === "snapshot") return json(200, { store: b.store, date: "2026-10-26", days: 15 });
     if (b.action === "seo") return json(200, { seoTitle: b.seoTitle, seoDescription: b.seoDescription, indexNow: { sent: true } });
     if (b.action === "alt") return json(200, { alt: b.alt });
     if (b.action === "settings") return json(200, { settings: { ...mkSettings.settings, ...b.values }, changed: Object.keys(b.values) });
@@ -1377,7 +1401,49 @@ async function main() {
     await kw.locator("button", { hasText: "Save keywords" }).click();
     await page.waitForSelector("text=Tracking 2 keywords");
     assert.deepEqual(mkPosts.find((p) => p.action === "keywords").keywords, ["3d printing charleston", "Custom Ornaments"]);
-    await page.locator(".panel:has-text('Keywords') td", { hasText: "custom ornaments" }).waitFor();
+    await page.locator("#mk-keywords td", { hasText: "custom ornaments" }).waitFor();
+  });
+
+  await step("marketing: rank tracker shows visibility, history, movers, ideas, backlinks and competitors", async () => {
+    const trk = page.locator("#mk-tracker");
+    await trk.locator("td", { hasText: "custom ornaments" }).waitFor();
+    assert.equal(await page.locator('.jump a[href="#mk-tracker"]').textContent(), "Rank tracker");
+    assert.match(await trk.locator(".tile").first().textContent(), /Visibility\s*9\.8%\s*▲ 4\.2 pts vs a week ago/);
+    assert.match(await trk.locator(".tile", { hasText: "first page" }).textContent(), /1 \/ 2/);
+    assert.equal(await trk.locator(".chart").count(), 1, "visibility trend chart");
+    assert.match(await trk.locator("tbody tr", { hasText: "3d printing charleston" }).first().textContent(), /3d printing charleston\s*7\.5\s*▲ 3\.5\s*–\s*7\.5\s*3/);
+    assert.equal(await trk.locator("tbody tr", { hasText: "3d printing charleston" }).first().locator("svg.spark").count(), 1);
+    assert.match(await trk.textContent(), /Gaining.*rainbow-row-ornament.*▲ 8.*Losing.*\/pages\/about.*▼ 5/s);
+    await trk.locator("tr", { hasText: "rainbow row ornament" }).locator("button", { hasText: "Track" }).click();
+    await page.waitForSelector('text=Now tracking "rainbow row ornament"');
+    assert.deepEqual(mkPosts.filter((p) => p.action === "keywords").at(-1).keywords, ["3d printing charleston", "custom ornaments", "rainbow row ornament"]);
+    await trk.locator("td", { hasText: "rainbow row ornament" }).first().waitFor();
+    await trk.locator("button", { hasText: "Get suggestions from Google and Bing" }).click();
+    await trk.locator(".ideas li", { hasText: "3d printing near me" }).waitFor();
+    assert.match(await trk.locator(".ideas li").first().textContent(), /3d printing near me\s*Google \+ Bing/);
+    assert.deepEqual(mkPosts.find((p) => p.action === "ideas").seeds, ["3d printing charleston", "custom ornaments", "rainbow row ornament"]);
+    await trk.locator(".movers li", { hasText: "4 links" }).count().then((n) => assert.equal(n, 0));
+    await trk.locator(".movers li", { hasText: "3 links" }).locator("button", { hasText: "Who links here" }).click();
+    await trk.locator("a", { hasText: "https://blog.example/best-gifts" }).waitFor();
+    assert.equal(mkPosts.find((p) => p.action === "links").url, "https://charleston3d.com/");
+    assert.equal(await trk.locator("button", { hasText: "Compare" }).isDisabled(), true, "nothing to compare until competitors are saved");
+    await trk.locator('textarea[aria-label="Competitor websites, one per line"]').fill("https://www.Rival.com/shop\ndown.example");
+    await trk.locator("button", { hasText: "Save competitors" }).click();
+    await page.waitForSelector("text=Saved 2 competitors");
+    await trk.locator("button", { hasText: "Compare" }).click();
+    await trk.locator("th", { hasText: "rival.com" }).waitFor();
+    assert.match(await trk.locator("tr", { hasText: "Page title" }).textContent(), /Charleston3D \| 3D Printed Gifts.*Rival Prints.*–/);
+    assert.match(await trk.locator("tr", { hasText: "Loads" }).textContent(), /Yes\s*Yes\s*No \(couldn't connect\)/);
+    await trk.locator("button", { hasText: "Take a snapshot now" }).click();
+    await page.waitForSelector("text=Snapshot saved for Oct 26");
+    assert.match(await trk.locator("summary", { hasText: "What free data can't show" }).textContent(), /free data/);
+    await noOverflow("rank tracker 1280");
+    if (SCREENS) { await clearToasts(); await trk.screenshot({ path: path.join(SCREENS, "tracker-1280.png") }); }
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(150);
+    await noOverflow("rank tracker 390");
+    if (SCREENS) { await clearToasts(); await trk.screenshot({ path: path.join(SCREENS, "tracker-390.png") }); }
+    await page.setViewportSize({ width: 1280, height: 900 });
   });
 
   await step("marketing: edit a product's SEO with the suggestion and save alt text", async () => {
