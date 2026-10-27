@@ -130,7 +130,14 @@ export async function renderPromotions() {
     const segments = d.segments.items ?? [];
     const who = el("select", { class: "field", name: "segmentId" }, el("option", { value: "" }, "Everyone"), segments.map((g) => el("option", { value: g.id }, g.name)));
     const valueLabel = el("span", { class: "small muted" }, "Percent off");
-    const codeOnly = [field("Code", code), field("Total uses", limit), el("label", { class: "row small" }, once, "One use per customer")];
+    // Suggests a code from the name and amount (HOLIDAY15), or a short random one when there's no name yet.
+    const suggest = el("button", { class: "linkbtn small", type: "button", style: "justify-self:start", onclick: () => {
+      const word = (title.value.match(/[A-Za-z]{3,}/)?.[0] ?? "").toUpperCase().slice(0, 10);
+      const num = value.value ? String(Math.round(Number(value.value))) : "";
+      code.value = word ? `${word}${num}` : `SAVE${num}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+      code.dispatchEvent(new Event("input", { bubbles: true }));
+    } }, "Suggest a code");
+    const codeOnly = [el("div", { class: "stack", style: "gap:4px" }, field("Code", code), suggest), field("Total uses", limit), el("label", { class: "row small" }, once, "One use per customer")];
     const paint = () => {
       const auto = method.value === "automatic";
       codeOnly.forEach((n) => { n.hidden = auto; });
