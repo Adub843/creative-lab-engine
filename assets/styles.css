@@ -618,3 +618,11 @@ textarea.field { resize: vertical; font-family: var(--f-body); }
   .m3d-row .m3d-st { grid-column: 2; justify-self: start; }
   .m3d-acts .btn { flex: 1 1 calc(50% - 8px); justify-content: center; }
 }
+
+/* Back button: top of every page but Home */
+.back-btn { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; justify-self: start; width: fit-content; min-height: 32px; padding: 4px 12px 4px 8px; margin-bottom: 4px;
+  border: 1px solid var(--line); border-radius: 999px; color: var(--fg); font-size: 13.5px; font-weight: 600; text-decoration: none; background: var(--surface); }
+.back-btn span { font-size: 18px; line-height: 1; }
+.back-btn:hover { border-color: var(--fg); }
+.back-btn:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+.back-bar { display: flex; }

@@ -1911,6 +1911,37 @@ async function main() {
     await page.setViewportSize({ width: 1280, height: 900 });
   });
 
+  await step("back button: on every page but Home; goes back in the console, or Home when opened directly", async () => {
+    for (const k of ["c3d", "ed"]) {
+      await page.goto(`${BASE}#home/${k}`);
+      await page.waitForSelector('a.nav[data-route="home"][aria-current="page"]');
+      assert.equal(await page.locator("#view .back-btn").count(), 0, "no Back on Home");
+      const routes = await page.locator("#navs a.nav[href^='#']").evaluateAll((as) => as.map((a) => a.dataset.route).filter((r) => r && r !== "home"));
+      assert.ok(routes.length > 5, `${k} has pages`);
+      for (const r of routes) {
+        await page.click(`a.nav[data-route="${r}"]`);
+        await page.waitForFunction((x) => document.querySelector(`a.nav[data-route="${x}"]`)?.getAttribute("aria-current") === "page", r);
+        await page.waitForSelector("#view .back-btn", { state: "attached", timeout: 15000 }).catch(() => { throw new Error(`${k}/${r} has no Back button`); });
+        assert.equal(await page.locator("#view .back-btn").count(), 1, `${k}/${r}: one Back button`);
+      }
+      // Back returns to the page before
+      await page.click('a.nav[data-route="insights"]');
+      await page.waitForFunction(() => location.hash.startsWith("#insights"));
+      await page.click('a.nav[data-route="share"]');
+      await page.waitForSelector('#view .back-btn');
+      await page.waitForFunction(() => location.hash.startsWith("#share"));
+      await page.click("#view .back-btn");
+      await page.waitForFunction(() => location.hash.startsWith("#insights"));
+    }
+    // opened straight from a link: Back goes to that brand's Home
+    const fresh = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await fresh.goto(`${BASE}#share/ed`);
+    await fresh.waitForSelector("#view .back-btn");
+    await fresh.click("#view .back-btn");
+    await fresh.waitForFunction(() => location.hash === "#home/ed");
+    await fresh.close();
+  });
+
   await step("no console errors", async () => {
     if (errors.length) console.log("ERRORS", JSON.stringify(errors, null, 1)); assert.deepEqual(errors, []);
   });
