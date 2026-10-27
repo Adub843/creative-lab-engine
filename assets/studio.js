@@ -2,7 +2,7 @@
 // Images live online (Cloudflare Workers KV) through /api/images, so the PC can stay off.
 // If that API can't be reached (served as plain files, or not deployed yet), images are kept in this browser instead.
 import { el, store, toast } from "./app.js";
-import { consoleKey } from "./api.js";
+import { askForKey, consoleKey } from "./api.js";
 
 const API = "/api/images";
 const PRINT_W = 4500; // 15 in at 300 dpi
@@ -131,6 +131,7 @@ export async function renderStudio() {
     el("button", { class: "btn ghost", type: "button", onclick: () => fileIn.click() }, "choose files"));
   const search = el("input", { class: "field", type: "search", placeholder: "Search by name or tag", "aria-label": "Search images" });
   const countLine = el("p", { class: "muted small" });
+  const syncLine = el("p", { class: "muted small" });
   const lib = el("div", { class: "lib", role: "list" });
 
   // stage column
@@ -152,7 +153,8 @@ export async function renderStudio() {
     const localCount = state.items.filter((i) => i.local).length;
     countLine.textContent = `${shown.length} of ${state.items.length} images` +
       (localCount ? `. ${localCount} saved only in this browser.` : ".") +
-      (cloudLocked ? " Enter the console key under Settings to see the online library." : "");
+      (cloudLocked ? " Enter the console key to see the online library." : "");
+    if (cloudLocked) countLine.append(" ", el("button", { class: "btn ghost", type: "button", onclick: () => unlock() }, "Enter console key"));
     lib.replaceChildren(...shown.map((i) => {
       const b = el("button", { type: "button", draggable: "true", title: `${i.name}${i.tags ? ` · ${i.tags}` : ""}\nClick to add, or drag onto the shirt`,
         onclick: () => addLayer(i), role: "listitem" },
@@ -169,6 +171,24 @@ export async function renderStudio() {
     if (!shown.length) lib.append(el("p", { class: "muted small" }, state.items.length ? "No images match that search." : "No images yet. Upload some to start your catalog."));
   };
   const refresh = async () => { state.items = await listImages(); drawLib(); };
+  // Without the key the online library answers 401, so ask for it (once per tab) instead of
+  // showing an empty library.
+  const unlock = async () => {
+    const k = await askForKey("The image library needs the console key (the CONSOLE_KEY value set for this console).");
+    if (!k) return;
+    keyIn.value = k;
+    await refresh();
+  };
+  // When the hourly Kittl library sync last ran (counts only, no key needed).
+  const showSync = async () => {
+    try {
+      const s = await (await fetch("/api/library-sync", { headers: { accept: "application/json" } })).json();
+      if (!s?.at && !s?.finishedAt && !s?.ranAt) { syncLine.textContent = s?.error ? `Kittl sync: ${s.error}` : ""; return; }
+      const when = new Date(s.finishedAt ?? s.ranAt ?? s.at);
+      const n = (v) => Array.isArray(v) ? v.length : (v ?? 0);
+      syncLine.textContent = `Kittl sync ${when.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}: ${n(s.added)} added, ${n(s.removed)} removed${s.failed ? `, ${s.failed} couldn't copy` : ""}. Runs every hour.`;
+    } catch { syncLine.textContent = ""; }
+  };
 
   const uploadFiles = async (files) => {
     const list = [...files].filter((f) => f.type.startsWith("image/"));
@@ -330,7 +350,7 @@ export async function renderStudio() {
   const page = el("div", { class: "studio" },
     el("section", { class: "panel stack", "aria-label": "Image library" },
       el("div", { class: "panel-head" }, el("h2", {}, "Image library"), btn("Upload", () => fileIn.click(), "btn primary")),
-      drop, fileIn, tagsIn, search, countLine, lib,
+      drop, fileIn, tagsIn, search, countLine, lib, syncLine,
       el("p", { class: "muted small" }, "Right-click an image to delete it.")),
     el("section", { class: "stage-wrap", "aria-label": "Shirt designer" },
       el("div", { class: "panel" }, stage),
@@ -349,5 +369,7 @@ export async function renderStudio() {
 
   await refresh();
   drawStage();
+  showSync();
+  if (cloudLocked) setTimeout(unlock);
   return page;
 }

@@ -98,6 +98,9 @@ async function main() {
   const imageCalls = [];
   let staleList = null; // when set, the list answers this instead (Workers KV lists can lag behind writes)
   const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  // The hourly Kittl library sync status (no key needed).
+  await page.route("**/api/library-sync", (route) => route.fulfill({ status: 200, contentType: "application/json",
+    body: JSON.stringify({ ok: true, at: "2026-10-26T19:45:00Z", inKittl: 731, added: 8, removed: 0, waiting: 0, failed: 0, problems: [] }) }));
   await page.route("**/api/images**", async (route) => {
     const req = route.request();
     const key = decodeURIComponent(new URL(req.url()).pathname.replace(/^\/api\/images\/?/, ""));
@@ -622,6 +625,7 @@ async function main() {
     assert.equal(up.auth, KEY);
     assert.equal([...images.values()][0].tags, "logo, test");
     assert.match(await page.locator(".studio").textContent(), /1 of 1 images\./);
+    assert.match(await page.locator(".studio").textContent(), /Kittl sync .*: 8 added, 0 removed\. Runs every hour\./);
     await page.click('.lib button:has-text("logo.png")');
     await page.waitForSelector(".print-area .layer img");
     page.once("dialog", (d) => d.accept());
@@ -1560,8 +1564,23 @@ async function main() {
     await page.setViewportSize({ width: 1280, height: 900 });
   });
 
+  await step("studio: with no key it asks for the key instead of showing an empty library", async () => {
+    images.set("k-seen-0123abcd", { key: "k-seen-0123abcd", name: "palm-tree.png", type: "image/png", size: 10, tags: "palm, zzq-only-tag", added: Date.now() });
+    await page.click('a.nav[data-route="dashboard"]');
+    await page.evaluate(() => sessionStorage.removeItem("bc-console-key"));
+    await page.click('a.nav[data-route="studio"]');
+    await page.waitForSelector("dialog.keydlg[open] #key-in");
+    await page.fill("#key-in", KEY);
+    await page.click("#key-save");
+    await page.waitForSelector('.lib button:has-text("palm-tree.png")');
+    await page.fill('.studio input[type="search"]', "zzq-only-tag");
+    assert.equal(await page.locator(".lib button").count(), 1, "search by tag finds it");
+    await page.fill('.studio input[type="search"]', "");
+    images.delete("k-seen-0123abcd");
+  });
+
   await step("no console errors", async () => {
-    assert.deepEqual(errors, []);
+    if (errors.length) console.log("ERRORS", JSON.stringify(errors, null, 1)); assert.deepEqual(errors, []);
   });
 
   await browser.close();
