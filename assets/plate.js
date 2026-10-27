@@ -39,6 +39,8 @@ const ICONS = {
   library: "M4 5h7v7H4zM13 5h7v7h-7zM4 14h7v6H4zM13 14h7v6h-7z",
   flower: "M12 21v-9M12 16c-2.5 0-4.5-1.2-5-3.5 2.4-.4 4.3.6 5 3.5zM12 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM12 6c0-1.6.9-3 2-3.5M12 6c0-1.6-.9-3-2-3.5",
   layers: "M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5M3 17.5l9 5 9-5",
+  undo: "M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3",
+  redo: "M15 14l5-5-5-5M20 9H10a6 6 0 000 12h3",
 };
 const icon = (name) => {
   const s = document.createElementNS(SVG_NS, "svg");
@@ -161,8 +163,18 @@ export async function renderPlates() {
     sel: null, tool: "plate", view: "top", yaw: -22, pitch: 52, q: "", libs: [], models: [], flowers: [], shown: 90,
   };
   const spec = () => G.PLATES[state.plate];
-  const save = () => store.set(SAVE_KEY, { plate: state.plate, thick: state.thick, border: state.border, borderH: state.borderH,
+  const snapshot = () => ({ plate: state.plate, thick: state.thick, border: state.border, borderH: state.borderH,
     plateColor: state.plateColor, borderColor: state.borderColor, items: state.items });
+  // Undo and redo: every saved change is a step (up to 80).
+  const hist = { steps: [JSON.stringify(snapshot())], at: 0 };
+  const save = () => {
+    const snap = snapshot(), json = JSON.stringify(snap);
+    store.set(SAVE_KEY, snap);
+    if (json === hist.steps[hist.at]) return;
+    hist.steps = [...hist.steps.slice(0, hist.at + 1), json].slice(-80);
+    hist.at = hist.steps.length - 1;
+    histBtns();
+  };
   const btn = (label, fn, cls = "btn", attrs = {}) => el("button", { class: cls, type: "button", onclick: fn, ...attrs }, label);
   const selected = () => state.items.find((i) => i.id === state.sel);
   // New text and art start in a color that shows up on the plate.
@@ -179,6 +191,9 @@ export async function renderPlates() {
   try { renderer = createRenderer(canvas); } catch { renderer = null; }
   if (!renderer) stage.replaceChildren(el("p", { class: "pm-nogl muted" }, "This browser can't show the 3D preview (WebGL 2 is off). Downloads still work."));
   const viewSeg = el("div", { class: "seg", role: "tablist", "aria-label": "View" });
+  const undoBtn = el("button", { class: "btn ghost icon-btn", type: "button", "aria-label": "Undo", title: "Undo (Ctrl+Z)", disabled: true, onclick: () => stepHist(-1) }, icon("undo"));
+  const redoBtn = el("button", { class: "btn ghost icon-btn", type: "button", "aria-label": "Redo", title: "Redo (Ctrl+Shift+Z)", disabled: true, onclick: () => stepHist(1) }, icon("redo"));
+  function histBtns() { undoBtn.disabled = hist.at === 0; redoBtn.disabled = hist.at === hist.steps.length - 1; }
   const dims = el("span", { class: "muted small" });
   for (const [k, label] of [["top", "Top"], ["3d", "3D"]]) viewSeg.append(el("button", { class: "seg-btn", type: "button", role: "tab", "data-view": k, "aria-selected": "false",
     onclick: () => { state.view = k; drawStage(); } }, label));
@@ -460,7 +475,7 @@ export async function renderPlates() {
       ...[...session.entries()].map(([k, s]) => ({ m: { key: k, name: s.name, session: true }, p: () => Promise.resolve(s) }))];
     modelGrid.replaceChildren(...mine.map(({ m, p }) => modelTile(m.name, `m|${m.key}`, p(), colorOf("Teal"),
       () => addItem({ kind: "model", ref: m.key, name: m.name.replace(/\.(stl|3mf)$/i, ""), color: colorOf("Teal") }),
-      m.session ? null : el("button", { class: "lib-del", type: "button", "aria-label": `Delete ${m.name}`, title: "Delete from the library", onclick: () => delModel(m) }, "×"))));
+      m.session ? null : delBtn(m))));
     if (!mine.length) modelGrid.append(el("p", { class: "muted small" }, libraryScope === "all" ? "None yet." : "Saved models need the console key. ",
       libraryScope === "all" ? null : btn("Show them", unlock, "linkbtn")));
     creditsList.replaceChildren(creditsList.firstChild, el("ul", {}, state.flowers.map((f) =>
@@ -501,8 +516,22 @@ export async function renderPlates() {
     session.set(`s-${uid()}`, { ...shape, name: f.name });
     drawModels();
   });
+  // Deleting asks on the button itself: the first click turns it into "Delete?" for a few seconds.
+  function delBtn(m) {
+    const b = el("button", { class: "lib-del", type: "button", "aria-label": `Delete ${m.name}`, title: "Delete from the library" }, "×");
+    let timer = null;
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!b.classList.contains("armed")) {
+        b.classList.add("armed"); b.textContent = "Delete?"; b.setAttribute("aria-label", `Click again to delete ${m.name}`);
+        timer = setTimeout(() => { b.classList.remove("armed"); b.textContent = "×"; b.setAttribute("aria-label", `Delete ${m.name}`); }, 4000);
+        return;
+      }
+      clearTimeout(timer); b.disabled = true; delModel(m);
+    });
+    return b;
+  }
   async function delModel(m) {
-    if (!confirm(`Delete "${m.name}" from the library?`)) return;
     try {
       const res = await fetch(`/api/images/${encodeURIComponent(m.key)}`, { method: "DELETE", headers: { "x-console-key": consoleKey.get() } });
       if (!res.ok) throw new Error(`Couldn't delete (${res.status})`);
@@ -588,6 +617,15 @@ export async function renderPlates() {
   const edit = (fn) => { const s = selected(); if (s) { fn(s); save(); drawStage(); } };
   const dup = () => edit((s) => { const c = { ...s, id: uid(), x: s.x + 8, y: s.y - 8 }; state.items.push(c); built.set(c.id, built.get(s.id)); state.sel = c.id; });
   const delItem = () => edit((s) => { state.items = state.items.filter((x) => x !== s); built.delete(s.id); state.sel = null; });
+  function stepHist(d) {
+    const at = hist.at + d;
+    if (at < 0 || at >= hist.steps.length) return;
+    hist.at = at;
+    Object.assign(state, JSON.parse(hist.steps[at]));
+    if (!selected()) state.sel = null;
+    store.set(SAVE_KEY, snapshot());
+    histBtns(); drawTool(); refreshShapes();
+  }
 
   // ----- moving, resizing and turning on the top view -----
   overlay.addEventListener("pointerdown", (e) => {
@@ -628,6 +666,10 @@ export async function renderPlates() {
   });
   const onKey = (e) => {
     if (!document.body.contains(stage)) return document.removeEventListener("keydown", onKey);
+    if ((e.ctrlKey || e.metaKey) && !e.target.closest("input, textarea, select, dialog")) {
+      const k = e.key.toLowerCase();
+      if (k === "z" || k === "y") { e.preventDefault(); stepHist(k === "y" || e.shiftKey ? 1 : -1); return; }
+    }
     if (!selected() || state.view !== "top" || e.target.closest("input, textarea, select, dialog")) return;
     const step = e.shiftKey ? 5 : 1;
     const map = { Delete: delItem, Backspace: delItem, ArrowLeft: () => edit((s) => { s.x -= step; }), ArrowRight: () => edit((s) => { s.x += step; }),
@@ -668,7 +710,7 @@ export async function renderPlates() {
   const page = el("div", { class: "editor pm" },
     rail, paneHost,
     el("section", { class: "ed-canvas", "aria-label": "Plate" },
-      el("div", { class: "ed-bar pm-bar" }, viewSeg, dims), stage,
+      el("div", { class: "ed-bar pm-bar" }, viewSeg, undoBtn, redoBtn, dims), stage,
       el("p", { class: "muted small ed-hint" }, "Top view: drag to move, the corner dot resizes, the top dot turns (Shift snaps). 3D view: drag to look around.")),
     el("aside", { class: "ed-side", "aria-label": "Properties" }, props));
 

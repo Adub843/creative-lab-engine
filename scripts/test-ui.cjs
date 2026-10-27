@@ -893,11 +893,28 @@ async function main() {
     assert.ok(imageCalls.some((c) => c.method === "GET" && !c.key && c.auth === KEY), "models are listed with the key");
     await page.click('.pm-models .tile:has-text("my-rose.stl")');
     await page.waitForFunction(() => document.querySelectorAll(".pm-overlay .layer").length === 1);
+    // undo takes the model off again, redo puts it back (buttons and keys)
+    assert.equal(await page.locator('.pm-bar button[aria-label="Redo"]').isDisabled(), true);
+    await page.click('.pm-bar button[aria-label="Undo"]');
+    await page.waitForFunction(() => document.querySelectorAll(".pm-overlay .layer").length === 0);
+    await page.keyboard.press("Control+Shift+Z");
+    await page.waitForFunction(() => document.querySelectorAll(".pm-overlay .layer").length === 1);
     // the shirt app's public list and the studio's image list never show it
     await page.click('a.nav[data-route="studio"]');
     await page.waitForSelector(".ed-stage .lib, .editor:not(.pm) .lib");
     await page.waitForFunction(() => /images/.test(document.querySelector(".editor:not(.pm)")?.textContent ?? ""));
     assert.equal(await page.locator('.editor:not(.pm) .lib .tile:has-text("my-rose.stl")').count(), 0);
+    // deleting it from the library takes two clicks on its own button (no browser dialog)
+    await page.click('a.nav[data-route="plates"]');
+    await page.click('.ed-rail [data-tool="flower"]');
+    const del = page.locator('.pm-models .lib-item:has-text("my-rose.stl") .lib-del');
+    await del.click({ force: true });
+    await page.waitForSelector('.pm-models .lib-del.armed:has-text("Delete?")');
+    assert.ok(images.has(saved.key), "one click does not delete");
+    await del.click({ force: true });
+    await page.waitForSelector(".toast >> text=Model deleted");
+    assert.ok(!images.has(saved.key));
+    await page.waitForSelector('.pm-models >> text=None yet.');
   });
   for (const fn of cleanup.splice(0)) fn();
   await page.evaluate((k) => { if (k) localStorage.setItem("bc-console-key", k); else localStorage.removeItem("bc-console-key"); localStorage.removeItem("bc-plate-1"); }, keyBeforePlates);
