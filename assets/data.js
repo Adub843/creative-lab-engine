@@ -74,7 +74,7 @@ export const SERVICES = [
     links: [{ label: "Open repository", url: "https://github.com/Adub843/elevated-designs-site" }] },
   { id: "studio", name: "Design Studio", brand: "ed", kind: "In this console", status: "live",
     does: "Image library and shirt designer. Images are stored online, so your PC doesn't need to be on. Any library design can be listed on the Elevated Designs store in one click from Products (Elevated Designs).",
-    links: [{ label: "Open Design Studio", url: "#studio" }] },
+    links: [{ label: "Open Design library", url: "#designs/ed" }] },
   { id: "publish", name: "Products and Insights", brand: "other", kind: "In this console · both stores", status: "live",
     does: "Switch products on or off each store's Shopify site, choose which Charleston 3D products are customizable (the theme then asks for a name to print), list a library design on Elevated Designs in one click, and see sales, visits, a 30-day forecast and next steps for each store.",
     links: [{ label: "Products", url: "#products" }, { label: "List a design (Elevated Designs)", url: "#products/ed/list" }, { label: "Insights", url: "#insights" }] },

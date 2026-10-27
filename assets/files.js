@@ -60,7 +60,15 @@ export async function filesPage(header) {
   const drop = el("div", { class: "file-drop", role: "button", tabindex: "0", "aria-label": "Add files: drop them here or choose them" },
     el("strong", {}, "Drop print files or photos here"),
     el("span", { class: "muted small" }, "or click to choose · STL, 3MF, OBJ, STEP, PNG, JPG · up to 20 MB each"), input);
+  // A whole folder (say a drive of print files): every 3MF in it and its subfolders, skipping ones already here.
+  const folderIn = el("input", { type: "file", webkitdirectory: "", directory: "", multiple: true, hidden: true, id: "folder-in" });
+  const only3mf = el("input", { type: "checkbox", id: "folder-3mf", checked: true });
+  const folderBtn = el("button", { class: "btn", type: "button", id: "folder-add", onclick: () => folderIn.click() }, "Add a whole folder");
+  const stopBtn = el("button", { class: "btn ghost", type: "button", id: "folder-stop", hidden: true }, "Stop");
+  const folderRow = el("div", { class: "row folder-row" }, folderBtn, el("label", { class: "row small", for: "folder-3mf" }, only3mf, "3MF files only"), stopBtn, folderIn,
+    el("span", { class: "muted small" }, "Picks up every file in the folder and its subfolders. Files already in the library are skipped."));
   let items = [];
+  let stop = false;
 
   const draw = () => {
     const t = q.value.trim().toLowerCase();
@@ -80,22 +88,38 @@ export async function filesPage(header) {
     draw();
     toast(`Deleted ${item.name}`);
   }
-  async function add(files) {
-    const list = [...files];
+  async function add(files, fromFolder = false) {
+    let list = [...files];
+    if (fromFolder) {
+      const have = new Set(items.map((i) => `${i.name}|${i.size}`));
+      const wanted = list.filter((f) => only3mf.checked ? /\.3mf$/i.test(f.name) : ACCEPT.split(",").some((e) => f.name.toLowerCase().endsWith(e)));
+      const fresh = wanted.filter((f) => !have.has(`${f.name}|${f.size}`));
+      const big = fresh.filter((f) => f.size > MAX);
+      list = fresh.filter((f) => f.size <= MAX);
+      status.textContent = `${wanted.length} found, ${wanted.length - fresh.length} already here${big.length ? `, ${big.length} over 20 MB skipped` : ""}, ${list.length} to add.`;
+      if (!list.length) { toast(wanted.length ? "Everything in that folder is already in the library" : "No print files in that folder"); return; }
+    }
     if (!list.length) return;
     const key = await keyOrAsk("Adding files needs the console key (the CONSOLE_KEY value set for this console).");
     if (!key) return;
     drop.classList.add("busy");
+    stop = false; stopBtn.hidden = list.length < 2; folderBtn.disabled = true;
     let done = 0;
     const failed = [];
-    for (const f of list) {
-      status.textContent = `Saving ${f.name} (${done + 1} of ${list.length})…`;
-      try { items.unshift(await send(f, key)); done++; draw(); }
-      catch (e) { failed.push(e.message); if (e.code === "bad_key") break; }
+    for (const [n, f] of list.entries()) {
+      if (stop) break;
+      status.textContent = `Saving ${f.name} (${n + 1} of ${list.length})…`;
+      try { items.unshift(await send(f, key)); done++; if (done % 10 === 0 || list.length < 30) draw(); }
+      catch (e) {
+        failed.push(e.message);
+        // a wrong key, or Cloudflare's daily write limit: stop, the rest can be added later and won't be doubled
+        if (e.code === "bad_key" || /try again later|daily|1,000/i.test(e.message)) break;
+      }
     }
-    drop.classList.remove("busy");
+    drop.classList.remove("busy"); stopBtn.hidden = true; folderBtn.disabled = false;
     draw();
-    toast(failed.length ? failed[0] : `Saved ${done} file${done === 1 ? "" : "s"}`);
+    const left = list.length - done - failed.length;
+    toast([`Saved ${done} file${done === 1 ? "" : "s"}`, failed.length && `${failed.length} failed (${failed[0]})`, left > 0 && `${left} not sent yet: add the folder again to carry on`].filter(Boolean).join(". "));
   }
 
   drop.addEventListener("click", (e) => { if (e.target !== input) input.click(); });
@@ -105,6 +129,8 @@ export async function filesPage(header) {
   ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
   drop.addEventListener("drop", (e) => add(e.dataTransfer?.files ?? []));
   q.addEventListener("input", draw);
+  folderIn.addEventListener("change", () => { add(folderIn.files, true); folderIn.value = ""; });
+  stopBtn.addEventListener("click", () => { stop = true; stopBtn.hidden = true; });
   load();
-  return [head, drop, el("div", { class: "row", style: "justify-content:space-between" }, q, status), grid];
+  return [head, drop, folderRow, el("div", { class: "row", style: "justify-content:space-between" }, q, status), grid];
 }

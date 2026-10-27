@@ -37,8 +37,8 @@ export const TOOLS = [
     frame: "tools/maker/" },
 
   // Library
-  { id: "library", group: "library", store: "ed", name: "Design library", ico: "▦", page: "studio", path: "library",
-    sub: "Every Elevated Designs image; ticked ones feed the shirt app" },
+  { id: "library", group: "library", store: "ed", name: "Design library", ico: "▦", page: "designs",
+    sub: "Every Elevated Designs image, with categories; ticked ones feed the shirt app" },
   { id: "files", group: "library", store: "c3d", name: "3D file library", ico: "▦", page: "files",
     sub: "Every print file (STL, 3MF, OBJ, STEP) and photo, with a preview of each model" },
 

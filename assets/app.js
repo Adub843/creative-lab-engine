@@ -133,7 +133,8 @@ function todoWidget(key, seed) {
 }
 async function recentImages(n = 12) {
   const { listImages, imageUrl } = await import("./studio.js");
-  const items = (await listImages()).slice(0, n);
+  const { isLogo, isOtherBrand } = await import("./image-filters.js");
+  const items = (await listImages()).filter((i) => !isLogo(i) && !isOtherBrand(i)).slice(0, n);
   if (!items.length) return el("p", { class: "muted" }, "No images yet. Add them in the Design Studio.");
   return el("div", { class: "thumbs" }, items.map((i) => el("img", { src: imageUrl(i), alt: i.name, loading: "lazy" })));
 }
@@ -264,7 +265,7 @@ function home() {
           ? [{ t: "List a new design", d: false }, { t: "Check Insights", d: false }]
           : [{ t: "Check new custom requests", d: false }, { t: "Check Insights", d: false }]))),
     k === "ed" ? el("section", { class: "panel" },
-      el("div", { class: "panel-head" }, el("h2", {}, "Latest designs"), el("a", { class: "btn ghost", href: "#studio/ed" }, "Open library")), imgs) : null,
+      el("div", { class: "panel-head" }, el("h2", {}, "Latest designs"), el("a", { class: "btn ghost", href: "#designs/ed" }, "Open library")), imgs) : null,
     el("section", { class: "panel" }, el("div", { class: "panel-head" }, el("h2", {}, `Everything behind ${b.name}`), el("a", { class: "btn ghost", href: `#map/${k}` }, "Service map")),
       serviceCards(mine)),
   ];
@@ -458,7 +459,7 @@ async function render() {
   const frameTool = TOOLS.find((t) => t.frame && t.id === route);
   // A tool of the other store: show this store's Home rather than mixing the brands.
   if (frameTool && frameTool.store !== k) { location.replace(`#home/${k}`); return; }
-  if ((route === "studio" && k !== "ed") || ((route === "files" || route === "maker3d") && k !== "c3d")) { location.replace(`#home/${k}`); return; }
+  if (((route === "studio" || route === "designs") && k !== "ed") || ((route === "files" || route === "maker3d") && k !== "c3d")) { location.replace(`#home/${k}`); return; }
   const pages = {
     home,
     map: () => mapPage(pendingFilter ?? k),
@@ -469,6 +470,7 @@ async function render() {
     promote: promotePage,
     share: sharePage,
     files: () => filesPage(header),
+    designs: async () => (await import("./design-library.js")).designLibraryPage(header),
     maker3d: () => meshyPage(header),
   };
   const make = frameTool ? () => framePage(frameTool) : pages[route] ?? home;
