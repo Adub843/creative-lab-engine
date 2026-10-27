@@ -16,7 +16,7 @@ Neither store site has its own hosting or a build step: products, prices and che
 One Cloudflare Worker serves both the app's files and its API. The only build step (`scripts/build.mjs`, run by wrangler before `dev` and `deploy`) copies `index.html` and `assets/` into `dist/`, which is all that is served as files, so `lib/`, `scripts/`, `worker/`, `data/` and the rest of the repo are never downloadable from the site.
 
 - `index.html`: app shell
-- `assets/`: styles, data and page scripts (`products.js`, `insights.js`, `studio.js`; `api.js` holds the shared store switcher, console key and API calls). `data.js` is the one list of brands, services, quick links' sites and the cleanup list.
+- `assets/`: styles, data and page scripts (`products.js`, `insights.js`, `studio.js`, `plate.js`; `api.js` holds the shared store switcher, console key and API calls). `data.js` is the one list of brands, services, quick links' sites and the cleanup list.
 - `lib/shopify.mjs`, `lib/insights.mjs`, `lib/images.mjs`: the API logic as plain functions with no hosting code. `lib/kv-store.mjs` stores the image library in Workers KV.
 - `lib/listings.mjs`: one-click Elevated Designs listings; `assets/listing.js` builds the listing copy (title, description, SEO, tags) and `assets/list-design.js` is the panel and sheet.
 - `worker/index.mjs` (entry point) and `worker/app.mjs`: the Worker. It sends `/api/products`, `/api/insights`, `/api/listings`, `/api/marketing` and `/api/images` (and `/api/images/<key>`) to the handlers in `lib/`, reads settings from the Worker's secrets, and serves every other path from `dist/` with the security headers (CSP, no framing, nosniff).
@@ -68,6 +68,16 @@ npm test && npm run test:ui                                                  # t
 ```
 
 Then commit and deploy (`npm run deploy`, or push to `main` if the GitHub Action is set up). Listings already in Shopify keep the prices and blanks they were made with.
+
+## Plate maker (Charleston 3D)
+
+`#plates`: a license plate or plate frame with raised text, design-library art and 3D flowers, shown as lit plastic (WebGL) and downloaded as a 3MF (one object, one part per color, for Bambu Studio, Orca or PrusaSlicer) or one STL.
+
+- Bases are drawn in code (`assets/plate-geom.js`), so there is no base file to license: US car plate 12 × 6 in, motorcycle plate 7 × 4 in, and a frame (12¾ × 6¾ in) that fits around a real plate. Screw slots follow the US standard pattern. "Download blank base" gives any of them as a 3MF.
+- Text uses open-licensed Google Fonts (Bebas Neue, Playfair Display, Great Vibes, Bricolage Grotesque). Library images are traced into raised outlines from their transparency, or their dark or light parts.
+- Flowers are in `assets/plates/flowers/`, each credited in `assets/plates/flowers.json` (name, author, license, source). All are CC BY, CC BY-SA or CC0, which allow selling prints; the page lists the credits to put on a product page. The original downloads are on Aaron's PC in `Aaron-Data\01 Charleston3D\Plate Library\flowers-source`.
+- Your own STL or 3MF models can be saved to the image library. They are always private and listed only with `GET /api/images?models=1`, so the shirt app and the image pickers never see them.
+- Code: `assets/plate.js` (page), `assets/plate-gl.js` (renderer), `assets/plate-geom.js` (shapes, tracing, STL and 3MF reading and writing); tests in `scripts/test-plate.mjs`.
 
 ## Insights
 
@@ -239,8 +249,8 @@ Each `wrangler secret put` takes effect straight away; there's no need to deploy
 Run `npm install` once first (the API tests use `graphql`, and `wrangler` runs the console locally).
 
 - `npm run check`: syntax check of every script
-- `npm test` (`node scripts/test-api.mjs`): the API with Shopify mocked, called through the Worker's own fetch handler with an in-memory Workers KV (same limits as the real one: 25 MiB values, 1024-byte metadata, paged lists) (listing, publishing, unpublishing, customizable, one-click listings, bad input, keys, missing settings, Shopify errors, IndexNow failures, insights maths, the Worker's routes, headers, body and upload limits, and that `dist/` holds only the app). Every GraphQL query and mutation the mock receives, and its variables, is validated against the Admin API 2025-10 schema in `scripts/schema/` (the introspection file from `@shopify/dev-mcp@1.5.0`).
-- `npm run test:ui` (`NODE_PATH=$(npm root -g) node scripts/test-ui.cjs`): Products, Insights, Studio and Marketing in a real browser with `/api/*` mocked; needs Playwright (installed globally or in the project) and python3. Set `SCREENS=<folder>` to save screenshots.
+- `npm test` (`node scripts/test-api.mjs`, then `node scripts/test-plate.mjs` for the plate maker's geometry, files and flower credits): the API with Shopify mocked, called through the Worker's own fetch handler with an in-memory Workers KV (same limits as the real one: 25 MiB values, 1024-byte metadata, paged lists) (listing, publishing, unpublishing, customizable, one-click listings, bad input, keys, missing settings, Shopify errors, IndexNow failures, insights maths, the Worker's routes, headers, body and upload limits, and that `dist/` holds only the app). Every GraphQL query and mutation the mock receives, and its variables, is validated against the Admin API 2025-10 schema in `scripts/schema/` (the introspection file from `@shopify/dev-mcp@1.5.0`).
+- `npm run test:ui` (`NODE_PATH=$(npm root -g) node scripts/test-ui.cjs`): Products, Insights, Studio, Plate maker and Marketing in a real browser with `/api/*` mocked; needs Playwright (installed globally or in the project) and python3. Set `SCREENS=<folder>` to save screenshots.
 
 ### API
 
@@ -271,7 +281,8 @@ Run `npm install` once first (the API tests use `graphql`, and `wrangler` runs t
 | `POST /api/promotions {store, action: "segment", name, query}` | Create a customer group |
 | `GET /api/images` | Image library list: `{items: [{key, name, type, size, tags, added}]}` |
 | `GET /api/images/<key>` | The image file (no key needed; keys are unguessable) |
-| `POST /api/images` | Save one image: the raw file as the body, its type in `content-type` (PNG, JPEG, WebP, GIF or SVG, checked against the file), `x-filename`, optional `x-tags`; 20 MB at most |
+| `GET /api/images?models=1` | The saved 3D models (STL, 3MF) for the plate maker |
+| `POST /api/images` | Save one image: the raw file as the body, its type in `content-type` (PNG, JPEG, WebP, GIF or SVG, or `model/stl` / `model/3mf` for a private 3D model, checked against the file), `x-filename`, optional `x-tags`; 20 MB at most |
 | `DELETE /api/images/<key>` | Remove one image |
 
 All of them need the console key (`x-console-key`), except fetching an image file by its key. There is no CORS: only the console's own pages can call the API from a browser. A listing makes several Shopify calls including an image upload of up to 20 MB. If one is cut off after the product was made, List it again finds it by its `design:` tag and finishes publishing it instead of making a second one.

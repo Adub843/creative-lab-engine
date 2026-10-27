@@ -106,14 +106,16 @@ async function main() {
     const key = decodeURIComponent(new URL(req.url()).pathname.replace(/^\/api\/images\/?/, ""));
     const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
     imageCalls.push({ method: req.method(), key, auth: req.headers()["x-console-key"] ?? null });
-    if (req.method() === "GET" && key) return images.has(key) ? route.fulfill({ status: 200, contentType: "image/png", body: PNG }) : json(404, { error: "Image not found" });
+    if (req.method() === "GET" && key) return images.has(key) ? route.fulfill({ status: 200, contentType: images.get(key).body ? images.get(key).type : "image/png", body: images.get(key).body ?? PNG }) : json(404, { error: "Image not found" });
     if (req.method() === "GET" && new URL(req.url()).searchParams.get("public") === "1")
       return json(200, { items: (staleList ?? [...images.values()]).filter((i) => i.public).map(({ url, ...i }) => i).sort((a, b) => b.added - a.added) });
     if (req.headers()["x-console-key"] !== KEY) return json(401, { error: "Wrong or missing console key.", code: "bad_key" });
-    if (req.method() === "GET") return json(200, { items: staleList ?? [...images.values()].sort((a, b) => b.added - a.added) });
+    const isModel = (i) => /^model\//.test(i.type ?? "");
+    const models = new URL(req.url()).searchParams.get("models") === "1";
+    if (req.method() === "GET") return json(200, { items: (staleList ?? [...images.values()]).filter((i) => isModel(i) === models).map(({ body, ...i }) => i).sort((a, b) => b.added - a.added) });
     if (req.method() === "POST") {
       const item = { key: `k${images.size + 1}-0123abcd`, name: req.headers()["x-filename"], type: req.headers()["content-type"], size: req.postDataBuffer()?.length ?? 0, tags: req.headers()["x-tags"] ?? "", public: req.headers()["x-public"] === "1", added: Date.now() };
-      images.set(item.key, item);
+      images.set(item.key, /^model\//.test(item.type) ? { ...item, public: false, body: req.postDataBuffer() } : item);
       return json(201, { item });
     }
     if (req.method() === "DELETE") { images.delete(key); return json(200, { deleted: key }); }
@@ -421,7 +423,7 @@ async function main() {
   });
 
   await step("other pages still render and every nav link works", async () => {
-    for (const r of ["dashboard", "c3d", "ed", "products", "insights", "studio", "map"]) {
+    for (const r of ["dashboard", "c3d", "ed", "products", "insights", "studio", "plates", "map"]) {
       await page.click(`a.nav[data-route="${r}"]`);
       await page.waitForFunction((rt) => document.querySelector(`a.nav[data-route="${rt}"]`)?.getAttribute("aria-current") === "page", r);
       await page.waitForTimeout(100);
@@ -784,6 +786,122 @@ async function main() {
     for (const k of [...images.keys()]) images.delete(k);
   });
 
+  // The plate steps change the saved key; the steps after them expect it as the studio steps left it.
+  const keyBeforePlates = await page.evaluate(() => localStorage.getItem("bc-console-key"));
+  await step("plate maker: text, a licensed flower and library art on a lit plate; 3MF and STL download; frame; 3D view", async () => {
+    // Library art: a real outline to trace (the stock 1×1 test PNG has nothing to raise).
+    const STAR = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><path d="M200 20 250 150 390 150 275 235 320 380 200 290 80 380 125 235 10 150 150 150Z" fill="#000"/></svg>`;
+    await page.route("**/api/images/k-star-0123abcd", (r) => r.fulfill({ status: 200, contentType: "image/svg+xml", body: STAR }));
+    images.set("k-star-0123abcd", { key: "k-star-0123abcd", name: "star.svg", type: "image/svg+xml", size: 10, tags: "", public: true, added: 3 });
+    await page.evaluate(() => { localStorage.removeItem("bc-console-key"); localStorage.removeItem("bc-plate-1"); });
+    await page.click('a.nav[data-route="dashboard"]');
+    const callsFrom = imageCalls.length;
+    await page.click('a.nav[data-route="plates"]');
+    await page.waitForSelector(".pm-stage canvas.pm-gl");
+    assert.equal(await page.locator("dialog.keydlg[open]").count(), 0, "no key needed to make a plate");
+    assert.equal(await page.locator(".pm-styles button").count(), 3, "car plate, motorcycle plate, frame");
+    assert.match(await page.locator(".pm-bar").textContent(), /304\.8 × 152\.4 mm/);
+    assert.equal(imageCalls.slice(callsFrom).some((c) => c.method === "GET" && c.auth), false, "nothing asked for with a key");
+    // text
+    await page.click('.ed-rail [data-tool="text"]');
+    await page.fill('.ed-panel input[type="text"]', "CHARLESTON");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(".pm-overlay .layer.sel");
+    assert.match(await page.locator(".ed-side h2").first().textContent(), /Text/);
+    // a flower from the licensed set, drawn as a tile by the same renderer
+    await page.click('.ed-rail [data-tool="flower"]');
+    await page.waitForFunction(() => document.querySelectorAll('.pm-models .tile img[src^="data:image/png"]').length === 8, null, { timeout: 30000 });
+    await page.click('.pm-models .tile:has-text("Long-stem rose")');
+    await page.waitForFunction(() => document.querySelectorAll(".pm-overlay .layer").length === 2);
+    await page.locator(".pm-credits summary").click();
+    assert.match(await page.locator(".pm-credits").textContent(), /Romantic Rose Bookmark by MAXX, CC BY 4\.0/);
+    assert.match(await page.locator(".ed-side").textContent(), /Credit on the product page: Long-stem rose by MAXX \(CC BY 4\.0, https:\/\/www\.printables\.com\/model\/1568158\)/);
+    // library art, traced
+    await page.click('.ed-rail [data-tool="library"]');
+    await page.click('.lib .tile:has-text("star.svg")');
+    await page.waitForFunction(() => document.querySelectorAll(".pm-overlay .layer").length === 3);
+    let items = await page.evaluate(() => JSON.parse(localStorage.getItem("bc-plate-1")).items);
+    assert.deepEqual(items.map((i) => i.kind), ["text", "flower", "image"]);
+    assert.ok(items[1].x < 0 && items[2].x > 0, "art goes beside the text, left then right");
+    assert.equal(await page.locator(".pm-warn").count(), 0, "nothing hangs off the plate yet");
+    // pushing the art off the edge warns
+    for (let n = 0; n < 8; n++) await page.keyboard.press("Shift+ArrowRight");
+    await page.waitForSelector(".pm-warn >> text=hangs off the plate");
+    for (let n = 0; n < 8; n++) await page.keyboard.press("Shift+ArrowLeft");
+    await page.waitForFunction(() => !document.querySelector(".pm-warn"));
+    // the canvas really drew the plate (not an empty or drawn-by-CSS box)
+    const lit = await page.locator("canvas.pm-gl").evaluate((c) => {
+      const g = document.createElement("canvas"); g.width = 64; g.height = 32;
+      const x = g.getContext("2d"); x.drawImage(c, 0, 0, 64, 32);
+      const d = x.getImageData(0, 0, 64, 32).data; let n = 0;
+      for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++;
+      return n / (64 * 32);
+    });
+    assert.ok(lit > 0.6, `the plate fills the view (${lit})`);
+    if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "plates-1280.png") }); }
+    // downloads: a 3MF with one part per piece (one object), and a binary STL
+    const [d3] = await Promise.all([page.waitForEvent("download"), page.click('button:has-text("Download 3MF")')]);
+    assert.match(d3.suggestedFilename(), /^charleston-\d{4}-\d{2}-\d{2}\.3mf$/);
+    const G = await import(path.join(ROOT, "assets/plate-geom.js"));
+    const file = fs.readFileSync(await d3.path());
+    const zip = await G.readZip(file);
+    const xml = new TextDecoder().decode(await zip.read("3D/3dmodel.model"));
+    assert.deepEqual([...xml.matchAll(/<object id="\d+" type="model" name="([^"]+)"/g)].map((m) => m[1]),
+      ["Plate", "Raised edge", "Text: CHARLESTON", "Flower: Long-stem rose", "Image: star.svg", "Car plate: CHARLESTON"]);
+    assert.equal((xml.match(/<build><item objectid="7"\/><\/build>/g) ?? []).length, 1, "one printable object");
+    const mesh = await G.parse3MF(file);
+    const { lo, hi } = G.bounds(mesh);
+    assert.ok(Math.abs(lo[0] + 152.4) < 0.01 && Math.abs(hi[0] - 152.4) < 0.01 && lo[2] === 0, "plate size and sits on the bed");
+    const [dl] = await Promise.all([page.waitForEvent("download"), page.click('button:has-text("Download STL")')]);
+    const stl = fs.readFileSync(await dl.path());
+    assert.equal(stl.length, 84 + 50 * stl.readUInt32LE(80), "binary STL");
+    // 3D view, then the frame
+    await page.click('.seg-btn[data-view="3d"]');
+    assert.equal(await page.locator(".pm-overlay .layer").count(), 0, "no edit boxes over the 3D view");
+    if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "plates-3d-1280.png") }); }
+    await page.click('.seg-btn[data-view="top"]');
+    await page.click('.ed-rail [data-tool="plate"]');
+    await page.click('.pm-styles button:has-text("Plate frame")');
+    assert.match(await page.locator(".pm-bar").textContent(), /323\.9 × 171\.5 mm/);
+    const [bf] = await Promise.all([page.waitForEvent("download"), page.click('button:has-text("Download blank base")')]);
+    assert.match(bf.suggestedFilename(), /^plate-frame-blank-.*\.3mf$/);
+    // it all comes back after a reload
+    await page.reload();
+    await page.waitForFunction(() => document.querySelectorAll(".pm-overlay .layer").length === 3);
+    assert.match(await page.locator(".pm-bar").textContent(), /323\.9 × 171\.5 mm/);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(200);
+    await noOverflow("plates 390");
+    if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "plates-390.png"), fullPage: true }); }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    images.delete("k-star-0123abcd");
+    await page.unroute("**/api/images/k-star-0123abcd");
+  });
+
+  const cleanup = [];
+  await step("plate maker: an STL saved to the library is private, listed only with the key, and goes on the plate", async () => {
+    await page.evaluate((k) => { localStorage.setItem("bc-console-key", k); localStorage.removeItem("bc-plate-1"); }, KEY);
+    await page.click('a.nav[data-route="dashboard"]');
+    await page.click('a.nav[data-route="plates"]');
+    await page.click('.ed-rail [data-tool="flower"]');
+    await page.waitForSelector('.pm-models >> text=None yet.');
+    await page.setInputFiles('.ed-panel input[type="file"]', { name: "my-rose.stl", mimeType: "model/stl", buffer: fs.readFileSync(path.join(ROOT, "assets/plates/flowers/tall-rose.stl")) });
+    await page.waitForSelector(".toast >> text=Model saved to the library (private)");
+    const saved = [...images.values()].find((i) => i.name === "my-rose.stl");
+    cleanup.push(() => images.delete(saved.key));
+    assert.equal(saved.type, "model/stl"); assert.equal(saved.public, false);
+    assert.ok(imageCalls.some((c) => c.method === "GET" && !c.key && c.auth === KEY), "models are listed with the key");
+    await page.click('.pm-models .tile:has-text("my-rose.stl")');
+    await page.waitForFunction(() => document.querySelectorAll(".pm-overlay .layer").length === 1);
+    // the shirt app's public list and the studio's image list never show it
+    await page.click('a.nav[data-route="studio"]');
+    await page.waitForSelector(".ed-stage .lib, .editor:not(.pm) .lib");
+    await page.waitForFunction(() => /images/.test(document.querySelector(".editor:not(.pm)")?.textContent ?? ""));
+    assert.equal(await page.locator('.editor:not(.pm) .lib .tile:has-text("my-rose.stl")').count(), 0);
+  });
+  for (const fn of cleanup.splice(0)) fn();
+  await page.evaluate((k) => { if (k) localStorage.setItem("bc-console-key", k); else localStorage.removeItem("bc-console-key"); localStorage.removeItem("bc-plate-1"); }, keyBeforePlates);
+
   await step("dashboard and brand pages: store links go to the Shopify sites, not Netlify", async () => {
     for (const [route, site] of [["dashboard", null], ["c3d", "https://charleston3d.com"], ["ed", "https://elevatedshirts.com"]]) {
       await page.click(`a.nav[data-route="${route}"]`);
@@ -818,7 +936,7 @@ async function main() {
       await page.waitForFunction((r) => document.querySelector(`a.nav[data-route="${r}"]`)?.getAttribute("aria-current") === "page", route);
       (await page.locator("#view a[href^='#']").evaluateAll((as) => as.map((a) => a.getAttribute("href")))).forEach((h) => hashes.add(h));
     }
-    const pages = { dashboard: "Dashboard", c3d: "Charleston 3D", ed: "Elevated Designs", products: "Products", insights: "Insights", marketing: "Marketing", promote: "Promotions", studio: "Design Studio", map: "Service Map" };
+    const pages = { dashboard: "Dashboard", c3d: "Charleston 3D", ed: "Elevated Designs", products: "Products", insights: "Insights", marketing: "Marketing", promote: "Promotions", studio: "Design Studio", plates: "Plate maker", map: "Service Map" };
     for (const h of hashes) {
       const r = h.slice(1).split("/")[0];
       assert.ok(pages[r], `${h} is a console page`);
@@ -849,7 +967,7 @@ async function main() {
 
   await step("mobile 390px: nav fits, every link is reachable and works", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
-    for (const r of ["dashboard", "c3d", "ed", "products", "insights", "studio", "map"]) {
+    for (const r of ["dashboard", "c3d", "ed", "products", "insights", "studio", "plates", "map"]) {
       const link = page.locator(`a.nav[data-route="${r}"]`);
       await link.scrollIntoViewIfNeeded();
       const box = await link.boundingBox();

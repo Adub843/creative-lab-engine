@@ -67,6 +67,7 @@ const PAGES = [
   { name: "Promotions: discounts, gift cards, segments", url: "#promote", kind: "Page" },
   { name: "Elevated Designs", url: "#ed", kind: "Page" },
   { name: "Design Studio", url: "#studio", kind: "Page" },
+  { name: "Plate maker: license plates and frames", url: "#plates", kind: "Page" },
   { name: "Service Map", url: "#map", kind: "Page" },
 ];
 const pal = document.getElementById("palette");
@@ -152,7 +153,8 @@ const C3D_GROUPS = [
   ["Sell", [
     ["Products", "Pick what's on the site and the app", "#products/c3d"],
     ["Orders and requests", "Shopify admin", `${BRANDS.c3d.site}/admin/orders`],
-    ["Order app", "Shop and custom requests", BRANDS.c3d.app]]],
+    ["Order app", "Shop and custom requests", BRANDS.c3d.app],
+    ["Plate maker", "License plates with text, art and flowers", "#plates"]]],
   ["Grow", [
     ["Insights", "Sales, visits, forecast", "#insights/c3d"],
     ["Marketing", "SEO, Bing, AI search", "#marketing/c3d"],
@@ -319,6 +321,11 @@ async function studioPage() {
   return [header("Elevated Designs", "Design Studio", "Pick art from the library, place it on a real shirt photo, and download the print file or a mockup. No key needed to design."), await renderStudio()];
 }
 
+async function platesPage() {
+  const { renderPlates } = await import("./plate.js");
+  return [header("Charleston 3D", "Plate maker", "A license plate or plate frame with raised text, library art and flowers. Preview it in 3D, then download a multi-color 3MF or an STL for the printer."), await renderPlates()];
+}
+
 // ---------- router ----------
 const view = document.getElementById("view");
 let pendingFilter = null;
@@ -334,6 +341,7 @@ async function render() {
       el("p", { class: "muted" }, "Your image library and shirt designer. Images are stored online, so you can design from any device."))]),
     map: () => mapPage(pendingFilter ?? "all"),
     studio: studioPage,
+    plates: platesPage,
     products: productsPage,
     insights: insightsPage,
     marketing: marketingPage,
@@ -343,8 +351,8 @@ async function render() {
   const nodes = await make();
   pendingFilter = null;
   view.replaceChildren(...[nodes].flat().filter(Boolean));
-  view.classList.toggle("wide", route === "studio");
-  document.title = `${{ dashboard: "Dashboard", c3d: "Charleston 3D", ed: "Elevated Designs", map: "Service Map", studio: "Design Studio", products: "Products", insights: "Insights", marketing: "Marketing", promote: "Promotions" }[route] ?? "Dashboard"} · Business Console`;
+  view.classList.toggle("wide", route === "studio" || route === "plates");
+  document.title = `${{ dashboard: "Dashboard", c3d: "Charleston 3D", ed: "Elevated Designs", map: "Service Map", studio: "Design Studio", plates: "Plate maker", products: "Products", insights: "Insights", marketing: "Marketing", promote: "Promotions" }[route] ?? "Dashboard"} · Business Console`;
   view.focus({ preventScroll: true });
   window.scrollTo(0, 0);
 }
