@@ -135,7 +135,9 @@ function todoWidget(key, seed) {
 }
 function quickLinks(brand, links) {
   return el("div", { class: `quick brand-${brand}` }, links.map(([label, sub, url]) =>
-    el("a", { href: url, target: ext(url) ? "_blank" : null, rel: "noopener" }, label, el("small", {}, sub))));
+    el("a", { href: url, target: ext(url) ? "_blank" : null, rel: "noopener" },
+      el("span", { class: "q-t" }, el("strong", {}, label), el("small", {}, sub)),
+      el("span", { class: "q-go", "aria-hidden": "true" }, ext(url) ? "↗" : "›"))));
 }
 async function recentImages(n = 12) {
   const { listImages, imageUrl } = await import("./studio.js");
@@ -145,38 +147,40 @@ async function recentImages(n = 12) {
 }
 
 // ---------- pages ----------
-const C3D_LINKS = [
-  ["Website", "charleston3d.com · Shopify", BRANDS.c3d.site],
-  ["Order app", "Shop and custom requests", BRANDS.c3d.app],
-  ["Products", "Pick what's on the site and app", "#products/c3d"],
-  ["Insights", "Sales, visits, forecast", "#insights/c3d"],
-  ["Marketing", "SEO, Bing, AI search", "#marketing/c3d"],
-  ["Promotions", "Discounts, gift cards, segments", "#promote/c3d"],
-  ["Shopify admin", "Orders and products", BRANDS.c3d.admin.url],
-  ["Theme", "Shopify theme editor", `${BRANDS.c3d.site}/admin/themes`],
-  ["Order maker", "hype-chain-maker", "https://hype-chain-maker.netlify.app"],
-  ["Nameplates", "nameplate-maker", "https://nameplate-maker.netlify.app"],
-  ["File finder", "3d-print-file-finder", "https://3d-print-file-finder.netlify.app"],
-  ["Print trends", "print-trends", "https://print-trends.netlify.app"],
+// Each brand's tools, grouped the way a store admin groups them. [label, what it's for, link]
+const C3D_GROUPS = [
+  ["Sell", [
+    ["Products", "Pick what's on the site and the app", "#products/c3d"],
+    ["Orders and requests", "Shopify admin", `${BRANDS.c3d.site}/admin/orders`],
+    ["Order app", "Shop and custom requests", BRANDS.c3d.app]]],
+  ["Grow", [
+    ["Insights", "Sales, visits, forecast", "#insights/c3d"],
+    ["Marketing", "SEO, Bing, AI search", "#marketing/c3d"],
+    ["Promotions", "Discounts, gift cards, segments", "#promote/c3d"]]],
+  ["Storefront", [
+    ["Website", "charleston3d.com · Shopify", BRANDS.c3d.site],
+    ["Theme", "Shopify theme editor", `${BRANDS.c3d.site}/admin/themes`],
+    ["Shopify admin", "Everything else in the store", BRANDS.c3d.admin.url]]],
 ];
-const ED_LINKS = [
-  ["Website", "elevatedshirts.com · Shopify", BRANDS.ed.site],
-  ["Shirt app", "Design your own shirt", BRANDS.ed.app],
-  ["Products", "Pick what's on the site", "#products/ed"],
-  ["Insights", "Sales, visits, forecast", "#insights/ed"],
-  ["Marketing", "SEO, Bing, AI search", "#marketing/ed"],
-  ["Promotions", "Discounts, gift cards, segments", "#promote/ed"],
-  ["Orders", "Shopify admin", `${BRANDS.ed.site}/admin/orders`],
-  ["List a design", "One click to the store", "#products/ed/list"],
-  ["Products", "Shopify admin", `${BRANDS.ed.site}/admin/products`],
-  ["Add a product", "Shopify admin", `${BRANDS.ed.site}/admin/products/new`],
-  ["Designs and listings", "Elevated Designs app", "https://charlestonprintdesigns.netlify.app/#/"],
-  ["Launch plan", "Elevated Designs app", "https://charlestonprintdesigns.netlify.app/#/plan"],
-  ["Market calendar", "Elevated Designs app", "https://charlestonprintdesigns.netlify.app/#/cal"],
-  ["Design a shirt", "Design Studio", "#studio"],
-  ["Discounts", "Shopify admin", `${BRANDS.ed.site}/admin/discounts`],
-  ["Theme", "Shopify theme editor", `${BRANDS.ed.site}/admin/themes`],
+const ED_GROUPS = [
+  ["Sell", [
+    ["Products", "Pick what's on the site", "#products/ed"],
+    ["List a design", "One click to the store", "#products/ed/list"],
+    ["Design Studio", "Library and shirt designer", "#studio"],
+    ["Orders", "Shopify admin", `${BRANDS.ed.site}/admin/orders`]]],
+  ["Grow", [
+    ["Insights", "Sales, visits, forecast", "#insights/ed"],
+    ["Marketing", "SEO, Bing, AI search", "#marketing/ed"],
+    ["Promotions", "Discounts, gift cards, segments", "#promote/ed"]]],
+  ["Storefront", [
+    ["Website", "elevatedshirts.com · Shopify", BRANDS.ed.site],
+    ["Shirt app", "design.elevatedshirts.com", BRANDS.ed.app],
+    ["Theme", "Shopify theme editor", `${BRANDS.ed.site}/admin/themes`],
+    ["Shopify admin", "Everything else in the store", BRANDS.ed.admin.url]]],
 ];
+// The four the dashboard shows for each brand.
+const C3D_TOP = [["Website", "charleston3d.com", BRANDS.c3d.site], ["Order app", "Shop and custom requests", BRANDS.c3d.app], ...C3D_GROUPS[0][1].slice(0, 1), ...C3D_GROUPS[1][1].slice(0, 1)];
+const ED_TOP = [["Website", "elevatedshirts.com", BRANDS.ed.site], ["Shirt app", "Design your own shirt", BRANDS.ed.app], ...ED_GROUPS[0][1].slice(0, 1), ...ED_GROUPS[1][1].slice(0, 1)];
 
 // The brand's logo (Aaron's picks, 26 Oct 2026) on its own dark tile, so it reads in both themes.
 const brandLogo = (key) => el("img", { class: `brand-logo logo-${key}`, src: BRANDS[key].logo, alt: "", width: 120, height: 40 });
@@ -204,10 +208,10 @@ function dashboard() {
     el("div", { class: "grid-2" },
       el("section", { class: "panel brand-c3d brand-band" },
         el("div", { class: "panel-head" }, el("h2", { class: "brand-title" }, brandLogo("c3d"), "Charleston 3D"), el("a", { class: "btn ghost", href: "#c3d" }, "Open")),
-        el("p", { class: "muted" }, BRANDS.c3d.tagline), quickLinks("c3d", C3D_LINKS.slice(0, 4))),
+        el("p", { class: "muted" }, BRANDS.c3d.tagline), quickLinks("c3d", C3D_TOP)),
       el("section", { class: "panel brand-ed brand-band" },
         el("div", { class: "panel-head" }, el("h2", { class: "brand-title" }, brandLogo("ed"), "Elevated Designs"), el("a", { class: "btn ghost", href: "#ed" }, "Open")),
-        el("p", { class: "muted" }, BRANDS.ed.tagline), quickLinks("ed", ED_LINKS.slice(0, 4)))),
+        el("p", { class: "muted" }, BRANDS.ed.tagline), quickLinks("ed", ED_TOP))),
     el("div", { class: "grid-2" },
       el("section", { class: "panel" }, el("h2", {}, "Needs you"), alertsList(attn)),
       el("section", { class: "panel" }, el("h2", {}, "Today's tasks"),
@@ -217,14 +221,15 @@ function dashboard() {
   ];
 }
 
-function brandPage(key, links, extra = []) {
+function brandPage(key, groups, extra = []) {
   const b = BRANDS[key];
   const mine = SERVICES.filter((s) => s.brand === key);
   return [
     b.logo ? el("div", { class: `brand-hero logo-${key}` }, el("img", { src: b.logo, alt: `${b.name} logo`, width: 240, height: 80 })) : null,
     header("Business", b.name, b.tagline, [linkBtn(b.admin, "btn"), b.app ? linkBtn({ label: "Open app", url: b.app }, "btn") : null,
       linkBtn({ label: "View live site", url: b.site }, `btn brand brand-${key}`)]),
-    el("section", { class: `panel brand-${key} brand-band` }, el("h2", {}, "Quick actions"), quickLinks(key, links)),
+    el("div", { class: "agroups" }, groups.map(([title, links]) =>
+      el("section", { class: `panel brand-${key} brand-band` }, el("h2", {}, title), quickLinks(key, links)))),
     ...extra,
     el("section", { class: "panel" }, el("h2", {}, "Needs attention"), alertsList(mine.filter((s) => s.status === "attn"))),
     el("section", { class: "stack" }, el("h2", {}, `Everything for ${b.name}`), serviceCards(mine)),
@@ -312,7 +317,7 @@ async function promotePage() {
 
 async function studioPage() {
   const { renderStudio } = await import("./studio.js");
-  return [header("Elevated Designs", "Design Studio", "Browse your whole image library, drag images onto a shirt, and export a print-ready file."), await renderStudio()];
+  return [header("Elevated Designs", "Design Studio", "Pick art from the library, place it on a real shirt photo, and download the print file or a mockup. No key needed to design."), await renderStudio()];
 }
 
 // ---------- router ----------
@@ -324,8 +329,8 @@ async function render() {
   document.querySelectorAll(".nav").forEach((a) => a.dataset.route === route ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));
   const pages = {
     dashboard,
-    c3d: () => brandPage("c3d", C3D_LINKS),
-    ed: () => brandPage("ed", ED_LINKS, [el("section", { class: "panel brand-ed" },
+    c3d: () => brandPage("c3d", C3D_GROUPS),
+    ed: () => brandPage("ed", ED_GROUPS, [el("section", { class: "panel brand-ed" },
       el("div", { class: "panel-head" }, el("h2", {}, "Design Studio"), el("a", { class: "btn brand", href: "#studio" }, "Open studio")),
       el("p", { class: "muted" }, "Your image library and shirt designer. Images are stored online, so you can design from any device."))]),
     map: () => mapPage(pendingFilter ?? "all"),
@@ -339,6 +344,7 @@ async function render() {
   const nodes = await make();
   pendingFilter = null;
   view.replaceChildren(...[nodes].flat().filter(Boolean));
+  view.classList.toggle("wide", route === "studio");
   document.title = `${{ dashboard: "Dashboard", c3d: "Charleston 3D", ed: "Elevated Designs", map: "Service Map", studio: "Design Studio", products: "Products", insights: "Insights", marketing: "Marketing", promote: "Promotions" }[route] ?? "Dashboard"} · Business Console`;
   view.focus({ preventScroll: true });
   window.scrollTo(0, 0);

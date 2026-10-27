@@ -1,16 +1,22 @@
-// Design Studio: an online image library plus a drag-and-drop shirt designer.
-// Images live online (Cloudflare Workers KV) through /api/images, so the PC can stay off.
-// If that API can't be reached (served as plain files, or not deployed yet), images are kept in this browser instead.
+// Design Studio: the image library plus a shirt editor on real product photos.
+// The library is the same one the shirt app uses. Anyone can browse and design with the shirt-app images
+// (GET /api/images?public=1, no key); the console key only adds private images and is needed to upload or delete.
+// Images live online (Cloudflare Workers KV). If that API can't be reached, uploads are kept in this browser.
+// The shirt is a studio photo of a white blank (assets/blanks, the same photos as design.elevatedshirts.com):
+// a color layer with the print on it, multiplied by the photo's shading, plus the photo shot in black.
 import { el, store, toast } from "./app.js";
 import { askForKey, consoleKey } from "./api.js";
 
 const API = "/api/images";
-const PRINT_W = 4500; // 15 in at 300 dpi
-const PRINT_H = 5400; // 18 in at 300 dpi
+const BLANKS = "assets/blanks/";
+const PW = 12, PH = 16, DPI = 300; // print area in inches, the same as the shirt app
+const STYLES = [["tee", "T-shirt"], ["fitted", "Fitted tee"], ["longsleeve", "Long sleeve"], ["tank", "Tank top"], ["crew", "Crewneck"], ["hoodie", "Hoodie"]];
 const COLORS = [
-  ["White", "#f4f4f2"], ["Black", "#1c1c1e"], ["Heather grey", "#a7a9ac"], ["Navy", "#1f2a44"],
-  ["Red", "#b3262e"], ["Forest", "#2f4a34"], ["Sand", "#d9c7a3"], ["Maroon", "#5b1f2a"], ["Royal", "#2a4fa0"],
+  ["White", "#f6f6f4"], ["Natural", "#ece3d0"], ["Ash", "#d6d6d3"], ["Heather grey", "#a9abae"], ["Charcoal", "#3d3f43"],
+  ["Black", "#1b1b1d"], ["Navy", "#1f2a44"], ["Royal", "#2a4fa0"], ["Carolina blue", "#7ba7d6"], ["Red", "#b3262e"],
+  ["Maroon", "#5b1f2a"], ["Forest", "#2f4a34"], ["Military green", "#5b5f3f"], ["Sand", "#d9c7a3"], ["Gold", "#f2a900"], ["Light pink", "#f6cad6"],
 ];
+const isDark = (hex) => { const n = parseInt(hex.slice(1), 16); return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) < 140; };
 
 // ---------- storage ----------
 const keyHeader = () => { const k = consoleKey.get(); return k ? { "x-console-key": k } : {}; };
@@ -49,34 +55,41 @@ const RECENT_MS = 5 * 60 * 1000;
 const recentAdds = new Map(), recentDeletes = new Map(); // key -> { item?, at }
 const fresh = (m) => { for (const [k, v] of m) if (Date.now() - v.at > RECENT_MS) m.delete(k); return m; };
 
-let cloudLocked = false; // the online library answered 401/403: no (or a wrong) console key
+// "all" with a working console key, "public" (the shirt-app images) without one.
+export let libraryScope = "public";
+async function fetchList(withKey) {
+  const res = await fetch(withKey ? API : `${API}?public=1`, { headers: { accept: "application/json", ...(withKey ? keyHeader() : {}) } });
+  if (!res.ok || !res.headers.get("content-type")?.includes("json")) return { status: res.status, items: null };
+  return { status: res.status, items: (await res.json()).items ?? [] };
+}
 export async function listImages() {
-  let cloud = [];
-  cloudLocked = false;
+  let cloud = null;
   try {
-    const res = await fetch(API, { headers: { accept: "application/json", ...keyHeader() } });
-    cloudLocked = res.status === 401 || res.status === 403;
-    if (res.ok && res.headers.get("content-type")?.includes("json")) {
-      cloud = ((await res.json()).items ?? []).filter((i) => !fresh(recentDeletes).has(i.key));
-      const seen = new Set(cloud.map((i) => i.key));
-      for (const [k, { item }] of fresh(recentAdds)) if (!seen.has(k)) cloud.push(item);
+    if (consoleKey.get()) {
+      const r = await fetchList(true);
+      if (r.items) { cloud = r.items; libraryScope = "all"; }
+      else if (r.status === 401 || r.status === 403) consoleKey.clear(); // a wrong key: fall back to the public list
     }
+    if (!cloud) { const r = await fetchList(false); cloud = r.items; libraryScope = "public"; }
   } catch { /* offline or not deployed */ }
+  cloud = (cloud ?? []).filter((i) => !fresh(recentDeletes).has(i.key));
+  const seen = new Set(cloud.map((i) => i.key));
+  for (const [k, { item }] of fresh(recentAdds)) if (!seen.has(k)) cloud.push(item);
   const local = await listLocal();
   return [...cloud, ...local].sort((a, b) => (b.added ?? 0) - (a.added ?? 0));
 }
 
-// item.url is a signed link from the API, so private images load in <img> without the key.
+// Private items carry a signed link from the API; public ones load from /api/images/:key without the key.
 export const imageUrl = (item) => item.local ? localUrls.get(item.key) : item.url ?? `${API}/${encodeURIComponent(item.key)}`;
 
-async function upload(file, tags) {
+async function upload(file, tags, isPublic) {
   try {
     const res = await fetch(API, {
       method: "POST",
-      headers: { "content-type": file.type, "x-filename": file.name, "x-tags": tags, ...keyHeader() },
+      headers: { "content-type": file.type, "x-filename": file.name, "x-tags": tags, ...(isPublic ? { "x-public": "1" } : {}), ...keyHeader() },
       body: file,
     });
-    if (res.status === 401 || res.status === 403) throw Object.assign(new Error(res.status === 401 ? "Wrong or missing console key. Add it under Settings below." : "Uploads are off until CONSOLE_KEY is set for this console."), { stop: true });
+    if (res.status === 401 || res.status === 403) throw Object.assign(new Error(res.status === 401 ? "Wrong or missing console key." : "Uploads are off until CONSOLE_KEY is set for this console."), { stop: true, key: res.status === 401 });
     if (res.ok) {
       const { item } = await res.json();
       recentAdds.set(item.key, { item, at: Date.now() });
@@ -103,80 +116,119 @@ async function remove(item) {
   recentDeletes.set(item.key, { at: Date.now() });
 }
 
-// ---------- shirt artwork ----------
+// ---------- shirt photos ----------
+let blanksCfg;
+const loadBlanks = () => blanksCfg ??= fetch(`${BLANKS}blanks.json`).then((r) => r.ok ? r.json() : Promise.reject(new Error("blanks"))).catch((e) => { blanksCfg = null; throw e; });
+const photoUrl = (style, side, shade) => `${BLANKS}${style}-${side}${shade ? "-shade" : ""}.jpg`;
+const loadImg = (src) => new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => fail(new Error(src)); i.src = src; });
+
+// ---------- icons (simple strokes, no emoji) ----------
 const SVG_NS = "http://www.w3.org/2000/svg";
-function shirtSvg() {
-  const svg = document.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("class", "shirt");
-  svg.setAttribute("viewBox", "0 0 500 600");
-  svg.setAttribute("aria-hidden", "true");
-  svg.innerHTML = `
-    <path class="body" d="M165 40 L120 55 L20 120 L60 215 L110 190 L110 570 Q250 585 390 570 L390 190 L440 215 L480 120 L380 55 L335 40 Q250 95 165 40 Z"
-      stroke="rgba(0,0,0,.25)" stroke-width="2"/>
-    <path d="M165 40 Q250 95 335 40 Q250 70 165 40 Z" fill="rgba(0,0,0,.12)"/>
-    <path d="M110 190 L110 230 M390 190 L390 230" stroke="rgba(0,0,0,.12)" stroke-width="2"/>`;
-  return svg;
-}
+const ICONS = {
+  library: "M4 5h7v7H4zM13 5h7v7h-7zM4 14h7v6H4zM13 14h7v6h-7z",
+  upload: "M12 16V4M7 9l5-5 5 5M4 16v4h16v-4",
+  shirt: "M8 3l-5 3 2 5 3-1v11h8V10l3 1 2-5-5-3c-1 2-2.3 3-4 3S9 5 8 3z",
+  layers: "M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5M3 17.5l9 5 9-5",
+};
+const icon = (name) => {
+  const s = document.createElementNS(SVG_NS, "svg");
+  s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("aria-hidden", "true"); s.setAttribute("class", "ed-ico");
+  s.innerHTML = `<path d="${ICONS[name]}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>`;
+  return s;
+};
 
 // ---------- page ----------
 export async function renderStudio() {
-  const saved = store.get("bc-design", null);
-  const state = { color: saved?.color ?? COLORS[0][1], layers: saved?.layers ?? [], sel: null, items: [], q: "" };
-  const save = () => store.set("bc-design", { color: state.color, layers: state.layers });
+  const saved = store.get("bc-design-2", null);
+  const state = {
+    style: STYLES.some(([k]) => k === saved?.style) ? saved.style : "tee",
+    side: saved?.side === "back" ? "back" : "front",
+    color: saved?.color ?? COLORS[0][1],
+    sides: { front: saved?.sides?.front ?? [], back: saved?.sides?.back ?? [] },
+    sel: null, items: [], q: "", cat: "", tool: "library", shown: 120,
+  };
+  const layers = () => state.sides[state.side];
+  const save = () => store.set("bc-design-2", { style: state.style, side: state.side, color: state.color, sides: state.sides });
+  const btn = (label, fn, cls = "btn", attrs = {}) => el("button", { class: cls, type: "button", onclick: fn, ...attrs }, label);
 
-  // library column
+  // ----- canvas: the photo stack and the print area -----
+  const tint = el("div", { class: "ed-tint" });
+  const print = el("div", { class: "ed-print" });
+  const shadeImg = el("img", { class: "ed-shade", alt: "", draggable: "false" });
+  const baseImg = el("img", { class: "ed-base", alt: "", draggable: "false" });
+  const photo = el("div", { class: "ed-photo", "aria-hidden": "true" }, tint, print, shadeImg, baseImg);
+  const area = el("div", { class: "ed-area print-area", "aria-label": "Print area" });
+  const stage = el("div", { class: "ed-stage" }, photo, area);
+  const sideSeg = el("div", { class: "seg", role: "tablist", "aria-label": "Shirt side" });
+  const sizeNote = el("span", { class: "muted small" });
+
+  // ----- tool panels -----
   const fileIn = el("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif,image/svg+xml", multiple: true, hidden: true });
   const tagsIn = el("input", { class: "field", type: "text", placeholder: "Tags for new uploads, e.g. halloween, logo" });
-  const drop = el("div", { class: "drop" }, "Drop images here or ",
-    el("button", { class: "btn ghost", type: "button", onclick: () => fileIn.click() }, "choose files"));
-  const search = el("input", { class: "field", type: "search", placeholder: "Search by name or tag", "aria-label": "Search images" });
+  const pubIn = el("input", { type: "checkbox", checked: true });
+  const search = el("input", { class: "field", type: "search", placeholder: "Search images by name or tag", "aria-label": "Search images" });
+  const cats = el("div", { class: "ed-cats", role: "group", "aria-label": "Category" });
   const countLine = el("p", { class: "muted small" });
   const syncLine = el("p", { class: "muted small" });
   const lib = el("div", { class: "lib", role: "list" });
-
-  // stage column
-  const svg = shirtSvg();
-  const area = el("div", { class: "print-area" });
-  const stage = el("div", { class: "stage" }, svg, area);
+  const more = el("button", { class: "btn ghost", type: "button", hidden: true, onclick: () => { state.shown += 120; drawLib(); } }, "Show more");
   const layersList = el("div", { class: "layers" });
-  const sizeIn = el("input", { type: "range", min: 5, max: 150, value: 50 });
-  const rotIn = el("input", { type: "range", min: -180, max: 180, value: 0 });
-  const opIn = el("input", { type: "range", min: 10, max: 100, value: 100 });
-  const swatches = el("div", { class: "swatches" });
-  const guide = el("input", { type: "checkbox", checked: true });
-  const keyIn = el("input", { class: "field", type: "password", placeholder: "The CONSOLE_KEY value", autocomplete: "off", value: consoleKey.get() });
+
+  const panels = {
+    library: el("div", { class: "ed-pane stack" }, el("h2", {}, "Image library"), search, cats, countLine, lib, more, syncLine),
+    upload: el("div", { class: "ed-pane stack" }, el("h2", {}, "Upload"),
+      el("div", { class: "drop" }, "Drop images here or ", btn("choose files", () => fileIn.click(), "btn ghost")), fileIn, tagsIn,
+      el("label", { class: "row small" }, pubIn, "Show in the shirt app library"),
+      el("p", { class: "muted small" }, "PNG with a transparent background prints best. Up to 20 MB each. Adding or deleting library images needs the console key; designing doesn't.")),
+    shirt: el("div", { class: "ed-pane stack" }, el("h2", {}, "Shirt")),
+    layers: el("div", { class: "ed-pane stack" }, el("h2", {}, "Layers"), el("p", { class: "muted small" }, "Top layer first. Select one to edit it."), layersList),
+  };
+  const paneHost = el("div", { class: "ed-panel" });
+  const rail = el("nav", { class: "ed-rail", "aria-label": "Studio tools" },
+    [["library", "Library"], ["upload", "Upload"], ["shirt", "Shirt"], ["layers", "Layers"]].map(([k, label]) =>
+      el("button", { type: "button", "data-tool": k, "aria-pressed": "false", onclick: () => { state.tool = k; drawTool(); } }, icon(k), el("span", {}, label))));
+  const drawTool = () => {
+    rail.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tool === state.tool)));
+    paneHost.replaceChildren(panels[state.tool]);
+    if (state.tool === "shirt") drawShirtPane();
+  };
 
   // ----- library -----
+  const hay = (i) => `${i.name ?? ""} ${i.tags ?? ""} ${i.category ?? ""}`.toLowerCase();
   const drawLib = () => {
-    const q = state.q.toLowerCase();
-    const shown = state.items.filter((i) => !q || `${i.name} ${i.tags ?? ""}`.toLowerCase().includes(q));
+    const words = state.q.toLowerCase().split(/\s+/).filter(Boolean);
+    const all = state.items.filter((i) => !state.cat || i.category === state.cat);
+    const shown = all.filter((i) => words.every((w) => hay(i).includes(w)));
     const localCount = state.items.filter((i) => i.local).length;
-    countLine.textContent = `${shown.length} of ${state.items.length} images` +
-      (localCount ? `. ${localCount} saved only in this browser.` : ".") +
-      (cloudLocked ? " Enter the console key to see the online library." : "");
-    if (cloudLocked) countLine.append(" ", el("button", { class: "btn ghost", type: "button", onclick: () => unlock() }, "Enter console key"));
-    lib.replaceChildren(...shown.map((i) => {
-      const b = el("button", { type: "button", draggable: "true", title: `${i.name}${i.tags ? ` · ${i.tags}` : ""}\nClick to add, or drag onto the shirt`,
-        onclick: () => addLayer(i), role: "listitem" },
+    countLine.replaceChildren(`${shown.length} of ${state.items.length} images` + (localCount ? `, ${localCount} only in this browser.` : "."),
+      libraryScope === "public" ? el("span", {}, " These are the shirt app images. ", btn("Show private images too", () => unlock(), "linkbtn")) : null);
+    const manage = libraryScope === "all";
+    lib.replaceChildren(...shown.slice(0, state.shown).map((i) => {
+      const add = el("button", { class: "tile", type: "button", draggable: "true", title: `${i.name}${i.tags ? ` · ${i.tags}` : ""}\nClick to add, or drag onto the shirt`, onclick: () => addLayer(i) },
         el("img", { src: imageUrl(i), alt: i.name, loading: "lazy" }), el("span", { class: "nm" }, i.name));
-      b.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/bc-image", i.key));
-      b.addEventListener("contextmenu", async (e) => {
-        e.preventDefault();
-        if (!confirm(`Delete "${i.name}" from the library?`)) return;
-        try { await remove(i); state.items = state.items.filter((x) => x !== i); drawLib(); toast("Image deleted"); }
-        catch (err) { toast(err.message); }
-      });
-      return b;
+      add.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/bc-image", i.key));
+      add.addEventListener("contextmenu", (e) => { e.preventDefault(); del(i); });
+      return el("div", { class: "lib-item", role: "listitem" }, add,
+        manage || i.local ? el("button", { class: "lib-del", type: "button", "aria-label": `Delete ${i.name}`, title: "Delete from the library", onclick: () => del(i) }, "×") : null);
     }));
-    if (!shown.length) lib.append(el("p", { class: "muted small" }, state.items.length ? "No images match that search." : "No images yet. Upload some to start your catalog."));
+    more.hidden = shown.length <= state.shown;
+    if (!shown.length) lib.append(el("p", { class: "muted small" }, state.items.length ? "No images match that search." : "No images yet. Upload some under Upload."));
   };
-  const refresh = async () => { state.items = await listImages(); drawLib(); };
-  // Without the key the online library answers 401, so ask for it (once per tab) instead of
-  // showing an empty library.
+  const drawCats = () => {
+    const list = [...new Set(state.items.map((i) => i.category).filter(Boolean))].sort();
+    cats.hidden = !list.length;
+    cats.replaceChildren(...["", ...list].map((c) => el("button", { class: "chip", type: "button", "aria-pressed": String(c === state.cat),
+      onclick: () => { state.cat = c; state.shown = 120; drawCats(); drawLib(); } }, c || "All")));
+  };
+  const refresh = async () => { state.items = await listImages(); drawCats(); drawLib(); };
+  async function del(i) {
+    if (!i.local && !consoleKey.get() && !(await askForKey("Deleting library images needs the console key (the CONSOLE_KEY value set for this console)."))) return;
+    if (!confirm(`Delete "${i.name}" from the library?`)) return;
+    try { await remove(i); state.items = state.items.filter((x) => x !== i); drawLib(); toast("Image deleted"); }
+    catch (err) { toast(err.message); }
+  }
   const unlock = async () => {
-    const k = await askForKey("The image library needs the console key (the CONSOLE_KEY value set for this console).");
-    if (!k) return;
-    keyIn.value = k;
+    if (!(await askForKey("Private library images need the console key (the CONSOLE_KEY value set for this console)."))) return;
     await refresh();
   };
   // When the hourly Kittl library sync last ran (counts only, no key needed).
@@ -193,71 +245,135 @@ export async function renderStudio() {
   const uploadFiles = async (files) => {
     const list = [...files].filter((f) => f.type.startsWith("image/"));
     if (!list.length) return;
+    if (!consoleKey.get() && !(await askForKey("Adding images to the library needs the console key (the CONSOLE_KEY value set for this console)."))) return;
     let cloud = 0, local = 0, failed = 0, reason = "";
     for (const [n, f] of list.entries()) {
       countLine.textContent = `Uploading ${n + 1} of ${list.length}…`;
-      try { (await upload(f, tagsIn.value.trim())).saved === "cloud" ? cloud++ : local++; }
-      catch (e) { failed++; reason ||= e.message; if (e.message.includes("key")) break; }
+      try { (await upload(f, tagsIn.value.trim(), pubIn.checked)).saved === "cloud" ? cloud++ : local++; }
+      catch (e) { failed++; reason ||= e.message; if (e.key) { consoleKey.clear(); break; } }
     }
     await refresh();
+    state.tool = "library"; drawTool();
     // One toast with the reason: a second toast would replace the first before it could be read.
     toast([cloud && `${cloud} saved online`, local && `${local} saved in this browser only`, failed && `${failed} failed`].filter(Boolean).join(", ") + (reason ? `. ${reason}` : ""));
   };
   fileIn.addEventListener("change", () => { uploadFiles(fileIn.files); fileIn.value = ""; });
+  const drop = panels.upload.querySelector(".drop");
   drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
   drop.addEventListener("dragleave", () => drop.classList.remove("over"));
   drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); uploadFiles(e.dataTransfer.files); });
-  search.addEventListener("input", () => { state.q = search.value; drawLib(); });
+  search.addEventListener("input", () => { state.q = search.value; state.shown = 120; drawLib(); });
+
+  // ----- shirt pane -----
+  function drawShirtPane() {
+    panels.shirt.replaceChildren(el("h2", {}, "Shirt"),
+      el("span", { class: "eyebrow" }, "Style"),
+      el("div", { class: "ed-styles", role: "radiogroup", "aria-label": "Shirt style" }, STYLES.map(([k, name]) =>
+        el("button", { type: "button", role: "radio", "aria-checked": String(k === state.style), onclick: () => { state.style = k; save(); drawShirt(); drawShirtPane(); } },
+          el("span", { class: "ed-thumb", "aria-hidden": "true" }, el("img", { class: "ed-shade", src: photoUrl(k, "front", true), alt: "", loading: "lazy" }),
+            el("img", { class: "ed-base", src: photoUrl(k, "front", false), alt: "", loading: "lazy" })), el("span", {}, name)))),
+      el("span", { class: "eyebrow" }, `Color: ${COLORS.find(([, c]) => c === state.color)?.[0] ?? "Custom"}`),
+      el("div", { class: "swatches" }, COLORS.map(([name, c]) => el("button", { type: "button", title: name, "aria-label": name, "aria-pressed": String(c === state.color),
+        style: `background:${c}`, onclick: () => { state.color = c; save(); drawShirt(); drawShirtPane(); } }))),
+      el("p", { class: "muted small" }, `Print area ${PW} × ${PH} in. Customer orders pick the exact blank and color in the shirt app.`));
+  }
+
+  // ----- the shirt -----
+  let areaBox = { x: 0.3, y: 0.25, w: 0.4, h: 0.53 };
+  async function drawShirt() {
+    tint.style.background = state.color;
+    stage.style.setProperty("--ed-ink", isDark(state.color) ? "rgba(255,255,255,.55)" : "rgba(0,0,0,.35)");
+    sideSeg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.side === state.side)));
+    try {
+      const cfg = await loadBlanks();
+      const v = cfg.styles[state.style]?.[state.side] ?? cfg.styles.tee[state.side];
+      areaBox = { x: v.cx - (v.ppi * PW) / 2, y: v.top, w: v.ppi * PW, h: v.ppi * PH };
+      const base = photoUrl(state.style, state.side, false), shade = photoUrl(state.style, state.side, true);
+      await Promise.all([loadImg(base), loadImg(shade)]);
+      baseImg.src = base; shadeImg.src = shade; stage.classList.add("is-ready");
+    } catch { toast("The shirt photo didn't load. Refresh to try again."); }
+    for (const n of [print, area]) Object.assign(n.style, { left: `${areaBox.x * 100}%`, top: `${areaBox.y * 100}%`, width: `${areaBox.w * 100}%`, height: `${areaBox.h * 100}%` });
+    drawStage();
+  }
 
   // ----- layers -----
   const findItem = (key) => state.items.find((i) => i.key === key);
-  const layerSrc = (l) => { const i = findItem(l.key); return i ? imageUrl(i) : null; };
+  const layerSrc = (l) => { const i = findItem(l.key); return i ? imageUrl(i) : l.src ?? null; };
 
-  function addLayer(item, x = 0.5, y = 0.4) {
+  function addLayer(item, x = 0.5, y = 0.35) {
     const img = new Image();
     img.onload = () => {
-      const w = 0.6, ratio = img.naturalHeight / img.naturalWidth || 1;
-      const h = w * ratio * (PRINT_W / PRINT_H);
-      state.layers.push({ id: crypto.randomUUID(), key: item.key, name: item.name, x, y, w, h, rot: 0, op: 1 });
-      state.sel = state.layers.at(-1).id;
+      const w = 0.7, ratio = img.naturalHeight / img.naturalWidth || 1;
+      let h = w * ratio * (PW / PH);
+      const fit = h > 0.9 ? 0.9 / h : 1;
+      layers().push({ id: crypto.randomUUID(), key: item.key, src: item.local ? null : imageUrl(item), name: item.name, x, y: Math.max(y, (h * fit) / 2), w: w * fit, h: h * fit, rot: 0, op: 1, flip: false });
+      state.sel = layers().at(-1).id;
       drawStage(); save();
+      if (matchMedia("(max-width: 900px)").matches) stage.scrollIntoView({ behavior: "smooth", block: "center" });
     };
     img.onerror = () => toast("Couldn't load that image");
     img.src = imageUrl(item);
   }
-  const selected = () => state.layers.find((l) => l.id === state.sel);
+  const selected = () => layers().find((l) => l.id === state.sel);
+  const place = (node, l) => Object.assign(node.style, {
+    left: `${(l.x - l.w / 2) * 100}%`, top: `${(l.y - l.h / 2) * 100}%`, width: `${l.w * 100}%`, height: `${l.h * 100}%`,
+    transform: `rotate(${l.rot}deg)${l.flip ? " scaleX(-1)" : ""}`, opacity: l.op,
+  });
 
   function drawStage() {
-    svg.querySelector(".body").setAttribute("fill", state.color);
-    area.classList.toggle("hide-guide", !guide.checked);
-    area.replaceChildren(...state.layers.map((l) => {
-      const src = layerSrc(l);
-      const node = el("div", { class: `layer${l.id === state.sel ? " sel" : ""}`, "data-id": l.id },
-        src ? el("img", { src, alt: l.name }) : el("span", { class: "muted small" }, "Missing image"),
+    print.replaceChildren(...layers().map((l) => { const src = layerSrc(l); const n = src ? el("img", { class: "ed-pl", src, alt: "" }) : el("span"); place(n, l); return n; }));
+    area.replaceChildren(...layers().map((l) => {
+      const node = el("div", { class: `layer${l.id === state.sel ? " sel" : ""}`, "data-id": l.id, title: l.name },
         el("span", { class: "handle h-size", "data-h": "size" }), el("span", { class: "handle h-rot", "data-h": "rot" }));
-      Object.assign(node.style, {
-        left: `${(l.x - l.w / 2) * 100}%`, top: `${(l.y - l.h / 2) * 100}%`,
-        width: `${l.w * 100}%`, height: `${l.h * 100}%`,
-        transform: `rotate(${l.rot}deg)`, opacity: l.op,
-      });
+      place(node, { ...l, op: 1, flip: false });
       return node;
     }));
-    layersList.replaceChildren(...[...state.layers].reverse().map((l) =>
+    layersList.replaceChildren(...[...layers()].reverse().map((l) =>
       el("button", { type: "button", "aria-pressed": String(l.id === state.sel), onclick: () => { state.sel = l.id; drawStage(); } },
         layerSrc(l) ? el("img", { src: layerSrc(l), alt: "" }) : null, el("span", {}, l.name))));
-    if (!state.layers.length) layersList.append(el("p", { class: "muted small" }, "Click or drag an image from the library to put it on the shirt."));
+    if (!layers().length) layersList.append(el("p", { class: "muted small" }, "Nothing on this side yet. Add an image from the Library."));
+    drawProps();
+  }
+
+  // ----- properties (right) -----
+  const props = el("div", { class: "ed-props stack" });
+  const range = (label, min, max, value, on) => {
+    const i = el("input", { type: "range", min, max, value, "aria-label": label });
+    i.addEventListener("input", () => editSel((s) => on(s, +i.value), false));
+    i.addEventListener("change", save);
+    return el("label", { class: "stack small", style: "gap:4px" }, label, i);
+  };
+  function drawProps() {
     const s = selected();
-    [sizeIn, rotIn, opIn].forEach((i) => (i.disabled = !s));
-    if (s) { sizeIn.value = Math.round(s.w * 100); rotIn.value = Math.round(s.rot); opIn.value = Math.round(s.op * 100); }
-    swatches.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.c === state.color)));
+    const inches = s ? `${(s.w * PW).toFixed(1)} × ${(s.h * PH).toFixed(1)} in` : "";
+    sizeNote.textContent = s ? `Selected: ${inches}` : "";
+    props.replaceChildren(
+      el("h2", {}, s ? "Selected image" : "Design"),
+      s ? el("div", { class: "stack" },
+        el("p", { class: "muted small ed-name" }, s.name, el("br"), inches),
+        range("Size", 5, 100, Math.round(s.w * 100), (l, v) => { const k = v / 100 / l.w; l.w *= k; l.h *= k; }),
+        range("Rotation", -180, 180, Math.round(s.rot), (l, v) => { l.rot = v; }),
+        range("Opacity", 10, 100, Math.round(s.op * 100), (l, v) => { l.op = v / 100; }),
+        el("div", { class: "ed-grid2" },
+          btn("Center", () => editSel((l) => { l.x = 0.5; })), btn("Top", () => editSel((l) => { l.y = l.h / 2; })),
+          btn("Flip", () => editSel((l) => { l.flip = !l.flip; })), btn("Duplicate", dup),
+          btn("Forward", () => reorder(1)), btn("Back", () => reorder(-1))),
+        btn("Remove from shirt", delLayer, "btn danger"))
+        : el("p", { class: "muted small" }, layers().length ? "Select an image on the shirt to size, turn or move it." : "Pick an image from the library to start. Drag it on the shirt to move it, the corner dot resizes and the top dot turns it."),
+      el("hr"),
+      el("h3", {}, "Export"),
+      btn("Download print file", exportPng, "btn primary"),
+      btn("Download mockup photo", exportMockup, "btn"),
+      el("p", { class: "muted small" }, `Print file: ${PW * DPI} × ${PH * DPI} px PNG, ${PW} × ${PH} in at ${DPI} dpi, ${state.side} side.`),
+      layers().length ? btn("Clear this side", () => { if (confirm(`Remove every image from the ${state.side}?`)) { state.sides[state.side] = []; state.sel = null; drawStage(); save(); } }, "btn ghost") : null);
   }
 
   // drag, resize and rotate with one pointer handler
   area.addEventListener("pointerdown", (e) => {
     const node = e.target.closest(".layer");
     if (!node) { state.sel = null; drawStage(); return; }
-    const l = state.layers.find((x) => x.id === node.dataset.id);
-    state.sel = l.id; drawStage();
+    const l = layers().find((x) => x.id === node.dataset.id);
+    if (state.sel !== l.id) { state.sel = l.id; drawStage(); }
     const box = area.getBoundingClientRect();
     const mode = e.target.dataset.h ?? "move";
     const start = { px: e.clientX, py: e.clientY, ...l };
@@ -290,41 +406,32 @@ export async function renderStudio() {
     if (e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
   });
 
-  const editSel = (fn) => { const s = selected(); if (s) { fn(s); drawStage(); save(); } };
-  sizeIn.addEventListener("input", () => editSel((s) => { const k = sizeIn.value / 100 / s.w; s.w *= k; s.h *= k; }));
-  rotIn.addEventListener("input", () => editSel((s) => (s.rot = +rotIn.value)));
-  opIn.addEventListener("input", () => editSel((s) => (s.op = opIn.value / 100)));
+  const editSel = (fn, persist = true) => { const s = selected(); if (s) { fn(s); drawStage(); if (persist) save(); } };
   const reorder = (d) => editSel((s) => {
-    const i = state.layers.indexOf(s), j = i + d;
-    if (j < 0 || j >= state.layers.length) return;
-    [state.layers[i], state.layers[j]] = [state.layers[j], state.layers[i]];
+    const L = layers(), i = L.indexOf(s), j = i + d;
+    if (j < 0 || j >= L.length) return;
+    [L[i], L[j]] = [L[j], L[i]];
   });
-  const dup = () => editSel((s) => { const c = { ...s, id: crypto.randomUUID(), x: s.x + 0.04, y: s.y + 0.04 }; state.layers.push(c); state.sel = c.id; });
-  const del = () => editSel((s) => { state.layers = state.layers.filter((x) => x !== s); state.sel = null; });
-  const center = () => editSel((s) => { s.x = 0.5; });
+  const dup = () => editSel((s) => { const c = { ...s, id: crypto.randomUUID(), x: s.x + 0.04, y: s.y + 0.04 }; layers().push(c); state.sel = c.id; });
+  const delLayer = () => editSel((s) => { state.sides[state.side] = layers().filter((x) => x !== s); state.sel = null; });
   const nudge = (dx, dy) => editSel((s) => { s.x += dx; s.y += dy; });
 
   const onKey = (e) => {
     if (!document.body.contains(stage)) return document.removeEventListener("keydown", onKey);
-    if (!selected() || e.target.closest("input, textarea, select")) return;
+    if (!selected() || e.target.closest("input, textarea, select, dialog")) return;
     const step = e.shiftKey ? 0.05 : 0.01;
-    const map = { Delete: del, Backspace: del, ArrowLeft: () => nudge(-step, 0), ArrowRight: () => nudge(step, 0),
+    const map = { Delete: delLayer, Backspace: delLayer, ArrowLeft: () => nudge(-step, 0), ArrowRight: () => nudge(step, 0),
       ArrowUp: () => nudge(0, -step), ArrowDown: () => nudge(0, step) };
     if (map[e.key]) { e.preventDefault(); map[e.key](); }
   };
   document.addEventListener("keydown", onKey);
 
-  COLORS.forEach(([name, c]) => swatches.append(el("button", { type: "button", title: name, "aria-label": name, "data-c": c,
-    style: `background:${c}`, onclick: () => { state.color = c; drawStage(); save(); } })));
-  guide.addEventListener("change", drawStage);
-  keyIn.addEventListener("change", () => { consoleKey.set(keyIn.value.trim()); toast("Console key kept for this browser tab"); refresh(); });
+  for (const side of ["front", "back"]) sideSeg.append(el("button", { class: "seg-btn", type: "button", role: "tab", "data-side": side, "aria-selected": "false",
+    onclick: () => { state.side = side; state.sel = null; save(); drawShirt(); } }, side === "front" ? "Front" : "Back"));
 
   // ----- export -----
-  async function exportPng() {
-    if (!state.layers.length) return toast("Add an image to the shirt first");
-    const c = Object.assign(document.createElement("canvas"), { width: PRINT_W, height: PRINT_H });
-    const g = c.getContext("2d");
-    for (const l of state.layers) {
+  async function paintLayers(g, x0, y0, wpx, hpx) {
+    for (const l of layers()) {
       const src = layerSrc(l);
       if (!src) continue;
       const img = new Image();
@@ -333,43 +440,52 @@ export async function renderStudio() {
       try { await img.decode(); } catch { toast(`Skipped ${l.name}, it couldn't be loaded`); continue; }
       g.save();
       g.globalAlpha = l.op;
-      g.translate(l.x * PRINT_W, l.y * PRINT_H);
+      g.translate(x0 + l.x * wpx, y0 + l.y * hpx);
       g.rotate((l.rot * Math.PI) / 180);
-      g.drawImage(img, (-l.w * PRINT_W) / 2, (-l.h * PRINT_H) / 2, l.w * PRINT_W, l.h * PRINT_H);
+      if (l.flip) g.scale(-1, 1);
+      g.drawImage(img, (-l.w * wpx) / 2, (-l.h * hpx) / 2, l.w * wpx, l.h * hpx);
       g.restore();
     }
-    c.toBlob((blob) => {
-      const a = el("a", { href: URL.createObjectURL(blob), download: `shirt-design-${new Date().toISOString().slice(0, 10)}.png` });
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-      toast("Print file downloaded: 4500 × 5400 px, 15 × 18 in at 300 dpi");
-    }, "image/png");
+  }
+  const download = (canvas, type, name, msg) => canvas.toBlob((blob) => {
+    const a = el("a", { href: URL.createObjectURL(blob), download: name });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    toast(msg);
+  }, type, 0.92);
+  const day = () => new Date().toISOString().slice(0, 10);
+  async function exportPng() {
+    if (!layers().length) return toast(`Add an image to the ${state.side} first`);
+    const c = Object.assign(document.createElement("canvas"), { width: PW * DPI, height: PH * DPI });
+    await paintLayers(c.getContext("2d"), 0, 0, c.width, c.height);
+    download(c, "image/png", `print-${state.side}-${day()}.png`, `Print file downloaded: ${PW * DPI} × ${PH * DPI} px, ${PW} × ${PH} in at ${DPI} dpi`);
+  }
+  async function exportMockup() {
+    const px = 1600;
+    const c = Object.assign(document.createElement("canvas"), { width: px, height: px });
+    const g = c.getContext("2d");
+    try {
+      const [base, shade] = await Promise.all([loadImg(photoUrl(state.style, state.side, false)), loadImg(photoUrl(state.style, state.side, true))]);
+      g.fillStyle = state.color; g.fillRect(0, 0, px, px);
+      await paintLayers(g, areaBox.x * px, areaBox.y * px, areaBox.w * px, areaBox.h * px);
+      g.globalCompositeOperation = "multiply"; g.drawImage(shade, 0, 0, px, px);
+      g.globalCompositeOperation = "lighter"; g.drawImage(base, 0, 0, px, px);
+      g.globalCompositeOperation = "source-over";
+      download(c, "image/jpeg", `mockup-${state.style}-${state.side}-${day()}.jpg`, "Mockup photo downloaded");
+    } catch { toast("The shirt photo didn't load. Refresh to try again."); }
   }
 
-  const btn = (label, fn, cls = "btn") => el("button", { class: cls, type: "button", onclick: fn }, label);
-  const page = el("div", { class: "studio" },
-    el("section", { class: "panel stack", "aria-label": "Image library" },
-      el("div", { class: "panel-head" }, el("h2", {}, "Image library"), btn("Upload", () => fileIn.click(), "btn primary")),
-      drop, fileIn, tagsIn, search, countLine, lib, syncLine,
-      el("p", { class: "muted small" }, "Right-click an image to delete it.")),
-    el("section", { class: "stage-wrap", "aria-label": "Shirt designer" },
-      el("div", { class: "panel" }, stage),
-      el("div", { class: "panel controls" },
-        el("div", { class: "panel-head" }, el("h2", {}, "Design"), btn("Download print file", exportPng, "btn primary")),
-        el("label", {}, "Shirt color", swatches),
-        el("label", {}, "Size", sizeIn), el("label", {}, "Rotation", rotIn), el("label", {}, "Opacity", opIn),
-        el("div", { class: "row" },
-          btn("Center", center), btn("Forward", () => reorder(1)), btn("Back", () => reorder(-1)),
-          btn("Duplicate", dup), btn("Remove", del),
-          btn("Clear shirt", () => { if (confirm("Remove every image from the shirt?")) { state.layers = []; state.sel = null; drawStage(); save(); } }, "btn ghost")),
-        el("label", { class: "row" }, guide, "Show print area guide"),
-        el("h3", {}, "Layers, top first"), layersList,
-        el("details", {}, el("summary", {}, "Settings"), el("label", {}, "Console key", keyIn)),
-        el("p", { class: "muted small" }, "Drag to move, the corner dot resizes, the top dot rotates (hold Shift to snap). Arrow keys nudge, Delete removes."))));
+  const page = el("div", { class: "editor" },
+    rail,
+    paneHost,
+    el("section", { class: "ed-canvas", "aria-label": "Shirt" },
+      el("div", { class: "ed-bar" }, sideSeg, sizeNote), stage,
+      el("p", { class: "muted small ed-hint" }, "Drag to move. The corner dot resizes, the top dot turns (hold Shift to snap). Arrow keys nudge, Delete removes.")),
+    el("aside", { class: "ed-side", "aria-label": "Properties" }, props));
 
+  drawTool();
   await refresh();
-  drawStage();
+  await drawShirt();
   showSync();
-  if (cloudLocked) setTimeout(unlock);
   return page;
 }

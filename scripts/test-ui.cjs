@@ -107,10 +107,12 @@ async function main() {
     const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
     imageCalls.push({ method: req.method(), key, auth: req.headers()["x-console-key"] ?? null });
     if (req.method() === "GET" && key) return images.has(key) ? route.fulfill({ status: 200, contentType: "image/png", body: PNG }) : json(404, { error: "Image not found" });
+    if (req.method() === "GET" && new URL(req.url()).searchParams.get("public") === "1")
+      return json(200, { items: (staleList ?? [...images.values()]).filter((i) => i.public).map(({ url, ...i }) => i).sort((a, b) => b.added - a.added) });
     if (req.headers()["x-console-key"] !== KEY) return json(401, { error: "Wrong or missing console key.", code: "bad_key" });
     if (req.method() === "GET") return json(200, { items: staleList ?? [...images.values()].sort((a, b) => b.added - a.added) });
     if (req.method() === "POST") {
-      const item = { key: `k${images.size + 1}-0123abcd`, name: req.headers()["x-filename"], type: req.headers()["content-type"], size: req.postDataBuffer()?.length ?? 0, tags: req.headers()["x-tags"] ?? "", added: Date.now() };
+      const item = { key: `k${images.size + 1}-0123abcd`, name: req.headers()["x-filename"], type: req.headers()["content-type"], size: req.postDataBuffer()?.length ?? 0, tags: req.headers()["x-tags"] ?? "", public: req.headers()["x-public"] === "1", added: Date.now() };
       images.set(item.key, item);
       return json(201, { item });
     }
@@ -604,61 +606,111 @@ async function main() {
     await page.waitForFunction(() => document.querySelectorAll(".chart")[0]?.querySelectorAll(".bar").length === 90);
   });
 
-  await step("studio: upload needs the key, then list, add to shirt, delete", async () => {
+  await step("studio: no key needed to design: the shirt-app library on a real shirt photo", async () => {
+    images.set("k-pub-0123abcd", { key: "k-pub-0123abcd", name: "palm-tree.png", type: "image/png", size: 10, tags: "palm, zzq-only-tag", category: "Charleston", public: true, added: 2 });
+    images.set("k-priv-0123abcd", { key: "k-priv-0123abcd", name: "secret.png", type: "image/png", size: 10, tags: "", public: false, added: 1 });
+    await page.evaluate(() => { sessionStorage.removeItem("bc-console-key"); localStorage.removeItem("bc-design-2"); });
+    await page.click('a.nav[data-route="dashboard"]');
     await page.click('a.nav[data-route="studio"]');
-    await page.waitForSelector(".lib");
-    await page.evaluate(() => sessionStorage.removeItem("bc-console-key"));
-    await page.locator(".controls details summary").click();
-    await page.locator(".controls details input").fill("");
-    await page.locator(".controls details input").dispatchEvent("change");
-    await clearToasts();
-    await page.setInputFiles('.studio input[type="file"]', { name: "logo.png", mimeType: "image/png", buffer: PNG });
-    await page.waitForSelector(".toast >> text=1 failed. Wrong or missing console key"); // the reason stays on screen
-    assert.equal(images.size, 0, "nothing stored without the key");
-    await page.waitForFunction(() => /Enter the console key/.test(document.querySelector(".studio").textContent));
-    await page.locator(".controls details input").fill(KEY);
-    await page.locator(".controls details input").dispatchEvent("change");
-    await page.fill('.studio input[placeholder^="Tags"]', "logo, test");
-    await page.setInputFiles('.studio input[type="file"]', { name: "logo.png", mimeType: "image/png", buffer: PNG });
-    await page.waitForSelector('.lib button:has-text("logo.png")');
-    const up = imageCalls.filter((c) => c.method === "POST").at(-1);
-    assert.equal(up.auth, KEY);
-    assert.equal([...images.values()][0].tags, "logo, test");
-    assert.match(await page.locator(".studio").textContent(), /1 of 1 images\./);
-    assert.match(await page.locator(".studio").textContent(), /Kittl sync .*: 8 added, 0 removed\. Runs every hour\./);
-    await page.click('.lib button:has-text("logo.png")');
-    await page.waitForSelector(".print-area .layer img");
-    page.once("dialog", (d) => d.accept());
-    await page.locator('.lib button:has-text("logo.png")').click({ button: "right" });
-    await page.waitForSelector(".toast >> text=Image deleted");
-    assert.equal(images.size, 0);
-    assert.equal(imageCalls.filter((c) => c.method === "DELETE").at(-1).auth, KEY);
+    await page.waitForSelector('.lib .tile:has-text("palm-tree.png")');
+    assert.equal(await page.locator("dialog.keydlg[open]").count(), 0, "no key prompt just to design");
+    assert.equal(await page.locator('.lib .tile:has-text("secret.png")').count(), 0, "private images stay hidden without the key");
+    assert.equal(imageCalls.filter((c) => c.method === "GET" && !c.key).at(-1).auth, null, "the list is read without the key");
+    assert.match(await page.locator(".editor").textContent(), /1 of 1 images\. These are the shirt app images\./);
+    assert.match(await page.locator(".editor").textContent(), /Kittl sync .*: 8 added, 0 removed\. Runs every hour\./);
+    await page.fill('.editor input[type="search"]', "zzq-only-tag");
+    assert.equal(await page.locator(".lib .tile").count(), 1, "search by tag finds it");
+    await page.fill('.editor input[type="search"]', "nothing-like-this");
+    assert.equal(await page.locator(".lib .tile").count(), 0);
+    await page.fill('.editor input[type="search"]', "");
+    // the shirt is a photo with the print blended under its shading, never a drawing
+    await page.waitForSelector(".ed-stage.is-ready");
+    assert.equal(await page.locator(".ed-stage svg").count(), 0, "no drawn shirt");
+    assert.match(await page.locator(".ed-base").getAttribute("src"), /blanks\/tee-front\.jpg$/);
+    assert.match(await page.locator(".ed-shade").getAttribute("src"), /blanks\/tee-front-shade\.jpg$/);
+    assert.equal(await page.locator(".ed-shade").evaluate((n) => getComputedStyle(n).mixBlendMode), "multiply");
+    await page.click('.lib .tile:has-text("palm-tree.png")');
+    await page.waitForSelector(".ed-print .ed-pl");
+    await page.waitForSelector(".print-area .layer.sel");
+    assert.match(await page.locator(".ed-side").textContent(), /Selected image/);
+    // style, color and side
+    await page.click('.ed-rail [data-tool="shirt"]');
+    await page.click('.ed-styles button:has-text("Hoodie")');
+    await page.click('.swatches [aria-label="Navy"]');
+    await page.waitForFunction(() => /hoodie-front\.jpg$/.test(document.querySelector(".ed-base").src));
+    assert.equal(await page.locator(".ed-tint").evaluate((n) => getComputedStyle(n).backgroundColor), "rgb(31, 42, 68)");
+    await page.click('.seg-btn[data-side="back"]');
+    await page.waitForFunction(() => /hoodie-back\.jpg$/.test(document.querySelector(".ed-base").src));
+    assert.equal(await page.locator(".print-area .layer").count(), 0, "the back starts empty");
+    await page.click('.seg-btn[data-side="front"]');
+    await page.waitForSelector(".print-area .layer");
+    // exports: a 300 dpi print file and a mockup photo
+    const [dl] = await Promise.all([page.waitForEvent("download"), page.click('button:has-text("Download print file")')]);
+    assert.match(dl.suggestedFilename(), /^print-front-.*\.png$/);
+    const [mk] = await Promise.all([page.waitForEvent("download"), page.click('button:has-text("Download mockup photo")')]);
+    assert.match(mk.suggestedFilename(), /^mockup-hoodie-front-.*\.jpg$/);
+    if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "studio-1280.png") }); }
     page.once("dialog", (d) => d.dismiss());
-    await page.getByRole("button", { name: "Clear shirt" }).click();
+    await page.getByRole("button", { name: "Clear this side" }).click();
     assert.equal(await page.locator(".print-area .layer").count(), 1, "cancel keeps the shirt");
     page.once("dialog", (d) => d.accept());
-    await page.getByRole("button", { name: "Clear shirt" }).click();
+    await page.getByRole("button", { name: "Clear this side" }).click();
     assert.equal(await page.locator(".print-area .layer").count(), 0);
+    images.delete("k-pub-0123abcd"); images.delete("k-priv-0123abcd");
+  });
+
+  await step("studio: uploading asks for the key, then upload, see private images, delete", async () => {
+    await page.evaluate(() => sessionStorage.removeItem("bc-console-key"));
+    await page.click('a.nav[data-route="dashboard"]');
+    await page.click('a.nav[data-route="studio"]');
+    await page.waitForSelector(".editor");
+    await page.click('.ed-rail [data-tool="upload"]');
+    await page.fill('.editor input[placeholder^="Tags"]', "logo, test");
+    await page.setInputFiles('.editor input[type="file"]', { name: "logo.png", mimeType: "image/png", buffer: PNG });
+    await page.waitForSelector("dialog.keydlg[open] #key-in");
+    await page.click("#key-cancel");
+    assert.equal(images.size, 0, "nothing stored without the key");
+    await page.setInputFiles('.editor input[type="file"]', { name: "logo.png", mimeType: "image/png", buffer: PNG });
+    await page.waitForSelector("dialog.keydlg[open] #key-in");
+    await page.fill("#key-in", KEY);
+    await page.click("#key-save");
+    await page.waitForSelector('.lib .tile:has-text("logo.png")');
+    const up = imageCalls.filter((c) => c.method === "POST").at(-1);
+    assert.equal(up.auth, KEY);
+    const saved = [...images.values()][0];
+    assert.equal(saved.tags, "logo, test");
+    assert.equal(saved.public, true, "Show in the shirt app library is ticked by default");
+    images.set("k-priv-0123abcd", { key: "k-priv-0123abcd", name: "secret.png", type: "image/png", size: 10, tags: "", public: false, added: 1 });
+    await page.click('a.nav[data-route="dashboard"]');
+    await page.click('a.nav[data-route="studio"]');
+    await page.waitForSelector('.lib .tile:has-text("secret.png")'); // with the key, private images show too
+    page.once("dialog", (d) => d.accept());
+    await page.locator('.lib-item:has-text("secret.png") .lib-del').click({ force: true });
+    await page.waitForSelector(".toast >> text=Image deleted");
+    assert.ok(!images.has("k-priv-0123abcd"));
+    assert.equal(imageCalls.filter((c) => c.method === "DELETE").at(-1).auth, KEY);
+    for (const k of [...images.keys()]) images.delete(k);
   });
 
   await step("studio: a list that lags behind uploads and deletes (Workers KV) still shows what this tab did", async () => {
-    const old = { key: "k0-0123abcd", name: "old.png", type: "image/png", size: 10, tags: "", added: 1 };
+    const old = { key: "k0-0123abcd", name: "old.png", type: "image/png", size: 10, tags: "", public: true, added: 1 };
     images.set(old.key, old);
     staleList = [old];
     await page.click('a.nav[data-route="dashboard"]');
     await page.click('a.nav[data-route="studio"]');
-    await page.waitForSelector('.lib button:has-text("old.png")');
+    await page.waitForSelector('.lib .tile:has-text("old.png")');
     await clearToasts();
-    await page.setInputFiles('.studio input[type="file"]', { name: "late.png", mimeType: "image/png", buffer: PNG });
-    await page.waitForSelector('.lib button:has-text("late.png")'); // not in the (stale) list yet, shown anyway
+    await page.click('.ed-rail [data-tool="upload"]');
+    await page.setInputFiles('.editor input[type="file"]', { name: "late.png", mimeType: "image/png", buffer: PNG });
+    await page.waitForSelector('.lib .tile:has-text("late.png")'); // not in the (stale) list yet, shown anyway
     assert.ok(!staleList.some((i) => i.name === "late.png"));
     page.once("dialog", (d) => d.accept());
-    await page.locator('.lib button:has-text("old.png")').click({ button: "right" });
+    await page.locator('.lib .tile:has-text("old.png")').click({ button: "right" });
     await page.waitForSelector(".toast >> text=Image deleted");
     await page.click('a.nav[data-route="dashboard"]');
     await page.click('a.nav[data-route="studio"]');
-    await page.waitForSelector('.lib button:has-text("late.png")');
-    assert.equal(await page.locator('.lib button:has-text("old.png")').count(), 0, "a deleted image stays gone though the list still has it");
+    await page.waitForSelector('.lib .tile:has-text("late.png")');
+    assert.equal(await page.locator('.lib .tile:has-text("old.png")').count(), 0, "a deleted image stays gone though the list still has it");
     staleList = null;
     for (const k of [...images.keys()]) images.delete(k);
   });
@@ -683,6 +735,25 @@ async function main() {
     const quick = await page.locator(".quick a").evaluateAll((as) => as.map((a) => a.getAttribute("href")));
     assert.deepEqual(quick, ["https://charleston3d.com", "https://app.charleston3d.com", "#products/c3d", "#insights/c3d",
       "https://elevatedshirts.com", "https://design.elevatedshirts.com", "#products/ed", "#insights/ed"]);
+    // nothing anywhere in the console points at Netlify any more
+    for (const route of ["dashboard", "c3d", "ed", "map"]) {
+      await page.click(`a.nav[data-route="${route}"]`);
+      await page.waitForFunction((r) => document.querySelector(`a.nav[data-route="${r}"]`)?.getAttribute("aria-current") === "page", route);
+      const bad = await page.locator("#view a[href]").evaluateAll((as) => as.map((a) => a.getAttribute("href")).filter((h) => /netlify/i.test(h)));
+      assert.deepEqual(bad, [], `${route} has no Netlify links`);
+    }
+    // every in-console link opens a real page
+    const hashes = new Set();
+    for (const route of ["dashboard", "c3d", "ed", "map"]) {
+      await page.click(`a.nav[data-route="${route}"]`);
+      await page.waitForFunction((r) => document.querySelector(`a.nav[data-route="${r}"]`)?.getAttribute("aria-current") === "page", route);
+      (await page.locator("#view a[href^='#']").evaluateAll((as) => as.map((a) => a.getAttribute("href")))).forEach((h) => hashes.add(h));
+    }
+    const pages = { dashboard: "Dashboard", c3d: "Charleston 3D", ed: "Elevated Designs", products: "Products", insights: "Insights", marketing: "Marketing", promote: "Promotions", studio: "Design Studio", map: "Service Map" };
+    for (const h of hashes) {
+      const r = h.slice(1).split("/")[0];
+      assert.ok(pages[r], `${h} is a console page`);
+    }
   });
 
   await step("dashboard: jump palette, service drawer and theme switch", async () => {
@@ -1562,21 +1633,6 @@ async function main() {
     assert.ok(box && box.x + box.width <= 390, `Delete is on screen (${JSON.stringify(box)})`);
     if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "promotions-390.png"), fullPage: true }); }
     await page.setViewportSize({ width: 1280, height: 900 });
-  });
-
-  await step("studio: with no key it asks for the key instead of showing an empty library", async () => {
-    images.set("k-seen-0123abcd", { key: "k-seen-0123abcd", name: "palm-tree.png", type: "image/png", size: 10, tags: "palm, zzq-only-tag", added: Date.now() });
-    await page.click('a.nav[data-route="dashboard"]');
-    await page.evaluate(() => sessionStorage.removeItem("bc-console-key"));
-    await page.click('a.nav[data-route="studio"]');
-    await page.waitForSelector("dialog.keydlg[open] #key-in");
-    await page.fill("#key-in", KEY);
-    await page.click("#key-save");
-    await page.waitForSelector('.lib button:has-text("palm-tree.png")');
-    await page.fill('.studio input[type="search"]', "zzq-only-tag");
-    assert.equal(await page.locator(".lib button").count(), 1, "search by tag finds it");
-    await page.fill('.studio input[type="search"]', "");
-    images.delete("k-seen-0123abcd");
   });
 
   await step("no console errors", async () => {
