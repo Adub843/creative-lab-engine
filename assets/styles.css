@@ -211,6 +211,7 @@ main.wide { max-width: none; }
 .arrow { align-self: center; color: var(--muted); font-family: var(--f-mono); }
 @media (max-width: 640px) { .arrow { display: none; } .hop { flex-basis: 100%; } }
 .tbl { overflow-x: auto; }
+.tbl.cards { display: block; } /* "cards" only changes the table on phones; on wider screens it is a normal full-width table */
 table { border-collapse: collapse; width: 100%; font-size: 14px; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { font-family: var(--f-mono); font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 500; }
