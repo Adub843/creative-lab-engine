@@ -993,7 +993,7 @@ async function main() {
     const j = mJobs.find((x) => x.id === id);
     if (!j) return json(404, { error: "That job isn't on the list." });
     if (req.method() === "GET" && !action) {
-      if (++j.polls >= 1) Object.assign(j, { status: "SUCCEEDED", progress: 100, formats: ["glb", "stl", "3mf"], picture: true, expiresAt: Date.now() + 71 * 3600000 });
+      if (++j.polls >= 1) Object.assign(j, { status: "SUCCEEDED", progress: 100, formats: ["glb", "stl", "3mf", "obj"], picture: true, expiresAt: Date.now() + 71 * 3600000 });
       return json(200, { job: j });
     }
     if (action === "file") return route.fulfill({ status: 200, contentType: fmt === "picture" ? "image/png" : "application/octet-stream", body: fmt === "picture" ? PNG1 : cubeStl() });
@@ -1028,6 +1028,7 @@ async function main() {
     await page.waitForSelector('.m3d-row .m3d-st:has-text("Ready")', { timeout: 15000 });
     await page.waitForSelector(".m3d-stage canvas", { timeout: 15000 });
     assert.ok(await page.locator('.m3d-acts button:has-text("Download 3MF")').isVisible());
+    assert.ok(await page.locator('.m3d-acts button:has-text("Download OBJ")').isVisible(), "OBJ download too");
     await page.click('.m3d-acts button:has-text("Save to 3D file library")');
     await page.waitForSelector('.m3d-acts a:has-text("Open in 3D file library")');
     assert.ok(mCalls.some(([m, p, b]) => m === "POST" && p.endsWith("/save") && b.format === "3mf"), "saved as a 3MF");

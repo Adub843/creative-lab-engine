@@ -252,6 +252,7 @@ export async function meshyPage(header) {
     stageActs.replaceChildren(...[
       j.formats?.includes("3mf") ? dl("3mf", "Download 3MF", "btn primary") : null,
       j.formats?.includes("stl") ? dl("stl", "Download STL") : null,
+      j.formats?.includes("obj") ? dl("obj", "Download OBJ") : null,
       j.formats?.includes("glb") ? dl("glb", "Download GLB") : null,
       j.saved ? el("a", { class: "btn ghost", href: "#files/c3d" }, "Open in 3D file library")
         : el("button", { type: "button", class: "btn ghost", onclick: (e) => save(j, e.currentTarget) }, "Save to 3D file library"),

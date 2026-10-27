@@ -3149,7 +3149,7 @@ function fakeMeshy({ balance = 500, status = "SUCCEEDED", fail } = {}) {
     if (!tasks.has(m[2])) return res({ message: "Task not found" }, 404);
     return res({ id: m[2], status, progress: status === "SUCCEEDED" ? 100 : 40, consumed_credits: 30, expires_at: 1900000000000,
       thumbnail_url: `https://assets.meshy.ai/x/${m[2]}/preview.png?Expires=1&Signature=s`,
-      model_urls: status === "SUCCEEDED" ? Object.fromEntries(["glb", "stl", "3mf"].map((f) => [f, `https://assets.meshy.ai/x/${m[2]}/model.${f}?Expires=1&Signature=s`])) : {},
+      model_urls: status === "SUCCEEDED" ? Object.fromEntries(["glb", "stl", "3mf", "obj"].map((f) => [f, `https://assets.meshy.ai/x/${m[2]}/model.${f}?Expires=1&Signature=s`])) : {},
       ...(status === "FAILED" ? { task_error: { message: "Image too dark" } } : {}) });
   };
   return { fetch, calls, tasks };
@@ -3186,7 +3186,7 @@ test("meshy: photos and words start the right Meshy jobs, ready for printing, wi
   assert.deepEqual([j1.kind, j1.name, j1.color, j1.cost, j1.status], ["photo", "Pineapple ornament", true, 30, "PENDING"]);
   let call = fake.calls.at(-1);
   assert.equal(call.url, "https://api.meshy.ai/openapi/v1/image-to-3d");
-  assert.deepEqual([call.body.image_url, call.body.should_texture, call.body.target_formats], [DATA_PNG, true, ["glb", "stl", "3mf"]]);
+  assert.deepEqual([call.body.image_url, call.body.should_texture, call.body.target_formats], [DATA_PNG, true, ["glb", "stl", "3mf", "obj"]]);
   const many = await (await handleMeshy(mreq("/api/meshy/jobs", { method: "POST", body: { mode: "photos", images: [DATA_PNG, DATA_PNG, DATA_PNG], detail: "high" } }), ctx)).json();
   call = fake.calls.at(-1);
   assert.equal(call.url, "https://api.meshy.ai/openapi/v1/multi-image-to-3d");
@@ -3210,7 +3210,7 @@ test("meshy: progress, downloads only from Meshy's file host, add color, save to
   const { ctx, fake, kv } = meshyCtx();
   const { job } = await (await handleMeshy(mreq("/api/meshy/jobs", { method: "POST", body: { mode: "words", prompt: "a lighthouse keychain", name: "Lighthouse" } }), ctx)).json();
   const live = (await (await handleMeshy(mreq(`/api/meshy/jobs/${job.id}`), ctx)).json()).job;
-  assert.deepEqual([live.status, live.progress, live.formats, live.picture], ["SUCCEEDED", 100, ["glb", "stl", "3mf"], true]);
+  assert.deepEqual([live.status, live.progress, live.formats, live.picture], ["SUCCEEDED", 100, ["glb", "stl", "3mf", "obj"], true]);
   assert.ok(!JSON.stringify(live).includes("Signature"), "Meshy's signed links stay on the server");
   const stl = await handleMeshy(mreq(`/api/meshy/jobs/${job.id}/file/stl`), ctx);
   assert.equal(stl.status, 200);
@@ -3218,7 +3218,8 @@ test("meshy: progress, downloads only from Meshy's file host, add color, save to
   assert.equal((await stl.arrayBuffer()).byteLength, 84 + 100);
   const pic = await handleMeshy(mreq(`/api/meshy/jobs/${job.id}/file/picture`), ctx);
   assert.equal(pic.headers.get("content-type"), "image/png");
-  assert.equal((await handleMeshy(mreq(`/api/meshy/jobs/${job.id}/file/obj`), ctx)).status, 404);
+  assert.equal((await handleMeshy(mreq(`/api/meshy/jobs/${job.id}/file/obj`), ctx)).headers.get("content-disposition"), 'attachment; filename="Lighthouse.obj"');
+  assert.equal((await handleMeshy(mreq(`/api/meshy/jobs/${job.id}/file/fbx`), ctx)).status, 404);
   const colored = await handleMeshy(mreq(`/api/meshy/jobs/${job.id}/color`, { method: "POST" }), ctx);
   assert.equal(colored.status, 201);
   const cj = (await colored.json()).job;
