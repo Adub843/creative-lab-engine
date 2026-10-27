@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>3D Print Trends: What's Selling Now | Charleston 3D</title>
+<meta name="description" content="See which 3D prints are selling now: trending models, Etsy best sellers and Google Trends by state and country, updated for makers and print shops.">
+<link rel="canonical" href="https://print-trends.pages.dev/">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<meta property="og:type" content="website">
+<meta property="og:title" content="3D Print Trends: What&#x27;s Selling Now | Charleston 3D">
+<meta property="og:description" content="See which 3D prints are selling now: trending models, Etsy best sellers and Google Trends by state and country, updated for makers and print shops.">
+<meta property="og:url" content="https://print-trends.pages.dev/">
+<meta property="og:image" content="https://print-trends.pages.dev/icons/icon-512.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="3D Print Trends: What&#x27;s Selling Now | Charleston 3D">
+<meta name="twitter:description" content="See which 3D prints are selling now: trending models, Etsy best sellers and Google Trends by state and country, updated for makers and print shops.">
+<meta name="twitter:image" content="https://print-trends.pages.dev/icons/icon-512.png">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebApplication", "name": "3D Print Trends", "url": "https://print-trends.pages.dev/", "description": "See which 3D prints are selling now: trending models, Etsy best sellers and Google Trends by state and country, updated for makers and print shops.", "applicationCategory": "BusinessApplication", "operatingSystem": "Any (web browser)", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "publisher": {"@type": "Organization", "name": "Charleston 3D Prints", "url": "https://charleston3d.com/"}}</script>
+
+
+<meta name="theme-color" content="#14181f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Print Trends">
+<script src="vendor/d3-lite.js"></script>
+<style>
+  :root {
+    --font-anthropic-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-anthropic-serif: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --cds-font-size-caption: 0.8125rem; --cds-font-size-body: 0.9375rem; --cds-font-size-heading: 1.0625rem; --cds-font-size-title: 1.75rem;
+    --cds-font-weight-medium: 600;
+    --cds-gap-xs: 4px; --cds-gap-sm: 8px; --cds-gap-md: 16px; --cds-gap-lg: 24px; --cds-gap-xl: 40px;
+    --cds-pad-xs: 4px; --cds-pad-sm: 8px; --cds-pad-md: 12px; --cds-pad-lg: 20px;
+    --cds-radius: 10px; --cds-dur-slow: 300ms;
+    --color-bg: #f7f6f3; --color-panel: #ffffff; --color-fg: #1b1f27; --color-fg-muted: #636a76;
+    --color-border-line: #e3e1dc; --color-warn: #a35a00; --color-ok: #1f7a3d; --color-bad: #b42318;
+    --cds-chart-grid: #ebe9e4; --cds-chart-muted: #c3c7ce; --cds-surface-popover: #ffffff; --cds-border: #e3e1dc;
+    --cds-shadow-popover: 0 4px 16px rgba(0,0,0,.12); --cds-text-secondary: #636a76;
+    --accent: #d9672e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-bg: #12151b; --color-panel: #1b1f27; --color-fg: #eceae5; --color-fg-muted: #9aa1ad;
+      --color-border-line: #2c323d; --color-warn: #f0a34a; --color-ok: #5cc483; --color-bad: #f07a6e;
+      --cds-chart-grid: #2a2f39; --cds-chart-muted: #4a515e; --cds-surface-popover: #232833; --cds-border: #353c48;
+      --cds-shadow-popover: 0 6px 20px rgba(0,0,0,.5); --cds-text-secondary: #9aa1ad;
+      --accent: #ec8550;
+    }
+  }
+  html, body { margin: 0; background: var(--color-bg); color: var(--color-fg); }
+  body { font-family: var(--font-anthropic-sans); -webkit-text-size-adjust: 100%; }
+  #dash-root { padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+  @media (min-width: 900px) { #dash-root { padding: 32px; } }
+  .dash-skeleton { color: transparent !important; background: var(--cds-chart-grid); border-radius: 6px; min-height: 1.2em; }
+  .pwa-foot { max-width: 72rem; margin: var(--cds-gap-lg) auto 0; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); justify-content: space-between; }
+  .pwa-foot button { font: inherit; color: inherit; background: none; border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: 4px 10px; cursor: pointer; }
+  .pwa-offline { display: none; }
+  body.offline .pwa-offline { display: inline; color: var(--color-warn); }
+</style>
+<script>
+/* Minimal stand-in for the dashboard runtime: loads /data/*.json and redraws on data or width changes. */
+(function () {
+  var ids = ['trending_models', 'state_interest', 'country_interest', 'rising_queries', 'etsy_signals', 'categories'];
+  var store = {}; var subs = [];
+  ids.forEach(function (id) { store[id] = { status: 'loading', data: [] }; });
+  function run() { subs.forEach(function (fn) { try { fn(); } catch (e) { console.error(e); } }); }
+  window.dash = {
+    colors: ['var(--accent)', '#3b82c4', '#5aa05a', '#a25fc0', '#c9a227', '#2aa198', '#d6457a', '#7c8794'],
+    data: function (id) { return store[id] || { status: 'missing', data: [] }; },
+    onData: function (fn) { subs.push(fn); try { fn(); } catch (e) { console.error(e); } },
+    params: function () { return {}; }, setParams: function () {}, resetParams: function () {}, setLink: function () {},
+    refresh: function () { load(); }, calc: function () {}, loader: function () {}
+  };
+  function load() {
+    var meta = fetch('data/meta.json', { cache: 'no-cache' }).then(function (r) { return r.json(); }).then(function (m) {
+      var el = document.querySelector('.pwa-updated');
+      if (el && m.updated) el.textContent = 'Data updated ' + new Date(m.updated).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    }).catch(function () {});
+    return Promise.all(ids.map(function (id) {
+      return fetch('data/' + id + '.json', { cache: 'no-cache' })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function (rows) { store[id] = { status: 'ok', data: Array.isArray(rows) ? rows : (rows.rows || []) }; })
+        .catch(function () { store[id] = { status: 'error', data: [] }; });
+    })).then(run);
+  }
+  var w = 0, t;
+  window.addEventListener('resize', function () {
+    clearTimeout(t); t = setTimeout(function () { if (window.innerWidth !== w) { w = window.innerWidth; run(); } }, 150);
+  });
+  window.addEventListener('online', function () { document.body.classList.remove('offline'); });
+  window.addEventListener('offline', function () { document.body.classList.add('offline'); });
+  document.addEventListener('DOMContentLoaded', function () {
+    w = window.innerWidth;
+    if (!navigator.onLine) document.body.classList.add('offline');
+    var b = document.querySelector('.pwa-refresh'); if (b) b.addEventListener('click', load);
+    load();
+  });
+})();
+</script>
+</head>
+<body>
+<div id="dash-root">
+<style>
+  .tt-wrap { max-width: 72rem; margin-inline: auto; font-family: var(--font-anthropic-sans); display: grid; gap: var(--cds-gap-lg); }
+  .tt-title { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); margin: 0; }
+  .tt-sub { color: var(--color-fg-muted); font-size: var(--cds-font-size-body); margin: var(--cds-gap-xs) 0 0; }
+  .tt-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: var(--cds-gap-md); }
+  .tt-card { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); min-width: 0; }
+  .tt-card h2 { font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); margin: 0; }
+  .tt-note { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); margin: var(--cds-gap-xs) 0 var(--cds-gap-md); }
+  .tt-label { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+  .tt-big { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); line-height: 1.15; margin-top: var(--cds-gap-xs); overflow-wrap: anywhere; }
+  .tt-small { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); margin-top: var(--cds-gap-xs); font-variant-numeric: tabular-nums; }
+  .tt-grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: var(--cds-gap-md); }
+  .tt-tablebox { max-height: 30rem; overflow: auto; }
+  .tt-table { width: 100%; border-collapse: collapse; font-size: var(--cds-font-size-body); font-variant-numeric: tabular-nums; }
+  .tt-table th { position: sticky; top: 0; background: var(--color-panel); text-align: left; font-weight: var(--cds-font-weight-medium); color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); padding: var(--cds-pad-xs) var(--cds-pad-sm); border-bottom: 1px solid var(--color-border-line); }
+  .tt-table td { padding: var(--cds-pad-xs) var(--cds-pad-sm); border-bottom: 1px solid var(--color-border-line); vertical-align: top; }
+  .tt-table .num { text-align: right; }
+  .tt-table a { color: inherit; }
+  .tt-pill { display: inline-block; font-size: var(--cds-font-size-caption); padding: 0 var(--cds-pad-xs); border-radius: var(--cds-radius); border: 1px solid var(--color-border-line); color: var(--color-warn); white-space: nowrap; }
+  @media (max-width: 40rem) { .tt-hide-narrow { display: none; } }
+  .tt-mapbox { position: relative; min-height: 14rem; }
+  .tt-tip { position: absolute; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); border-radius: var(--cds-radius); box-shadow: var(--cds-shadow-popover); padding: var(--cds-pad-xs) var(--cds-pad-sm); font-size: var(--cds-font-size-caption); white-space: nowrap; display: none; }
+  .tt-tip .k { color: var(--cds-text-secondary); }
+  .tt-bars { display: grid; gap: var(--cds-gap-sm); min-height: 12rem; }
+  .tt-bar-row { display: grid; gap: 2px; font-size: var(--cds-font-size-caption); }
+  .tt-bar-top { display: flex; justify-content: space-between; gap: var(--cds-gap-sm); }
+  .tt-bar-track { height: 8px; border-radius: 4px; background: var(--cds-chart-grid); }
+  .tt-bar-fill { height: 8px; border-radius: 4px; }
+  .tt-input { width: 100%; box-sizing: border-box; font: inherit; font-size: var(--cds-font-size-body); padding: var(--cds-pad-sm); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); background: var(--color-bg); color: var(--color-fg); }
+  .tt-result { margin-top: var(--cds-gap-md); min-height: 7rem; }
+  .tt-result-empty { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+  .tt-r-meter { margin-top: var(--cds-gap-sm); }
+  .tt-callout { font-size: var(--cds-font-size-body); line-height: 1.5; }
+  .tt-callout p { margin: 0 0 var(--cds-gap-sm); }
+  [data-dash-source-state=refreshing] { opacity: .5; transition: opacity var(--cds-dur-slow); }
+  [data-dash-source-state=empty] { color: transparent; }
+</style>
+
+<div class="tt-wrap">
+  <header id="top">
+    <h1 class="tt-title">3D print trend tracker</h1>
+    <p class="tt-sub">What's trending in printable models, what sells on Etsy, and where people search for 3D printing — with a licence check before you sell anything.</p>
+  </header>
+
+  <section class="tt-tiles" id="headlines">
+    <div class="tt-card">
+      <div class="tt-label">Top trending model (Printables, 30 days)</div>
+      <div class="tt-big dash-skeleton" data-source="trending_models" data-field="model" data-where="" id="top-model">—</div>
+      <div class="tt-small"><span data-source="trending_models" data-field="downloads" data-where="" id="top-downloads">—</span> downloads</div>
+    </div>
+    <div class="tt-card">
+      <div class="tt-label">Strongest search interest (worldwide)</div>
+      <div class="tt-big dash-skeleton" data-source="country_interest" data-field="country" data-where="code=SG">—</div>
+      <div class="tt-small">Interest <span data-source="country_interest" data-field="interest" data-where="code=SG">—</span> / 100 · St. Helena scores 100 on a tiny population</div>
+    </div>
+    <div class="tt-card">
+      <div class="tt-label">Rising buyer search (past 12 months)</div>
+      <div class="tt-big dash-skeleton" data-source="rising_queries" data-field="query" data-where="query=custom%203d%20printing%20service">—</div>
+      <div class="tt-small">+<span data-source="rising_queries" data-field="growth_pct" data-where="query=custom%203d%20printing%20service">—</span>% growth</div>
+    </div>
+  </section>
+
+  <section class="tt-card" id="models">
+    <h2>Trending models to print</h2>
+    <p class="tt-note">Printables "trending" list, past 30 days, ranked by downloads. Fan-art and brand items (Mario, Harry Potter, LEGO-style, game IP) and weapon replicas were left out because their prints can't be sold. <span class="tt-pill">Licence</span> must be checked on each page before selling — Printables hides it from automated readers.</p>
+    <div class="tt-tablebox">
+      <table class="tt-table" id="models-table" data-source="trending_models" data-row-key="model">
+        <thead><tr>
+          <th data-field="model">Model</th>
+          <th data-field="category" class="tt-hide-narrow">Category</th>
+          <th data-field="downloads" class="num">Downloads</th>
+          <th data-field="likes" class="num tt-hide-narrow">Likes</th>
+          <th data-field="license">Licence</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="tt-grid2">
+    <section class="tt-card" id="lookup">
+      <h2>Look up a country or US state</h2>
+      <p class="tt-note">Type a name to see its Google Trends interest in "3d printing" over the past 12 months. Countries are scored against the world, US states against each other, so the two scales don't compare directly.</p>
+      <input class="tt-input" type="search" list="tt-places" placeholder="e.g. Germany or South Carolina" aria-label="Country or US state" autocomplete="off">
+      <datalist id="tt-places"></datalist>
+      <div class="tt-result" aria-live="polite">
+        <div class="tt-result-empty">Start typing to see a place's score and rank.</div>
+        <div class="tt-result-hit" hidden>
+          <div class="tt-label tt-r-scale"></div>
+          <div class="tt-big tt-r-name"></div>
+          <div class="tt-r-meter"><div class="tt-bar-track"><div class="tt-bar-fill tt-r-fill"></div></div></div>
+          <div class="tt-small">Interest <span class="tt-r-value"></span> / 100 · <span class="tt-r-rank"></span></div>
+        </div>
+        <div class="tt-result-miss tt-small" hidden></div>
+      </div>
+    </section>
+
+    <section class="tt-card" id="countries">
+      <h2>Top countries</h2>
+      <p class="tt-note">Worldwide interest in the English term "3d printing", past 12 months. Countries that search in other languages (Germany, Japan, France) score lower than their real interest.</p>
+      <div class="tt-bars" data-source="country_interest"></div>
+    </section>
+  </div>
+
+  <div class="tt-grid2">
+    <section class="tt-card" id="map">
+      <h2>Where people search "3d printing"</h2>
+      <p class="tt-note">Google Trends interest by state, US, past 12 months. 100 = the state with the highest share of searches; small states swing high.</p>
+      <div class="tt-mapbox" data-source="state_interest"><svg class="tt-map" width="100%"></svg><div class="tt-tip"></div></div>
+    </section>
+
+    <section class="tt-card" id="rising">
+      <h2>Rising searches</h2>
+      <p class="tt-note">Queries related to "3d printing" with the biggest growth in the past 12 months (Google Trends, US).</p>
+      <div class="tt-bars" data-source="rising_queries"></div>
+    </section>
+  </div>
+
+  <div class="tt-grid2">
+    <section class="tt-card" id="etsy">
+      <h2>Selling now on Etsy</h2>
+      <p class="tt-note">Physical 3D-printed items on Etsy's best sellers page (placeholder-price service listings left out). Reviews are the shop's total, the closest public signal to sales.</p>
+      <table class="tt-table" data-source="etsy_signals" data-row-key="listing">
+        <thead><tr>
+          <th data-field="listing">Listing</th>
+          <th data-field="sale_price_usd" class="num">Price</th>
+          <th data-field="shop_reviews" class="num">Shop reviews</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="tt-card" id="categories">
+      <h2>Categories that sell</h2>
+      <p class="tt-note">Typical retail prices and margins from 2026 seller guides (material cost is usually $0.50–$3 a piece).</p>
+      <table class="tt-table" data-source="categories" data-row-key="category">
+        <thead><tr>
+          <th data-field="category">Category</th>
+          <th data-field="price_range">Price</th>
+          <th data-field="margin_high_pct" class="num">Top margin</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </div>
+
+  <section class="tt-card" id="licence">
+    <h2>Before you sell a print</h2>
+    <div class="tt-callout">
+      <p><b>Sellable for free:</b> CC BY, CC BY-SA and CC0 licences — credit the designer in your listing.</p>
+      <p><b>Not sellable:</b> anything marked NC (non-commercial), "personal use", or Cults "PU", and any fan-art of brands or characters, whatever its licence says.</p>
+      <p><b>Paid route:</b> many designers sell a commercial licence or a "merchant" tier on Patreon, Cults (CU licence) or MakerWorld. Buy that before listing.</p>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const fmt = d3.format(',');
+  const usd = d3.format('$,.2f');
+
+  const fillTable = (sel, key, rows, cells) => {
+    const tbody = document.querySelector(sel + ' tbody');
+    tbody.replaceChildren();
+    rows.forEach((r) => {
+      const tr = document.createElement('tr');
+      tr.dataset.key = r[key];
+      cells.forEach(([render, cls]) => {
+        const td = document.createElement('td');
+        if (cls) td.className = cls;
+        render(td, r);
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+  };
+  const text = (k, f) => (td, r) => { td.textContent = r[k] == null ? '—' : (f ? f(r[k]) : r[k]); };
+
+  // tile grid: [col,row] per state (layout only)
+  const GRID = {AK:[0,0],ME:[11,0],VT:[10,1],NH:[11,1],WA:[1,2],ID:[2,2],MT:[3,2],ND:[4,2],MN:[5,2],IL:[6,2],WI:[7,2],MI:[8,2],NY:[9,2],RI:[10,2],MA:[11,2],OR:[1,3],NV:[2,3],WY:[3,3],SD:[4,3],IA:[5,3],IN:[6,3],OH:[7,3],PA:[8,3],NJ:[9,3],CT:[10,3],CA:[1,4],UT:[2,4],CO:[3,4],NE:[4,4],MO:[5,4],KY:[6,4],WV:[7,4],VA:[8,4],MD:[9,4],DE:[10,4],AZ:[2,5],NM:[3,5],KS:[4,5],AR:[5,5],TN:[6,5],NC:[7,5],SC:[8,5],DC:[9,5],OK:[4,6],LA:[5,6],MS:[6,6],AL:[7,6],GA:[8,6],HI:[0,7],TX:[4,7],FL:[9,7]};
+
+  const drawMap = (rows) => {
+    const box = document.querySelector('#map .tt-mapbox');
+    const svg = d3.select(box).select('svg');
+    const tip = box.querySelector('.tt-tip');
+    svg.selectAll('*').remove();
+    if (!rows.length) return;
+    const W = Math.max(280, box.clientWidth), cols = 12, rowsN = 8, gap = 3;
+    const s = Math.floor((W - gap * (cols - 1)) / cols), H = rowsN * s + gap * (rowsN - 1);
+    svg.attr('viewBox', `0 0 ${W} ${H}`).attr('height', H);
+    box.style.minHeight = H + 'px';
+    const op = d3.scaleLinear([20, 100], [0.15, 1]).clamp(true);
+    const g = svg.selectAll('g').data(rows.filter((r) => GRID[r.code])).join('g')
+      .attr('transform', (r) => `translate(${GRID[r.code][0] * (s + gap)},${GRID[r.code][1] * (s + gap)})`);
+    g.append('rect').attr('width', s).attr('height', s).attr('rx', 4)
+      .style('fill', dash.colors[0]).style('fill-opacity', (r) => op(r.interest));
+    g.append('text').attr('x', s / 2).attr('y', s / 2).attr('dy', '0.35em').attr('text-anchor', 'middle')
+      .attr('font-size', Math.max(8, Math.min(12, s * 0.32)))
+      .style('fill', (r) => (op(r.interest) > 0.55 ? 'var(--color-bg)' : 'var(--color-fg)'))
+      .text((r) => r.code);
+    g.on('mousemove', (event, r) => {
+      const [x, y] = d3.pointer(event, box);
+      tip.replaceChildren();
+      const a = document.createElement('div'); a.className = 'k'; a.textContent = r.state;
+      const b = document.createElement('div'); b.textContent = 'Interest ' + r.interest + ' / 100';
+      tip.append(a, b);
+      tip.style.display = 'block';
+      const tw = tip.offsetWidth;
+      tip.style.left = Math.min(Math.max(0, x + 10), box.clientWidth - tw) + 'px';
+      tip.style.top = (y + 12) + 'px';
+    }).on('mouseleave', () => { tip.style.display = 'none'; });
+  };
+
+  const drawBars = (rows, sel = '#rising .tt-bars', label = (r) => r.query, val = (r) => r.growth_pct, txt = (r) => '+' + fmt(r.growth_pct) + '%', hi = (r) => /custom|business|maker/.test(r.query)) => {
+    const box = document.querySelector(sel);
+    box.replaceChildren();
+    const max = d3.max(rows, val) || 1;
+    rows.forEach((r, i) => {
+      const row = document.createElement('div'); row.className = 'tt-bar-row';
+      const top = document.createElement('div'); top.className = 'tt-bar-top';
+      const q = document.createElement('span'); q.textContent = label(r);
+      const v = document.createElement('span'); v.textContent = txt(r);
+      top.append(q, v);
+      const track = document.createElement('div'); track.className = 'tt-bar-track';
+      const fill = document.createElement('div'); fill.className = 'tt-bar-fill';
+      fill.style.width = (100 * val(r) / max) + '%';
+      fill.style.background = hi(r) ? dash.colors[0] : 'var(--cds-chart-muted)';
+      track.appendChild(fill);
+      row.append(top, track);
+      box.appendChild(row);
+    });
+  };
+
+
+  let places = [];
+  const input = document.querySelector('#lookup .tt-input');
+  const norm = (t) => t.toLowerCase().replace(/\(us state\)/, '').replace(/[^a-z ]/g, '').trim();
+  const showLookup = () => {
+    const box = document.querySelector('#lookup .tt-result');
+    const empty = box.querySelector('.tt-result-empty'), hit = box.querySelector('.tt-result-hit'), miss = box.querySelector('.tt-result-miss');
+    const nameEl = hit.querySelector('.tt-r-name'), valEl = hit.querySelector('.tt-r-value');
+    const q = norm(input.value);
+    [nameEl, valEl].forEach((el) => { ['source', 'field', 'where'].forEach((k) => delete el.dataset[k]); });
+    empty.hidden = !!q; hit.hidden = true; miss.hidden = true;
+    if (!q) return;
+    const wantState = /us state/i.test(input.value);
+    const exact = places.filter((p) => norm(p.name) === q);
+    const p = (wantState ? exact.find((x) => x.kind === 'state') : exact.find((x) => x.kind === 'country')) || exact[0]
+      || places.find((x) => norm(x.name).startsWith(q)) || places.find((x) => norm(x.name).includes(q));
+    if (!p) {
+      miss.hidden = false;
+      miss.textContent = 'No Google Trends score for "' + input.value + '". Google only reports places with enough searches.';
+      return;
+    }
+    const ds = p.kind === 'state' ? 'state_interest' : 'country_interest';
+    nameEl.dataset.source = ds; nameEl.dataset.field = p.kind === 'state' ? 'state' : 'country'; nameEl.dataset.where = 'code=' + encodeURIComponent(p.code);
+    valEl.dataset.source = ds; valEl.dataset.field = 'interest'; valEl.dataset.where = 'code=' + encodeURIComponent(p.code);
+    hit.hidden = false;
+    hit.querySelector('.tt-r-scale').textContent = p.kind === 'state' ? 'US state · compared with other states' : 'Country · compared worldwide';
+    nameEl.textContent = p.name;
+    valEl.textContent = p.interest;
+    hit.querySelector('.tt-r-rank').textContent = 'ranked ' + p.rank + ' of ' + p.of + (p.kind === 'state' ? ' states' : ' countries with data');
+    const fill = hit.querySelector('.tt-r-fill');
+    fill.style.width = p.interest + '%';
+    fill.style.background = dash.colors[0];
+  };
+  input.addEventListener('input', showLookup);
+
+  dash.onData(() => {
+    document.querySelectorAll('.dash-skeleton').forEach((el) => {
+      const d = dash.data(el.dataset.source);
+      if (d.status !== 'loading') el.classList.remove('dash-skeleton');
+    });
+
+    const tm = dash.data('trending_models');
+    const models = tm.status === 'ok' ? [...tm.data].sort((a, b) => b.downloads - a.downloads) : [];
+    document.querySelectorAll('[data-source="trending_models"][data-field]:not(th)').forEach((el) => {
+      const r = models[0];
+      el.dataset.where = r ? 'model=' + encodeURIComponent(r.model) : '';
+      el.textContent = r ? (el.dataset.field === 'downloads' ? fmt(r.downloads) : r.model) : '—';
+    });
+    fillTable('#models-table', 'model', models, [
+      [(td, r) => { const a = document.createElement('a'); a.href = r.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = r.model; td.appendChild(a); const d = document.createElement('div'); d.className = 'tt-small'; d.textContent = r.designer; td.appendChild(d); }],
+      [text('category'), 'tt-hide-narrow'],
+      [text('downloads', fmt), 'num'],
+      [text('likes', fmt), 'num tt-hide-narrow'],
+      [(td, r) => { const s = document.createElement('span'); s.className = 'tt-pill'; s.textContent = r.license; td.appendChild(s); }],
+    ]);
+
+    const si = dash.data('state_interest');
+    const states = si.status === 'ok' ? si.data : [];
+    const ut = states.find((r) => r.code === 'UT');
+    document.querySelectorAll('[data-source="state_interest"][data-field]').forEach((el) => {
+      el.textContent = ut ? ut[el.dataset.field] : '—';
+    });
+    drawMap(states);
+
+    const rq = dash.data('rising_queries');
+    const rising = rq.status === 'ok' ? rq.data : [];
+    const cs = rising.find((r) => r.query === 'custom 3d printing service');
+    document.querySelectorAll('[data-source="rising_queries"][data-field]').forEach((el) => {
+      el.textContent = cs ? (el.dataset.field === 'growth_pct' ? fmt(cs.growth_pct) : cs.query) : '—';
+    });
+    drawBars(rising);
+
+    const ci = dash.data('country_interest');
+    const countries = ci.status === 'ok' ? [...ci.data].sort((a, b) => b.interest - a.interest) : [];
+    const sg = countries.find((r) => r.code === 'SG');
+    document.querySelectorAll('#headlines [data-source="country_interest"][data-field]').forEach((el) => {
+      el.textContent = sg ? sg[el.dataset.field] : '—';
+    });
+    drawBars(countries.slice(0, 15), '#countries .tt-bars', (r) => r.country, (r) => r.interest, (r) => String(r.interest), (r) => r.code === 'US');
+
+    places = [
+      ...countries.map((r, i) => ({ name: r.country, code: r.code, interest: r.interest, rank: i + 1, of: countries.length, kind: 'country' })),
+      ...[...states].sort((a, b) => b.interest - a.interest).map((r, i, all) => ({ name: r.state, code: r.code, interest: r.interest, rank: i + 1, of: all.length, kind: 'state' })),
+    ];
+    const dl = document.getElementById('tt-places');
+    dl.replaceChildren(...places.map((p) => new Option(p.kind === 'state' ? p.name + ' (US state)' : p.name)));
+    showLookup();
+
+    const es = dash.data('etsy_signals');
+    fillTable('#etsy', 'listing', es.status === 'ok' ? es.data : [], [
+      [text('listing')],
+      [text('sale_price_usd', usd), 'num'],
+      [text('shop_reviews', fmt), 'num'],
+    ]);
+
+    const ca = dash.data('categories');
+    fillTable('#categories', 'category', ca.status === 'ok' ? ca.data : [], [
+      [text('category')],
+      [text('price_range')],
+      [(td, r) => { td.textContent = r.margin_high_pct == null ? '—' : r.margin_high_pct + '%'; }, 'num'],
+    ]);
+  });
+})();
+</script>
+
+
+<footer class="pwa-foot">
+  <span><span class="pwa-updated">Loading data…</span> <span class="pwa-offline">· Offline, showing saved copy</span></span>
+  <button class="pwa-refresh" type="button">Refresh</button>
+</footer>
+</div>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () { navigator.serviceWorker.getRegistrations().then(function (rs) { rs.forEach(function (r) { r.unregister(); }); }).catch(function () {}); });
+}
+</script>
+</body>
+</html>

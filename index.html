@@ -12,19 +12,20 @@
 <body>
   <div class="app">
     <nav class="side" aria-label="Console sections">
-      <a class="logo" href="#dashboard"><span class="logo-mark" aria-hidden="true">BC</span><span>Business Console</span></a>
-      <a class="nav" href="#dashboard" data-route="dashboard"><span class="ico" aria-hidden="true">▦</span><span>Dashboard</span></a>
-      <a class="nav nav-c3d" href="#c3d" data-route="c3d"><span class="ico" aria-hidden="true">◆</span><span>Charleston 3D</span></a>
-      <a class="nav nav-ed" href="#ed" data-route="ed"><span class="ico" aria-hidden="true">●</span><span>Elevated Designs</span></a>
-      <a class="nav" href="#products" data-route="products"><span class="ico" aria-hidden="true">▤</span><span>Products</span></a>
-      <a class="nav" href="#insights" data-route="insights"><span class="ico" aria-hidden="true">↗</span><span>Insights</span></a>
-      <a class="nav" href="#marketing" data-route="marketing"><span class="ico" aria-hidden="true">◎</span><span>Marketing</span></a>
-      <a class="nav" href="#promote" data-route="promote"><span class="ico" aria-hidden="true">%</span><span>Promotions</span></a>
-      <a class="nav" href="#studio" data-route="studio"><span class="ico" aria-hidden="true">✎</span><span>Design Studio</span></a>
-      <a class="nav" href="#map" data-route="map"><span class="ico" aria-hidden="true">⇄</span><span>Service Map</span></a>
+      <a class="logo" href="#home"><span class="logo-mark" aria-hidden="true">BC</span><span>Business Console</span></a>
+      <div class="store-seg" id="store-seg" role="group" aria-label="Store"></div>
+      <div class="navs" id="navs"></div>
+      <button class="nav more" id="more" type="button" aria-expanded="false" aria-controls="navs"><span class="ico" aria-hidden="true">☰</span><span>Menu</span></button>
       <button class="theme" id="theme" type="button" aria-label="Switch light or dark">◐ <span>Theme</span></button>
     </nav>
-    <main id="view" tabindex="-1"></main>
+    <div class="work">
+      <header class="topbar">
+        <nav class="crumb" id="crumb" aria-label="You are here"></nav>
+        <button class="search" id="search" type="button"><span>Search or jump to a tool</span><kbd>/</kbd></button>
+        <div class="store-links" id="store-links"></div>
+      </header>
+      <main id="view" tabindex="-1"></main>
+    </div>
   </div>
 
   <div class="scrim" id="scrim" hidden></div>
@@ -37,7 +38,7 @@
   </aside>
 
   <dialog class="palette" id="palette" aria-label="Jump to anything">
-    <input id="pal-q" type="search" placeholder="Jump to a page, store or site…" autocomplete="off">
+    <input id="pal-q" type="search" placeholder="Jump to a tool, page, store or site…" autocomplete="off">
     <ul id="pal-list" role="listbox"></ul>
     <p class="hint">Press <kbd>/</kbd> anywhere to open this. <kbd>Enter</kbd> opens the top result.</p>
   </dialog>

@@ -730,6 +730,63 @@ test("images: list and writes need the key; private files need the key or a sign
   assert.equal(blobs.m.size, 0);
 });
 
+const { handleFiles } = await import("../lib/files.mjs");
+// The Charleston 3D file library: its own prefixes in the same KV namespace, never in the image list.
+function fileCtx(kv = fakeKV(), env = envOf()) {
+  return { kv, ctx: { blobs: kvBlobStore(kv, "c3d-file:"), thumbs: kvBlobStore(kv, "c3d-thumb:"), env } };
+}
+const binStl = (tris) => { const b = new Uint8Array(84 + 50 * tris); new DataView(b.buffer).setUint32(80, tris, true); return b; };
+const upFile = (ctx, name, body, headers = KEYH) =>
+  handleFiles(imgReq("/api/files", { method: "POST", headers: { "x-filename": name, "content-type": "application/octet-stream", ...headers }, body }), ctx);
+
+test("files: Charleston 3D library takes STL, 3MF, OBJ, STEP and photos, checked by content", async () => {
+  const { kv, ctx } = fileCtx();
+  assert.equal((await handleFiles(imgReq("/api/files"), ctx)).status, 401, "list needs the key");
+  assert.equal((await upFile(ctx, "a.stl", binStl(2), {})).status, 401, "upload needs the key");
+  const ok = [["bracket.stl", binStl(3)], ["ascii.stl", new TextEncoder().encode("solid part\nfacet normal 0 0 1\nendsolid")],
+    ["plate.3mf", new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3])], ["cube.obj", new TextEncoder().encode("# cube\no Cube\nv 0 0 0\nv 1 0 0\nf 1 2 1\n")],
+    ["part.STEP", new TextEncoder().encode("ISO-10303-21;\nHEADER;")], ["photo.png", PNG]];
+  for (const [name, body] of ok) assert.equal((await upFile(ctx, name, body)).status, 201, name);
+  for (const [name, body] of [["fake.stl", new Uint8Array(90)], ["fake.3mf", PNG], ["notes.txt", new TextEncoder().encode("hi")], ["fake.step", PNG], ["x.png", binStl(1)]])
+    assert.equal((await upFile(ctx, name, body)).status, 415, `${name} refused`);
+  const { items } = await (await handleFiles(imgReq("/api/files", { headers: KEYH }), ctx)).json();
+  assert.equal(items.length, ok.length);
+  assert.deepEqual(new Set(items.map((i) => i.type)), new Set(["model/stl", "model/3mf", "model/obj", "model/step", "image/png"]));
+  assert.ok(items.every((i) => i.store === "c3d" && /^\/api\/files\/[a-z0-9]+-[0-9a-f]{8}\?exp=\d+&sig=/.test(i.url)));
+  assert.ok([...kv.m.keys()].every((k) => k.startsWith("c3d-file:")), "nothing lands in the image library's keys");
+  assert.equal((await kvBlobStore(kv).list()).blobs.length, 0, "the Elevated Designs image list doesn't see them");
+});
+
+test("files: downloads need the key or a signed link; models download, previews and renames work; delete removes both", async () => {
+  const { kv, ctx } = fileCtx();
+  const { item } = await (await upFile(ctx, "Pineapple Ornament.stl", binStl(4))).json();
+  assert.equal((await handleFiles(imgReq(`/api/files/${item.key}`), ctx)).status, 404, "hidden from strangers");
+  const file = await handleFiles(imgReq(item.url), ctx);
+  assert.equal(file.status, 200);
+  assert.equal(file.headers.get("content-type"), "application/octet-stream");
+  assert.equal(file.headers.get("content-disposition"), 'attachment; filename="Pineapple Ornament.stl"');
+  assert.equal((await handleFiles(imgReq(item.url.replace(/sig=.*/, "sig=" + "A".repeat(43))), ctx)).status, 404, "a wrong signature is refused");
+  const put = (body, headers = KEYH) => handleFiles(imgReq(`/api/files/${item.key}/thumb`, { method: "PUT", headers, body }), ctx);
+  assert.equal((await put(PNG, {})).status, 401);
+  assert.equal((await put(binStl(1))).status, 415, "a preview must be a PNG");
+  assert.equal((await put(new Uint8Array(301 * 1024).fill(0x89))).status, 413);
+  const withThumb = (await (await put(PNG)).json()).item;
+  assert.match(withThumb.thumbUrl, new RegExp(`^/api/files/${item.key}/thumb\\?exp=`));
+  const thumb = await handleFiles(imgReq(withThumb.thumbUrl), ctx);
+  assert.equal(thumb.status, 200);
+  assert.equal(thumb.headers.get("content-type"), "image/png");
+  assert.equal((await handleFiles(imgReq(withThumb.thumbUrl.replace("/thumb", "")), ctx)).status, 404, "the preview's link doesn't open the file");
+  const renamed = await handleFiles(imgReq(`/api/files/${item.key}`, { method: "PATCH", headers: { ...KEYH, "content-type": "application/json" }, body: JSON.stringify({ name: "Pineapple v2.obj", tags: "ornament, fruit" }) }), ctx);
+  const r = (await renamed.json()).item;
+  assert.equal(r.name, "Pineapple v2.stl", "the extension always stays the file's own");
+  assert.equal(r.tags, "ornament, fruit");
+  assert.equal(r.thumb, true, "renaming keeps the preview");
+  assert.equal((await handleFiles(imgReq(`/api/files/${item.key}`, { method: "DELETE", headers: KEYH }), ctx)).status, 200);
+  assert.equal(kv.m.size, 0, "the file and its preview are gone");
+  for (const bad of ["/api/files/../image:x", "/api/files/abc", `/api/files/${item.key}/other`, `/api/files/${item.key}/thumb/x`])
+    assert.equal((await handleFiles(imgReq(bad, { headers: KEYH }), ctx)).status, 404, bad);
+});
+
 test("images: content must match the declared type, and only image types are taken", async () => {
   const ctx = { blobs: fakeBlobs(), env: envOf() };
   const html = new TextEncoder().encode("<html><script>alert(1)</script></html>");
@@ -1301,17 +1358,17 @@ async function withFetch(fn, impl) {
   try { return await fn(); } finally { globalThis.fetch = original; }
 }
 
-test("build: dist/ holds only index.html and assets/, and wrangler.toml serves just that", async () => {
+test("build: dist/ holds only index.html, assets/ and tools/, and wrangler.toml serves just that", async () => {
   const fs = await import("node:fs");
   const path = await import("node:path");
   const os = await import("node:os");
   const { execFileSync } = await import("node:child_process");
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bc-build-"));
-  for (const f of ["index.html", "assets", "lib", "scripts", "worker", "data", "package.json", "README.md", "wrangler.toml"])
+  for (const f of ["index.html", "assets", "tools", "lib", "scripts", "worker", "data", "package.json", "README.md", "wrangler.toml"])
     fs.cpSync(path.join(root, f), path.join(tmp, f), { recursive: true });
   execFileSync(process.execPath, [path.join(tmp, "scripts", "build.mjs")], { cwd: tmp, stdio: "ignore" });
-  assert.deepEqual(fs.readdirSync(path.join(tmp, "dist")).sort(), ["assets", "index.html"]);
+  assert.deepEqual(fs.readdirSync(path.join(tmp, "dist")).sort(), ["assets", "index.html", "tools"]);
   fs.rmSync(tmp, { recursive: true, force: true });
   const toml = fs.readFileSync(path.join(root, "wrangler.toml"), "utf8");
   assert.match(toml, /^main = "worker\/index\.mjs"$/m);
@@ -1327,7 +1384,7 @@ test("build: dist/ holds only index.html and assets/, and wrangler.toml serves j
   assert.ok(!Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).some((d) => /netlify/i.test(d)), "no Netlify packages");
   assert.ok(!/netlify/i.test(fs.readFileSync(path.join(root, "package-lock.json"), "utf8")), "none in the lockfile either");
   const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
-  const hosting = ["wrangler.toml", "package.json", "README.md", "index.html", ...["worker", "lib", ".github"].flatMap((d) => walk(path.join(root, d)).map((f) => path.relative(root, f)))];
+  const hosting = ["wrangler.toml", "package.json", "README.md", "index.html", ...["worker", "lib", ".github", "tools"].flatMap((d) => walk(path.join(root, d)).map((f) => path.relative(root, f)))];
   for (const f of hosting) assert.ok(!/netlify/i.test(fs.readFileSync(path.join(root, f), "utf8")), `${f} mentions Netlify`);
 });
 
@@ -1450,6 +1507,18 @@ test("worker: without the IMAGES binding the library says it isn't set up (and t
   const res = await W.handleRequest(wreq("/api/images", { headers: KEYH }), env);
   assert.equal(res.status, 503);
   assert.equal((await res.json()).code, "storage_not_set_up");
+});
+
+test("worker: the Charleston 3D file library is routed to its own keys in the IMAGES namespace", async () => {
+  const kv = fakeKV(), env = workerEnv({ IMAGES: kv });
+  assert.equal((await W.handleRequest(wreq("/api/files"), env)).status, 401);
+  const stl = new Uint8Array(84 + 50); new DataView(stl.buffer).setUint32(80, 1, true);
+  const up = await W.handleRequest(wreq("/api/files", { method: "POST", headers: { "x-filename": "hook.stl", ...KEYH }, body: stl }), env);
+  assert.equal(up.status, 201);
+  assert.deepEqual([...kv.m.keys()].map((k) => k.split(":")[0]), ["c3d-file"]);
+  const imgs = await W.handleRequest(wreq("/api/images", { headers: KEYH }), env);
+  assert.deepEqual((await imgs.json()).items, [], "the Elevated Designs image list stays separate");
+  assert.equal((await W.handleRequest(wreq("/api/files", { headers: KEYH }), workerEnv({ IMAGES: undefined }))).status, 503);
 });
 
 test("worker: uploads are capped at 20 MB (KV takes 25 MiB), even when streamed without a length", async () => {

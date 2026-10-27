@@ -1,0 +1,37 @@
+{
+  "name": "Nameplate Maker by Creative Lab Studios",
+  "short_name": "Nameplate Maker",
+  "description": "Design bright, multi-color 3D-printable nameplates and save a 3MF for your slicer.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#22282D",
+  "theme_color": "#22282D",
+  "categories": [
+    "productivity",
+    "utilities",
+    "design"
+  ],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Maker · Charleston3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<script>try{var t=parent.document.documentElement.dataset.theme||localStorage.getItem("bc-theme");if(t)document.documentElement.dataset.theme=String(t).replace(/"/g,"")}catch(e){}</script>
+<style>
+:root{--bg:#f6f1e7;--card:#fffdf8;--raise:#ece5d6;--line:#ddd3bf;--fg:#16203a;--muted:#5e6474;--accent:#0e7c74;--accent-fg:#fff;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0a1428;--card:#111d36;--raise:#182644;--line:#24345a;--fg:#f3ede1;--muted:#aab3c7;--accent:#4fc8bd;--accent-fg:#06201d;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0a1428;--card:#111d36;--raise:#182644;--line:#24345a;--fg:#f3ede1;--muted:#aab3c7;--accent:#4fc8bd;--accent-fg:#06201d;color-scheme:dark}
+*{box-sizing:border-box}html,body{margin:0}body{background:var(--bg);color:var(--fg);font:15px/1.5 "IBM Plex Sans","Segoe UI",system-ui,sans-serif;padding:16px}
+[hidden]{display:none!important}.small{font-size:13px}.muted{color:var(--muted)}
+.btn{font:inherit;font-weight:600;font-size:14px;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--fg);padding:9px 14px;cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}.btn:disabled{opacity:.5;cursor:default}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.lbwrap{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:16px;align-items:start;max-width:1200px;margin:0 auto}
+.lbmodes{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.lbmodes button{font:inherit;text-align:left;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:inherit;cursor:pointer;display:grid;gap:2px}
+.lbmodes button b{font-size:14px}.lbmodes button span{font-size:12.5px;color:var(--muted);line-height:1.3}
+.lbmodes button[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.lbside{display:grid;gap:14px}
+.lbdrop{position:relative;border:1.5px dashed var(--line);border-radius:12px;padding:20px;text-align:center;cursor:pointer;min-height:120px;display:grid;place-items:center;gap:10px;background:var(--card)}
+.lbdrop.over{border-color:var(--accent)}.lbdrop-in{display:grid;gap:4px;justify-items:center}
+.lbdrop-ic svg{width:30px;height:30px;stroke:currentColor;fill:none;stroke-width:1.6;opacity:.6}
+.lbthumbs{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}.lbthumb{position:relative;display:inline-block}
+.lbthumb img{width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.lbrm{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:0;background:#222;color:#fff;cursor:pointer;line-height:1}
+.lbopts{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.lbgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px 12px}
+.lbgrid label,.lbname{display:block;font-size:12.5px;color:var(--muted)}.lbgrid label.wide{grid-column:1/-1}.lbgrid .u{font-size:11px;opacity:.75}
+.lbgrid input[type=number],.lbgrid input[type=text],.lbgrid select,.lbname input{display:block;margin-top:4px;width:100%;padding:7px 9px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:inherit;font-size:14px}
+.lbgrid label.chk{display:flex;align-items:center;gap:8px;align-self:end;padding-bottom:8px;color:var(--fg)}
+.lbgrid input[type=range]{display:block;margin-top:6px}
+.lbgrid input[type=range]{width:100%;accent-color:var(--accent)}.lbname{margin-top:12px}
+.lbprev{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;position:sticky;top:16px}
+.lbprev-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.lbprev figure{margin:0;display:grid;gap:6px;justify-items:center}
+.lbprev canvas{max-width:100%;max-height:340px;width:auto;height:auto;border-radius:8px;background:#111;border:1px solid var(--line)}
+.lbprev figcaption{font-size:12px;color:var(--muted)}
+.lbprev figure:has(canvas[width="10"]){display:none}
+.lbpal{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.lbpal .sw{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;padding:3px 8px;border-radius:999px;border:1px solid var(--line)}
+.lbpal .sw i{width:14px;height:14px;border-radius:50%;display:inline-block;border:1px solid var(--line)}
+.lbstat{margin-top:10px}.lbacts{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center}#lbDl{display:contents}
+.toasts{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);display:grid;gap:6px;z-index:9}
+.toast{background:var(--fg);color:var(--bg);padding:9px 14px;border-radius:9px;font-size:14px}
+@media (max-width:820px){.lbwrap{grid-template-columns:1fr}.lbmodes{grid-template-columns:1fr 1fr}.lbprev{position:static}}
+</style>
+</head>
+<body>
+<div id="lbMount"></div>
+<script>
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const ICON={image:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>'};
+function toast(msg){let box=document.getElementById("toasts");if(!box){box=document.createElement("div");box.id="toasts";box.className="toasts";box.setAttribute("role","status");document.body.appendChild(box);}const t=document.createElement("div");t.className="toast";t.textContent=msg;box.appendChild(t);setTimeout(()=>t.remove(),3500);}
+function dlBlob(name,blob){name=String(name||"file").replace(/[\\/:*?"<>|]+/g,"-");const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},4000);return true;}
+</script>
+<script>
+/* ================= MAKER: Light box · Keychain · Sign · Lithophane — picture in, Bambu-ready 3MF/STL out ================= */
+const MK_MODES=[["lightbox","Light box","Picture-shaped front with a thick border wall, a box behind it and a snap-on lid. LED puck inside."],["keychain","Keychain","Picture traced into a flat multi-colour tag with a ring hole."],["sign","Sign","Raised lettering on a plate. Name plates, badges, shelf signs."],["litho","Lithophane","Photo as a thin grey plate that shows the picture when lit from behind."]];
+const MK_SHAPES=[["trace","Trace the picture"],["rect","Square / rectangle"],["round","Rounded"],["circle","Circle"]];
+const MK_FONTS=["Impact","Arial Black","Georgia","Trebuchet MS","Courier New","Brush Script MT","Comic Sans MS","Verdana"];
+const MK={mode:"lightbox", imgs:[], shape:"trace", width:120, height:0, lock:true, res:0.4, colors:4, border:4, gap:0, depth:50, wallT:3, lid:true, hole:false, imgT:0.6, backT:1.0, keyT:3, ring:true, text:"", font:"Impact", textT:1, plateT:3, name:"",
+  minT:0.8, maxT:3.0, lres:0.3, arc:0, invert:false, bright:0, contrast:0, blur:0.6, mirror:false,
+  busy:false, parts:[], palette:[], node:null, dirty:true, keyTol:40, bg:"auto"};
+const LB=MK; /* legacy alias */
+
+function mkRound(n,d){ return Math.round(n*(d||10))/(d||10); }
+function mkTitle(){ return ({lightbox:"Light box",keychain:"Keychain",sign:"Sign",litho:"Lithophane"})[MK.mode]||"Maker"; }
+/* ---- page ---- */
+function lbMount(){ const m=document.getElementById("lbMount"); if(!m) return; MK.node=m;
+  m.innerHTML=`<div class="lbwrap">
+    <div class="lbmodes" id="mkModes">${MK_MODES.map(x=>`<button type="button" data-mode="${x[0]}" aria-pressed="${MK.mode===x[0]}"><b>${x[1]}</b><span>${x[2]}</span></button>`).join("")}</div>
+    <div class="lbdrop mk-img" id="lbDrop" tabindex="0" role="button" aria-label="Drop a picture here or tap to choose">
+      <input type="file" id="lbFile" accept="image/*" multiple hidden>
+      <div class="lbdrop-in"><span class="lbdrop-ic">${ICON.image}</span><strong>Drop a picture here</strong><span class="small muted">or tap to choose · paste works too · PNG with a see-through background traces best</span></div>
+      <div class="lbthumbs" id="lbThumbs"></div></div>
+    <div class="lbopts">
+      <div class="lbgrid">
+        <label class="mk-sign wide">Text<input type="text" id="mkText" maxlength="40" placeholder="e.g. THE LEWIS FAMILY" value="${esc(MK.text)}"></label>
+        <label class="mk-sign">Font<select id="mkFont">${MK_FONTS.map(f=>`<option ${MK.font===f?"selected":""}>${f}</option>`).join("")}</select></label>
+        <label class="mk-sign">Letter height <span class="u">mm</span><input type="number" id="mkTextT" min="0.4" max="4" step="0.2" value="${MK.textT}"></label>
+        <label class="mk-sign">Plate thickness <span class="u">mm</span><input type="number" id="mkPlateT" min="2" max="8" step="0.5" value="${MK.plateT}"></label>
+        <label class="mk-shape">Shape<select id="mkShape">${MK_SHAPES.map(s=>`<option value="${s[0]}" ${MK.shape===s[0]?"selected":""}>${s[1]}</option>`).join("")}</select></label>
+        <label>Width <span class="u">mm</span><input type="number" id="lbW" min="20" max="250" step="1" value="${MK.width}"></label>
+        <label>Height <span class="u">mm</span><input type="number" id="lbH" min="20" max="250" step="1" value="${MK.height||""}" placeholder="auto"></label>
+        <label class="chk"><input type="checkbox" id="lbLock" ${MK.lock?"checked":""}> Keep picture shape</label>
+        <label class="mk-color">Colours<select id="mkColors">${[2,3,4,5,6,8].map(n=>`<option ${MK.colors===n?"selected":""}>${n}</option>`).join("")}</select></label>
+        <label class="mk-color">Detail <span class="u">mm</span><select id="mkRes"><option value="0.6" ${MK.res===0.6?"selected":""}>Fast · 0.6</option><option value="0.4" ${MK.res===0.4?"selected":""}>Normal · 0.4</option><option value="0.3" ${MK.res===0.3?"selected":""}>Fine · 0.3</option></select></label>
+        <label class="mk-lightbox mk-keychain">Border <span class="u">mm</span><input type="number" id="mkBorder" min="1" max="15" step="0.5" value="${MK.border}"></label>
+        <label class="mk-lightbox mk-keychain">Space between picture &amp; border <span class="u">mm</span><input type="number" id="mkGap" min="0" max="20" step="0.5" value="${MK.gap}"></label>
+        <label class="mk-lightbox">Box depth <span class="u">mm</span><input type="number" id="mkDepth" min="15" max="120" step="1" value="${MK.depth}"></label>
+        <label class="mk-lightbox">Wall <span class="u">mm</span><input type="number" id="mkWallT" min="1.6" max="6" step="0.2" value="${MK.wallT}"></label>
+        <label class="mk-lightbox chk"><input type="checkbox" id="mkLid" ${MK.lid?"checked":""}> Snap-on lid</label>
+        <label class="mk-lightbox chk"><input type="checkbox" id="mkHole" ${MK.hole?"checked":""}> Cable hole in lid</label>
+        <label class="mk-keychain">Thickness <span class="u">mm</span><input type="number" id="mkKeyT" min="2" max="6" step="0.5" value="${MK.keyT}"></label>
+        <label class="mk-keychain chk"><input type="checkbox" id="mkRing" ${MK.ring?"checked":""}> Ring hole tab</label>
+        <label class="mk-litho">Thinnest <span class="u">mm</span><input type="number" id="lbMin" min="0.4" max="2" step="0.1" value="${MK.minT}"></label>
+        <label class="mk-litho">Thickest <span class="u">mm</span><input type="number" id="lbMax" min="1.5" max="6" step="0.1" value="${MK.maxT}"></label>
+        <label class="mk-litho">Detail <span class="u">mm</span><select id="lbRes"><option value="0.4" ${MK.lres===0.4?"selected":""}>Fast · 0.4</option><option value="0.3" ${MK.lres===0.3?"selected":""}>Normal · 0.3</option><option value="0.2" ${MK.lres===0.2?"selected":""}>Fine · 0.2</option></select></label>
+        <label class="mk-litho">Curve <span class="u">° (0 = flat)</span><input type="number" id="lbArc" min="0" max="180" step="10" value="${MK.arc}"></label>
+        <label class="mk-litho chk"><input type="checkbox" id="lbInvert" ${MK.invert?"checked":""}> Negative</label>
+        <label class="mk-img">Brightness<input type="range" id="lbBright" min="-60" max="60" step="5" value="${MK.bright}"></label>
+        <label class="mk-img">Contrast<input type="range" id="lbContrast" min="-60" max="60" step="5" value="${MK.contrast}"></label>
+        <label class="mk-litho">Smooth<input type="range" id="lbBlur" min="0" max="2" step="0.2" value="${MK.blur}"></label>
+      </div>
+      <label class="lbname">Name<input type="text" id="lbName" maxlength="80" placeholder="e.g. Grandma's cat light box" value="${esc(MK.name)}"></label>
+    </div>
+    <div class="lbprev"><div class="lbprev-row"><figure><canvas id="lbLit" width="10" height="10"></canvas><figcaption id="lbCap1">Front</figcaption></figure><figure><canvas id="lbRelief" width="10" height="10"></canvas><figcaption id="lbCap2">Parts</figcaption></figure></div>
+      <div class="lbpal" id="lbPal"></div>
+      <div class="lbstat small muted" id="lbStat">Add a picture to start.</div>
+      <div class="lbacts"><button type="button" class="btn primary" id="lbBuild">Build print file</button><span id="lbDl"></span></div></div>
+  </div>`;
+  const drop=m.querySelector("#lbDrop"), file=m.querySelector("#lbFile");
+  drop.onclick=e=>{ if(e.target.closest("[data-lbrm]")) return; file.click(); }; drop.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); file.click(); } };
+  file.onchange=()=>{ lbAddFiles(file.files); file.value=""; };
+  ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.add("over"); })); ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.remove("over"); }));
+  drop.addEventListener("drop",e=>lbAddFiles(e.dataTransfer&&e.dataTransfer.files));
+  if(!MK.pasteBound){ MK.pasteBound=true; document.addEventListener("paste",e=>{ if(!MK.node||!document.body.contains(MK.node)) return; const fs=[...(e.clipboardData&&e.clipboardData.files||[])].filter(f=>/^image\//.test(f.type)); if(fs.length){ e.preventDefault(); lbAddFiles(fs); } }); }
+  m.querySelector("#mkModes").onclick=e=>{ const b=e.target.closest("[data-mode]"); if(!b) return; MK.mode=b.dataset.mode; m.querySelectorAll("[data-mode]").forEach(x=>x.setAttribute("aria-pressed",x===b)); mkShowOpts(); lbPreview(); };
+  const num=(id,k,min,max)=>{ const i=m.querySelector(id); if(!i) return; i.oninput=()=>{ const v=parseFloat(i.value); if(!isFinite(v)){ if(k==="height") MK.height=0; lbPreview(); return; } MK[k]=Math.min(max,Math.max(min,v)); if(k==="height"&&MK.lock){ MK.lock=false; m.querySelector("#lbLock").checked=false; } lbPreview(); }; };
+  num("#lbW","width",20,250); num("#lbH","height",20,250); num("#lbMin","minT",0.4,2); num("#lbMax","maxT",1.5,6); num("#lbArc","arc",0,180); num("#mkBorder","border",1,15); num("#mkGap","gap",0,20); num("#mkDepth","depth",15,120); num("#mkWallT","wallT",1.6,6); num("#mkKeyT","keyT",2,6); num("#mkTextT","textT",0.4,4); num("#mkPlateT","plateT",2,8);
+  num("#lbBright","bright",-60,60); num("#lbContrast","contrast",-60,60); num("#lbBlur","blur",0,2);
+  const sel=(id,k,f)=>{ const i=m.querySelector(id); if(i) i.onchange=e=>{ MK[k]=f?f(e.target.value):e.target.value; lbPreview(); }; };
+  sel("#lbRes","lres",parseFloat); sel("#mkRes","res",parseFloat); sel("#mkColors","colors",v=>parseInt(v,10)); sel("#mkShape","shape"); sel("#mkFont","font");
+  const chk=(id,k)=>{ const i=m.querySelector(id); if(i) i.onchange=e=>{ MK[k]=e.target.checked; if(k==="lock"&&MK.lock) MK.height=0; lbPreview(); }; };
+  chk("#lbLock","lock"); chk("#lbInvert","invert"); chk("#mkLid","lid"); chk("#mkHole","hole"); chk("#mkRing","ring");
+  m.querySelector("#mkText").oninput=e=>{ MK.text=e.target.value; lbPreview(); };
+  m.querySelector("#lbName").oninput=e=>{ MK.name=e.target.value; };
+  m.querySelector("#lbBuild").onclick=lbBuild;
+  mkShowOpts(); lbPaintThumbs(); lbPreview();
+}
+function mkShowOpts(){ const m=MK.node; if(!m) return; const md=MK.mode;
+  m.querySelectorAll(".mk-lightbox,.mk-keychain,.mk-sign,.mk-litho,.mk-color,.mk-shape,.mk-img").forEach(x=>{ const on=(x.classList.contains("mk-"+md))||(x.classList.contains("mk-color")&&md!=="litho"&&md!=="sign")||(x.classList.contains("mk-shape")&&(md==="lightbox"||md==="keychain"))||(x.classList.contains("mk-img")&&md!=="sign"); x.hidden=!on; });
+  const lock=m.querySelector("#lbLock"); if(lock) lock.closest("label").hidden=md==="sign";
+  const c1=m.querySelector("#lbCap1"), c2=m.querySelector("#lbCap2"); if(c1) c1.textContent=md==="litho"?"Lit (what the customer sees)":"Front"; if(c2) c2.textContent=md==="litho"?"Unlit relief":(md==="lightbox"?"Box + lid":"Parts"); }
+function lbAddFiles(files){ const fs=[...(files||[])].filter(f=>/^image\//.test(f.type)); if(!fs.length){ toast("That isn't a picture."); return; }
+  fs.slice(0,1).forEach(f=>{ const url=URL.createObjectURL(f); const im=new Image(); im.onload=()=>{ MK.imgs.forEach(x=>URL.revokeObjectURL(x.url)); MK.imgs=[{file:f,url,img:im,w:im.naturalWidth,h:im.naturalHeight}]; if(!MK.name){ MK.name=(f.name||"photo").replace(/\.[a-z0-9]+$/i,"").replace(/[_-]+/g," ").slice(0,60); const n=MK.node&&MK.node.querySelector("#lbName"); if(n&&!n.value) n.value=MK.name; } lbPaintThumbs(); lbPreview(); }; im.onerror=()=>{ URL.revokeObjectURL(url); toast("Couldn't read that picture."); }; im.src=url; }); }
+function lbPaintThumbs(){ const t=MK.node&&MK.node.querySelector("#lbThumbs"); if(!t) return; t.innerHTML=MK.imgs.map((x,i)=>`<span class="lbthumb"><img src="${x.url}" alt="Picture"><button type="button" class="lbrm" data-lbrm="${i}" aria-label="Remove picture">×</button></span>`).join("");
+  t.querySelectorAll("[data-lbrm]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); const x=MK.imgs.splice(+b.dataset.lbrm,1)[0]; if(x) URL.revokeObjectURL(x.url); lbPaintThumbs(); lbPreview(); });
+  MK.node.querySelector("#lbDrop").classList.toggle("has",MK.imgs.length>0); }
+/* ---- source picture: photo, or text rendered to a canvas (sign) ---- */
+function mkSource(){ if(MK.mode==="sign"){ const t=(MK.text||"").trim()||"YOUR TEXT"; const cv=document.createElement("canvas"); const ctx=cv.getContext("2d"); const fs=200; ctx.font=`bold ${fs}px "${MK.font}"`; const tw=Math.ceil(ctx.measureText(t).width)+fs*0.6; cv.width=Math.max(300,tw); cv.height=Math.round(fs*1.5); ctx.font=`bold ${fs}px "${MK.font}"`; ctx.textBaseline="middle"; ctx.textAlign="center"; ctx.fillStyle="#000"; ctx.fillText(t,cv.width/2,cv.height/2+fs*0.05); return {img:cv,w:cv.width,h:cv.height,alpha:true}; }
+  const im=MK.imgs[0]; return im?{img:im.img,w:im.w,h:im.h,alpha:false}:null; }
+function lbDims(){ const src=mkSource(); const w=MK.width; let h=MK.height; if(!h||MK.lock||MK.mode==="sign") h=src?Math.round(w*src.h/src.w):Math.round(w*0.75); h=Math.min(250,Math.max(10,h)); return {w,h}; }
+/* sample the picture into a cols×rows grid: rgba per cell */
+function mkSample(src,cols,rows,filters){ const cv=document.createElement("canvas"); cv.width=cols; cv.height=rows; const ctx=cv.getContext("2d",{willReadFrequently:true}); const sc=Math.max(cols/src.w,rows/src.h), dw=src.w*sc, dh=src.h*sc;
+  const f=[]; if(filters){ if(MK.blur>0&&MK.mode==="litho") f.push(`blur(${(MK.blur*0.6).toFixed(2)}px)`); if(MK.bright) f.push(`brightness(${(1+MK.bright/100).toFixed(2)})`); if(MK.contrast) f.push(`contrast(${(1+MK.contrast/100).toFixed(2)})`); } try{ ctx.filter=f.join(" ")||"none"; }catch{}
+  ctx.drawImage(src.img,(cols-dw)/2,(rows-dh)/2,dw,dh); ctx.filter="none"; return ctx.getImageData(0,0,cols,rows).data; }
+/* ---- masks (Uint8Array cols*rows) ---- */
+function mkShapeMask(d,cols,rows){ const m=new Uint8Array(cols*rows); const n=cols*rows;
+  if(MK.shape==="trace"||MK.mode==="sign"){ let hasAlpha=false; for(let i=0;i<n;i++) if(d[i*4+3]<128){ hasAlpha=true; break; }
+    if(hasAlpha){ for(let i=0;i<n;i++) m[i]=d[i*4+3]>=128?1:0; }
+    else { /* key out the background colour sampled from the corners */ const cs=[0,cols-1,(rows-1)*cols,rows*cols-1].map(i=>[d[i*4],d[i*4+1],d[i*4+2]]); const bg=cs.reduce((a,c)=>[a[0]+c[0]/4,a[1]+c[1]/4,a[2]+c[2]/4],[0,0,0]); const tol=MK.keyTol*MK.keyTol*3;
+      for(let i=0;i<n;i++){ const dr=d[i*4]-bg[0],dg=d[i*4+1]-bg[1],db=d[i*4+2]-bg[2]; m[i]=(dr*dr+dg*dg+db*db)>tol?1:0; }
+      /* only cells reachable from the edge through background count as outside */ const out=mkFlood(m,cols,rows); for(let i=0;i<n;i++) m[i]=out[i]?0:1; }
+    if(MK.mode==="sign") return m; /* letters only; plate is built separately */
+    const out=mkFlood(m,cols,rows); for(let i=0;i<n;i++) m[i]=out[i]?0:1; /* fill holes */ return m; }
+  const cx=(cols-1)/2, cy=(rows-1)/2; for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){ let v=1; if(MK.shape==="circle"){ const dx=(c-cx)/cx, dy=(r-cy)/cy; v=dx*dx+dy*dy<=1?1:0; } else if(MK.shape==="round"){ const rad=Math.min(cols,rows)*0.12; const ix=Math.max(0,Math.max(rad-c,c-(cols-1-rad))), iy=Math.max(0,Math.max(rad-r,r-(rows-1-rad))); v=ix*ix+iy*iy<=rad*rad?1:0; } m[r*cols+c]=v; } return m; }
+/* cells reachable from the border through zero cells */
+function mkFlood(m,cols,rows){ const out=new Uint8Array(cols*rows); const st=[]; const push=(i)=>{ if(!m[i]&&!out[i]){ out[i]=1; st.push(i); } }; for(let c=0;c<cols;c++){ push(c); push((rows-1)*cols+c); } for(let r=0;r<rows;r++){ push(r*cols); push(r*cols+cols-1); }
+  while(st.length){ const i=st.pop(); const c=i%cols, r=(i-c)/cols; if(c>0) push(i-1); if(c<cols-1) push(i+1); if(r>0) push(i-cols); if(r<rows-1) push(i+cols); } return out; }
+/* grow a mask by rad cells (round brush) */
+function mkDilate(m,cols,rows,rad){ if(rad<=0) return m.slice(); const out=new Uint8Array(cols*rows); const R=Math.ceil(rad); const off=[]; for(let dy=-R;dy<=R;dy++) for(let dx=-R;dx<=R;dx++) if(dx*dx+dy*dy<=rad*rad) off.push([dx,dy]);
+  /* edge cells only: a cell on the boundary of m paints the brush */ for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){ const i=r*cols+c; if(!m[i]) continue; out[i]=1; const edge=c===0||r===0||c===cols-1||r===rows-1||!m[i-1]||!m[i+1]||!m[i-cols]||!m[i+cols]; if(!edge) continue; for(const o of off){ const x=c+o[0], y=r+o[1]; if(x>=0&&y>=0&&x<cols&&y<rows) out[y*cols+x]=1; } } return out; }
+function mkErode(m,cols,rows,rad){ const inv=new Uint8Array(cols*rows); for(let i=0;i<inv.length;i++) inv[i]=m[i]?0:1; const d=mkDilate(inv,cols,rows,rad); for(let i=0;i<d.length;i++) d[i]=d[i]?0:1; return d; }
+function mkSub(a,b){ const o=new Uint8Array(a.length); for(let i=0;i<a.length;i++) o[i]=a[i]&&!b[i]?1:0; return o; }
+function mkDisk(cols,rows,cx,cy,rad,base){ const o=base?base.slice():new Uint8Array(cols*rows); for(let r=Math.max(0,Math.floor(cy-rad));r<=Math.min(rows-1,Math.ceil(cy+rad));r++) for(let c=Math.max(0,Math.floor(cx-rad));c<=Math.min(cols-1,Math.ceil(cx+rad));c++){ const dx=c-cx,dy=r-cy; if(dx*dx+dy*dy<=rad*rad) o[r*cols+c]=1; } return o; }
+function mkPad(m,cols,rows,pad){ /* embed into a bigger grid with pad cells around */ const C=cols+2*pad, R=rows+2*pad; const o=new Uint8Array(C*R); for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) o[(r+pad)*C+c+pad]=m[r*cols+c]; return {m:o,cols:C,rows:R}; }
+/* ---- colour quantising (k-means) ---- */
+function mkQuant(d,mask,cols,rows,k){ const pts=[]; for(let i=0;i<cols*rows;i+=1){ if(mask[i]) pts.push(i); } const step=Math.max(1,Math.floor(pts.length/12000)); const smp=[]; for(let j=0;j<pts.length;j+=step){ const i=pts[j]*4; smp.push([d[i],d[i+1],d[i+2]]); }
+  if(!smp.length) return {palette:[[255,255,255]],idx:new Uint8Array(cols*rows)};
+  const cents=[smp[0].slice()]; while(cents.length<k){ let best=null,bd=-1; for(const p of smp){ let md=1e9; for(const c of cents){ const dd=(p[0]-c[0])**2+(p[1]-c[1])**2+(p[2]-c[2])**2; if(dd<md) md=dd; } if(md>bd){ bd=md; best=p; } } if(!best||bd<60) break; cents.push(best.slice()); }
+  for(let it=0;it<10;it++){ const sum=cents.map(()=>[0,0,0,0]); for(const p of smp){ let bi=0,bd=1e12; for(let c=0;c<cents.length;c++){ const dd=(p[0]-cents[c][0])**2+(p[1]-cents[c][1])**2+(p[2]-cents[c][2])**2; if(dd<bd){ bd=dd; bi=c; } } const s=sum[bi]; s[0]+=p[0]; s[1]+=p[1]; s[2]+=p[2]; s[3]++; } for(let c=0;c<cents.length;c++) if(sum[c][3]) cents[c]=[sum[c][0]/sum[c][3],sum[c][1]/sum[c][3],sum[c][2]/sum[c][3]]; }
+  /* drop colours that only cover anti-aliased edges (under 1.5% of the picture) */ for(let pass=0;pass<cents.length;pass++){ const cnt=cents.map(()=>0); for(const p of smp){ let bi=0,bd=1e12; for(let c=0;c<cents.length;c++){ const dd=(p[0]-cents[c][0])**2+(p[1]-cents[c][1])**2+(p[2]-cents[c][2])**2; if(dd<bd){ bd=dd; bi=c; } } cnt[bi]++; } const small=cnt.findIndex(n=>n<smp.length*0.015); if(small<0||cents.length<=2) break; cents.splice(small,1); }
+  const idx=new Uint8Array(cols*rows); for(const i of pts){ const p=[d[i*4],d[i*4+1],d[i*4+2]]; let bi=0,bd=1e12; for(let c=0;c<cents.length;c++){ const dd=(p[0]-cents[c][0])**2+(p[1]-cents[c][1])**2+(p[2]-cents[c][2])**2; if(dd<bd){ bd=dd; bi=c; } } idx[i]=bi; }
+  const palette=cents.map(c=>c.map(v=>Math.round(v))); /* lightest colour first so it can double as the backing */ const order=palette.map((c,i)=>[c[0]*0.3+c[1]*0.59+c[2]*0.11,i]).sort((a,b)=>b[0]-a[0]).map(x=>x[1]); const remap=new Uint8Array(palette.length); order.forEach((old,ni)=>remap[old]=ni); for(const i of pts) idx[i]=remap[idx[i]]; return {palette:order.map(i=>palette[i]),idx}; }
+const mkHex=c=>"#"+c.map(v=>v.toString(16).padStart(2,"0")).join("");
+/* ---- build the layout (masks + colours) used by preview and the mesh ---- */
+function mkLayout(){ const src=mkSource(); if(!src) return null; const {w,h}=lbDims(); const res=MK.res; const cols=Math.min(600,Math.round(w/res)), rows=Math.max(4,Math.min(600,Math.round(h/res)));
+  const d=mkSample(src,cols,rows,true); let shape=mkShapeMask(d,cols,rows); const L={w,h,res,cols,rows,d,shape,parts:[]};
+  const cellsOf=(mm)=>mm/res;
+  if(MK.mode==="lightbox"){ const pad=Math.ceil(cellsOf(MK.gap+MK.border+MK.wallT))+2; const P=mkPad(shape,cols,rows,pad); const C=P.cols,R=P.rows; const S0=P.m;
+    const q=mkQuant(d,shape,cols,rows,MK.colors); const idx=new Uint8Array(C*R); for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) idx[(r+pad)*C+c+pad]=q.idx[r*cols+c];
+    const area=MK.gap>0?mkDilate(S0,C,R,cellsOf(MK.gap)):S0; const mat=mkSub(area,S0); const outer=mkDilate(area,C,R,cellsOf(MK.border+MK.wallT)); const inner=mkDilate(area,C,R,cellsOf(MK.border)); const wall=mkSub(outer,inner); const rim=mkSub(inner,area);
+    L.cols=C; L.rows=R; L.pad=pad; L.palette=q.palette; L.idx=idx; L.shape=S0; L.outer=outer;
+    q.palette.forEach((col,ci)=>{ const m=new Uint8Array(C*R); for(let i=0;i<C*R;i++) m[i]=S0[i]&&idx[i]===ci?1:0; L.parts.push({name:`Colour ${ci+1} ${mkHex(col)}`,color:col,mask:m,z0:0,z1:MK.imgT,mirror:true}); });
+    L.parts.push({name:"White backing",color:[245,245,245],mask:S0,z0:MK.imgT,z1:MK.imgT+MK.backT,mirror:true}); if(MK.gap>0) L.parts.push({name:"White space around picture",color:[245,245,245],mask:mat,z0:0,z1:MK.imgT+MK.backT,mirror:true});
+    L.parts.push({name:"Border & wall",color:[40,40,40],mask:rim,z0:0,z1:MK.imgT+MK.backT,mirror:true,join:"wall"});
+    L.parts.push({name:"Box wall",color:[40,40,40],mask:wall,z0:0,z1:MK.depth,mirror:true,join:"wall"});
+    if(MK.lid){ const cl=cellsOf(0.3); const lipW=cellsOf(1.8); const lipRing=mkSub(mkErode(inner,C,R,cl),mkErode(inner,C,R,cl+lipW)); let plate=outer.slice(); let ring=lipRing; if(MK.hole){ let cx=0,cy=0,n=0; for(let r=0;r<R;r++) for(let c=0;c<C;c++) if(S0[r*C+c]){ cx+=c; cy+=r; n++; } if(n){ const hole=mkDisk(C,R,cx/n,cy/n,cellsOf(5)); plate=mkSub(plate,hole); ring=mkSub(ring,hole); } }
+      L.parts.push({name:"Lid",color:[40,40,40],mask:plate,z0:0,z1:2,lid:true}); L.parts.push({name:"Lid lip",color:[40,40,40],mask:ring,z0:2,z1:8,lid:true}); } }
+  else if(MK.mode==="keychain"){ const pad=Math.ceil(cellsOf(MK.gap+MK.border+12))+2; const P=mkPad(shape,cols,rows,pad); const C=P.cols,R=P.rows; let S0=P.m; const q=mkQuant(d,shape,cols,rows,MK.colors); const idx=new Uint8Array(C*R); for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) idx[(r+pad)*C+c+pad]=q.idx[r*cols+c];
+    const area=MK.gap>0?mkDilate(S0,C,R,cellsOf(MK.gap)):S0; let base=mkDilate(area,C,R,cellsOf(MK.border)); if(MK.ring){ let cx=0,n=0,top=R; for(let r=0;r<R;r++) for(let c=0;c<C;c++) if(base[r*C+c]){ if(r<top) top=r; cx+=c; n++; } cx=n?cx/n:C/2; const cy=top-cellsOf(2.5); const tab=mkDisk(C,R,cx,cy,cellsOf(5.5)); for(let i=0;i<C*R;i++) base[i]=base[i]||tab[i]?1:0; const hole=mkDisk(C,R,cx,cy,cellsOf(2.2)); base=mkSub(base,hole); }
+    L.cols=C; L.rows=R; L.pad=pad; L.palette=q.palette; L.idx=idx; L.shape=S0; L.outer=base;
+    q.palette.forEach((col,ci)=>{ const m=new Uint8Array(C*R); for(let i=0;i<C*R;i++) m[i]=S0[i]&&idx[i]===ci?1:0; L.parts.push({name:`Colour ${ci+1} ${mkHex(col)}`,color:col,mask:m,z0:0,z1:MK.imgT,mirror:true}); });
+    L.parts.push({name:"Base",color:[40,40,40],mask:base,z0:MK.imgT,z1:MK.keyT,mirror:true}); if(MK.gap>0) L.parts.push({name:"White space around picture",color:[245,245,245],mask:mkSub(area,S0),z0:0,z1:MK.imgT,mirror:true}); const edge=mkSub(base,area); L.parts.push({name:"Base edge",color:[40,40,40],mask:edge,z0:0,z1:MK.imgT,mirror:true}); }
+  else if(MK.mode==="sign"){ const pad=Math.ceil(cellsOf(6)); const P=mkPad(shape,cols,rows,pad); const C=P.cols,R=P.rows; const letters=P.m; const plate=new Uint8Array(C*R); const rad=cellsOf(4); for(let r=0;r<R;r++) for(let c=0;c<C;c++){ const ix=Math.max(0,Math.max(rad-c,c-(C-1-rad))), iy=Math.max(0,Math.max(rad-r,r-(R-1-rad))); plate[r*C+c]=ix*ix+iy*iy<=rad*rad?1:0; }
+    L.cols=C; L.rows=R; L.pad=pad; L.palette=[[250,250,250],[30,30,30]]; L.shape=letters; L.outer=plate; L.w=C*res; L.h=R*res;
+    L.parts.push({name:"Plate",color:[30,30,30],mask:plate,z0:0,z1:MK.plateT}); L.parts.push({name:"Letters",color:[250,250,250],mask:letters,z0:MK.plateT,z1:MK.plateT+MK.textT}); }
+  return L; }
+/* ---- preview ---- */
+let lbPrevTimer=null; function lbPreview(){ clearTimeout(lbPrevTimer); lbPrevTimer=setTimeout(lbPreviewNow,150); }
+function lbPreviewNow(){ const m=MK.node; if(!m) return; const lit=m.querySelector("#lbLit"), rel=m.querySelector("#lbRelief"), st=m.querySelector("#lbStat"), pal=m.querySelector("#lbPal"); if(!lit) return; MK.dirty=true; MK.parts=[]; const dl=m.querySelector("#lbDl"); if(dl) dl.innerHTML=""; const sv=m.querySelector("#lbSave"); if(sv) sv.disabled=true; pal.innerHTML="";
+  if(MK.mode==="litho") return lbLithoPreview(lit,rel,st);
+  const L=mkLayout(); if(!L){ lit.width=rel.width=10; st.textContent=MK.mode==="sign"?"Type your text.":"Add a picture to start."; return; }
+  const {cols,rows}=L; lit.width=rel.width=cols; lit.height=rel.height=rows; const lc=lit.getContext("2d"), rc=rel.getContext("2d"); const li=lc.createImageData(cols,rows), ri=rc.createImageData(cols,rows);
+  const put=(im,i,c,a)=>{ im.data[i*4]=c[0]; im.data[i*4+1]=c[1]; im.data[i*4+2]=c[2]; im.data[i*4+3]=a==null?255:a; };
+  for(let i=0;i<cols*rows;i++){ put(li,i,[0,0,0],0); put(ri,i,[0,0,0],0); }
+  /* front view: colours in shape, border dark; parts view: each part tinted by z (taller = lighter) */
+  const front=L.parts.filter(p=>!p.lid); const zmax=Math.max(...front.map(p=>p.z1));
+  for(const p of front){ for(let i=0;i<cols*rows;i++){ if(!p.mask[i]) continue; if(p.z0===0) put(li,i,p.color); const t=0.35+0.65*(p.z1/zmax); put(ri,i,[Math.round(90*t+40),Math.round(110*t+40),Math.round(140*t+50)]); } }
+  if(MK.mode==="lightbox"&&MK.lid){ for(const p of L.parts.filter(p=>p.lid)) for(let i=0;i<cols*rows;i++) if(p.mask[i]&&!ri.data[i*4+3]) put(ri,i,p.z0?[200,200,210]:[120,120,130]); }
+  lc.putImageData(li,0,0); rc.putImageData(ri,0,0);
+  pal.innerHTML=L.palette.map((c,i)=>`<span class="sw" title="${mkHex(c)}"><i style="background:${mkHex(c)}"></i>${MK.mode==="sign"?(i?"Plate":"Letters"):"Colour "+(i+1)}</span>`).join("")+(MK.mode==="lightbox"?`<span class="sw"><i style="background:#f5f5f5;border:1px solid #999"></i>White backing${MK.gap>0?" & space":""}</span><span class="sw"><i style="background:#282828"></i>Border, wall & lid</span>`:MK.mode==="keychain"?`<span class="sw"><i style="background:#282828"></i>Base</span>`:"");
+  const W=mkRound(L.cols*L.res), H=mkRound(L.rows*L.res); const extra=MK.mode==="lightbox"?` · box ${MK.depth} mm deep · ${L.parts.length} parts${MK.lid?" incl. lid":""}`:MK.mode==="keychain"?` · ${MK.keyT} mm thick`:` · ${MK.plateT+MK.textT} mm`;
+  st.textContent=`${W} × ${H} mm outside · ${L.palette.length} colours${extra} · prints ${MK.mode==="sign"?"face up":"face down (colours first)"}`; }
+function lbLithoPreview(lit,rel,st){ const src=mkSource(); if(!src){ lit.width=rel.width=10; st.textContent="Add a picture to start."; return; } const {w,h}=lbDims(); const cols=Math.min(360,Math.round(w/0.3)), rows=Math.max(8,Math.round(cols*h/w)); const T=lbThick(lbGrey(src,cols,rows));
+  lit.width=rel.width=cols; lit.height=rel.height=rows; const lc=lit.getContext("2d"), rc=rel.getContext("2d"); const li=lc.createImageData(cols,rows), ri=rc.createImageData(cols,rows);
+  const k=1.15; for(let i=0;i<cols*rows;i++){ const v=Math.round(255*Math.min(1,Math.exp(-k*(T[i]-MK.minT)))); li.data[i*4]=v; li.data[i*4+1]=Math.round(v*0.93); li.data[i*4+2]=Math.round(v*0.78); li.data[i*4+3]=255; }
+  for(let y=0;y<rows;y++) for(let x=0;x<cols;x++){ const i=y*cols+x; const dx=(T[y*cols+Math.min(cols-1,x+1)]-T[y*cols+Math.max(0,x-1)]), dy=(T[Math.min(rows-1,y+1)*cols+x]-T[Math.max(0,y-1)*cols+x]); const v=Math.round(255*Math.min(1,Math.max(0,0.78+dx*1.4-dy*1.4))); ri.data[i*4]=ri.data[i*4+1]=ri.data[i*4+2]=v; ri.data[i*4+3]=255; }
+  lc.putImageData(li,0,0); rc.putImageData(ri,0,0); const gc=Math.round(w/MK.lres), gr=Math.round(h/MK.lres); const tris=(gc-1)*(gr-1)*2*(MK.arc?2:1)+(gc+gr)*4;
+  st.textContent=`${w} × ${h} mm · ${MK.minT}–${mkRound(Math.max(MK.minT+0.3,MK.maxT))} mm thick · ${gc}×${gr} points · about ${(tris*50/1048576).toFixed(0)} MB STL · prints standing up, white filament`; }
+/* ---- lithophane grey map / thickness ---- */
+function lbGrey(src,cols,rows){ const d=mkSample(src,cols,rows,true); const out=new Float32Array(cols*rows); for(let i=0;i<cols*rows;i++){ let L=(0.2126*d[i*4]+0.7152*d[i*4+1]+0.0722*d[i*4+2])/255; if(d[i*4+3]<128) L=1; if(MK.invert) L=1-L; out[i]=L; } return out; }
+function lbThick(grey){ const t=new Float32Array(grey.length); const a=MK.minT, b=Math.max(MK.minT+0.3,MK.maxT); for(let i=0;i<grey.length;i++) t[i]=a+(1-grey[i])*(b-a); return t; }
+/* ---- meshes ---- */
+function lbGridSolid(cols,rows,cell,Hfn){ const top=new Float32Array(cols*rows*3); for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){ const i=(r*cols+c)*3; top[i]=c*cell; top[i+1]=r*cell; top[i+2]=Hfn(c,r); }
+  const nTop=(cols-1)*(rows-1)*2, nWall=((cols-1)*2+(rows-1)*2)*2; const out=new Float32Array((nTop+2+nWall)*9); let o=0; const put=(...v)=>{ for(let k=0;k<9;k++) out[o++]=v[k]; }; const P=(c,r)=>{ const i=(r*cols+c)*3; return [top[i],top[i+1],top[i+2]]; };
+  for(let r=0;r<rows-1;r++) for(let c=0;c<cols-1;c++){ const a=P(c,r),b=P(c+1,r),cc=P(c+1,r+1),d=P(c,r+1); put(...a,...b,...cc); put(...a,...cc,...d); }
+  const W=(cols-1)*cell, Hh=(rows-1)*cell; put(0,0,0,W,Hh,0,W,0,0); put(0,0,0,0,Hh,0,W,Hh,0);
+  for(let c=0;c<cols-1;c++){ const a=P(c,0),b=P(c+1,0); put(a[0],a[1],0,b[0],b[1],0,...b); put(a[0],a[1],0,...b,...a); const e=P(c,rows-1),f=P(c+1,rows-1); put(e[0],e[1],0,...f,f[0],f[1],0); put(e[0],e[1],0,...e,...f); }
+  for(let r=0;r<rows-1;r++){ const a=P(0,r),b=P(0,r+1); put(a[0],a[1],0,...b,b[0],b[1],0); put(a[0],a[1],0,...a,...b); const e=P(cols-1,r),f=P(cols-1,r+1); put(e[0],e[1],0,f[0],f[1],0,...f); put(e[0],e[1],0,...f,...e); }
+  return out.subarray(0,o); }
+function lbBend(tri,W,arcDeg){ const arc=arcDeg*Math.PI/180, R=W/arc; const out=new Float32Array(tri.length); for(let i=0;i<tri.length;i+=3){ const x=tri[i],y=tri[i+1],z=tri[i+2]; const th=(x/W-0.5)*arc; const r=R+z; out[i]=r*Math.sin(th); out[i+1]=y; out[i+2]=-(r*Math.cos(th)-R); } return out; }
+function lbStandUp(tri){ for(let i=0;i<tri.length;i+=3){ const y=tri[i+1], z=tri[i+2]; tri[i+1]=-z; tri[i+2]=y; } return tri; }
+/* mask → boxes (greedy maximal rectangles) → triangles; mirror flips x so a face-down print reads right */
+function mkRects(mask,cols,rows){ const used=new Uint8Array(cols*rows); const out=[]; for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){ const i=r*cols+c; if(!mask[i]||used[i]) continue; let c1=c; while(c1+1<cols&&mask[r*cols+c1+1]&&!used[r*cols+c1+1]) c1++; let r1=r; outer: while(r1+1<rows){ for(let x=c;x<=c1;x++){ const j=(r1+1)*cols+x; if(!mask[j]||used[j]) break outer; } r1++; } for(let y=r;y<=r1;y++) for(let x=c;x<=c1;x++) used[y*cols+x]=1; out.push([c,r,c1+1,r1+1]); } return out; }
+function mkMesh(part,L){ const rects=mkRects(part.mask,L.cols,L.rows); const V=[], T=[]; const res=L.res; const H=L.rows*res, W=L.cols*res;
+  for(const q of rects){ let x0=q[0]*res, x1=q[2]*res; if(part.mirror){ const a=W-x1; x1=W-x0; x0=a; } const y0=H-q[3]*res, y1=H-q[1]*res; const z0=part.z0, z1=part.z1; const b=V.length/3; V.push(x0,y0,z0, x1,y0,z0, x1,y1,z0, x0,y1,z0, x0,y0,z1, x1,y0,z1, x1,y1,z1, x0,y1,z1);
+    const f=[[0,2,1],[0,3,2],[4,5,6],[4,6,7],[0,1,5],[0,5,4],[1,2,6],[1,6,5],[2,3,7],[2,7,6],[3,0,4],[3,4,7]]; for(const t of f) T.push(b+t[0],b+t[1],b+t[2]); }
+  return {verts:V,tris:T,name:part.name,color:part.color}; }
+function mkTriArray(mesh){ const o=new Float32Array(mesh.tris.length*3); for(let i=0;i<mesh.tris.length;i++){ const v=mesh.tris[i]*3; o[i*3]=mesh.verts[v]; o[i*3+1]=mesh.verts[v+1]; o[i*3+2]=mesh.verts[v+2]; } return o; }
+function lbSTL(tri,name){ const n=tri.length/9; const buf=new ArrayBuffer(84+n*50); const dv=new DataView(buf); const hdr=("Charleston 3D maker "+(name||"")).slice(0,79); for(let i=0;i<hdr.length;i++) dv.setUint8(i,hdr.charCodeAt(i)&127); dv.setUint32(80,n,true); let o=84;
+  for(let t=0;t<n;t++){ const i=t*9; const ux=tri[i+3]-tri[i],uy=tri[i+4]-tri[i+1],uz=tri[i+5]-tri[i+2],vx=tri[i+6]-tri[i],vy=tri[i+7]-tri[i+1],vz=tri[i+8]-tri[i+2]; const nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx; const l=Math.hypot(nx,ny,nz)||1; dv.setFloat32(o,nx/l,true); dv.setFloat32(o+4,ny/l,true); dv.setFloat32(o+8,nz/l,true); o+=12; for(let k=0;k<9;k++){ dv.setFloat32(o,tri[i+k],true); o+=4; } dv.setUint16(o,0,true); o+=2; }
+  return new Blob([buf],{type:"model/stl"}); }
+/* ---- 3MF (zip, stored) with one object per part, named by colour ---- */
+const MK_CRC=(()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=c&1?0xEDB88320^(c>>>1):c>>>1; t[n]=c>>>0; } return t; })();
+function mkCrc(u8){ let c=0xFFFFFFFF; for(let i=0;i<u8.length;i++) c=MK_CRC[(c^u8[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function mkZip(files){ const enc=new TextEncoder(); const parts=[], cd=[]; let off=0; const le16=v=>[v&255,(v>>8)&255], le32=v=>[v&255,(v>>8)&255,(v>>16)&255,(v>>>24)&255];
+  for(const f of files){ const name=enc.encode(f.name), data=typeof f.data==="string"?enc.encode(f.data):f.data; const crc=mkCrc(data); const hdr=new Uint8Array([0x50,0x4b,3,4,...le16(20),...le16(0),...le16(0),...le16(0),...le16(0),...le32(crc),...le32(data.length),...le32(data.length),...le16(name.length),...le16(0),...name]); parts.push(hdr,data);
+    cd.push(new Uint8Array([0x50,0x4b,1,2,...le16(20),...le16(20),...le16(0),...le16(0),...le16(0),...le16(0),...le32(crc),...le32(data.length),...le32(data.length),...le16(name.length),...le16(0),...le16(0),...le16(0),...le16(0),...le32(0),...le32(off),...name])); off+=hdr.length+data.length; }
+  const cdLen=cd.reduce((s,a)=>s+a.length,0); const end=new Uint8Array([0x50,0x4b,5,6,...le16(0),...le16(0),...le16(files.length),...le16(files.length),...le32(cdLen),...le32(off),...le16(0)]); return new Blob([...parts,...cd,end],{type:"model/3mf"}); }
+function mk3MF(meshes,title){ const esc1=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"); let objs="", items="";
+  meshes.forEach((m,i)=>{ const id=i+1; const v=[]; for(let k=0;k<m.verts.length;k+=3) v.push(`<vertex x="${m.verts[k].toFixed(3)}" y="${m.verts[k+1].toFixed(3)}" z="${m.verts[k+2].toFixed(3)}"/>`); const t=[]; for(let k=0;k<m.tris.length;k+=3) t.push(`<triangle v1="${m.tris[k]}" v2="${m.tris[k+1]}" v3="${m.tris[k+2]}"/>`);
+    objs+=`<object id="${id}" name="${esc1(m.name)}" type="model"><mesh><vertices>${v.join("")}</vertices><triangles>${t.join("")}</triangles></mesh></object>`; items+=`<item objectid="${id}"/>`; });
+  const model=`<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><metadata name="Title">${esc1(title)}</metadata><metadata name="Application">Charleston 3D Maker</metadata><resources>${objs}</resources><build>${items}</build></model>`;
+  return mkZip([{name:"[Content_Types].xml",data:`<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>`},{name:"_rels/.rels",data:`<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>`},{name:"3D/3dmodel.model",data:model}]); }
+function lbSlug(s){ return String(s||"maker").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,48)||"maker"; }
+async function lbBuild(){ if(MK.busy) return; if(MK.mode!=="sign"&&!MK.imgs.length){ toast("Add a picture first."); return; }
+  MK.busy=true; const m=MK.node, st=m.querySelector("#lbStat"), btn=m.querySelector("#lbBuild"); btn.disabled=true; st.textContent="Building the print file…"; await new Promise(r=>setTimeout(r,30));
+  try{ const name=MK.name||mkTitle(); const slug=lbSlug(name); const parts=[]; MK.meta={};
+    if(MK.mode==="litho"){ const src=mkSource(); const {w,h}=lbDims(); const cell=MK.lres; const cols=Math.round(w/cell)+1, rows=Math.round(h/cell)+1; const T=lbThick(lbGrey(src,cols,rows)); let tri=lbGridSolid(cols,rows,cell,(c,r)=>T[(rows-1-r)*cols+c]); if(MK.arc>0) tri=lbBend(tri,(cols-1)*cell,MK.arc); tri=lbStandUp(tri); parts.push({name:slug+"-lithophane.stl",blob:lbSTL(tri,name)}); MK.meta={w,h}; }
+    else { const L=mkLayout(); if(!L) throw new Error("no source"); const front=L.parts.filter(p=>!p.lid).map(p=>mkMesh(p,L)); const lid=L.parts.filter(p=>p.lid).map(p=>mkMesh(p,L));
+      parts.push({name:slug+".3mf",blob:mk3MF(front,name),label:"3MF for Bambu Studio"}); if(lid.length) parts.push({name:slug+"-lid.3mf",blob:mk3MF(lid,name+" lid"),label:"Lid 3MF"});
+      parts.push({name:slug+"-all-parts.stl",blob:lbSTL(mkTriArray({verts:front.flatMap(x=>x.verts),tris:front.reduce((acc,x)=>{ const b=acc.off; x.tris.forEach(t=>acc.t.push(t+b)); acc.off+=x.verts.length/3; return acc; },{t:[],off:0}).t}),name),label:"STL (one colour)"});
+      MK.meta={w:mkRound(L.cols*L.res),h:mkRound(L.rows*L.res),palette:L.palette.map(mkHex),parts:L.parts.length}; }
+    MK.parts=parts; MK.dirty=false; const tot=parts.reduce((s,p)=>s+p.blob.size,0);
+    st.textContent=MK.mode==="litho"?`Ready · ${(tot/1048576).toFixed(1)} MB · Bambu Studio: white PLA, 0.12 mm layers, 100% infill, print standing.`:`Ready · ${(tot/1048576).toFixed(1)} MB · Open the 3MF in Bambu Studio, say Yes to "load as one object with multiple parts", then pick a filament for each part (names show the colour).`;
+    const dl=m.querySelector("#lbDl"); dl.innerHTML=`<button type="button" class="btn primary" data-lbdlall>Download print files (.zip)</button>`+parts.map((p,i)=>`<button type="button" class="btn" data-lbdl="${i}">${esc(p.label||p.name.replace(/^.*-/,"").replace(/\.\w+$/,""))} only</button>`).join("");
+    dl.querySelector("[data-lbdlall]").onclick=()=>lbDownloadZip(MK.parts,slug+"-print-files.zip");
+    dl.querySelectorAll("[data-lbdl]").forEach(b=>b.onclick=()=>lbDownloadZip([MK.parts[+b.dataset.lbdl]],MK.parts[+b.dataset.lbdl].name.replace(/\.\w+$/,"")+".zip"));
+  }catch(e){ console.error("maker build",e); st.textContent="Couldn't build that: "+String(e&&e.message||e).slice(0,120)+". Try a smaller size or less detail."; }
+  MK.busy=false; btn.disabled=false; }
+async function lbDownloadZip(list,zipName){ try{ const files=[]; for(const p of list) files.push({name:p.name,data:new Uint8Array(await p.blob.arrayBuffer())}); files.push({name:"HOW TO PRINT.txt",data:MK.mode==="litho"?"Open the .stl in Bambu Studio. White PLA, 0.12 mm layers, 100% infill, print standing up.\r\n":"Open the .3mf in Bambu Studio and say Yes to 'load as one object with multiple parts'. Pick a filament for each part; part names show the colour. Prints face down (colours first).\r\n"});
+  const z=mkZip(files); await lbDownload({name:zipName,blob:new Blob([z],{type:"application/zip"})}); }catch(e){ console.error("maker zip",e); toast("Couldn't package the files. Try again."); } }
+async function lbDownload(p){ if(!p||!p.blob) return; return dlBlob(p.name,p.blob); }
+
+
+// two-column layout: modes on top, picture + settings on the left, live preview on the right
+lbMount();
+(function(){const m=MK.node,w=m.querySelector(".lbwrap"),side=document.createElement("div");side.className="lbside";
+w.insertBefore(side,m.querySelector("#lbDrop"));side.append(m.querySelector("#lbDrop"),m.querySelector(".lbopts"));})();
+</script>
+</body>
+</html>

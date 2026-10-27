@@ -365,7 +365,7 @@ export async function renderStudio() {
       btn("Download print file", exportPng, "btn primary"),
       btn("Download mockup photo", exportMockup, "btn"),
       el("p", { class: "muted small" }, `Print file: ${PW * DPI} × ${PH * DPI} px PNG, ${PW} × ${PH} in at ${DPI} dpi, ${state.side} side.`),
-      layers().length ? btn("Clear this side", () => { if (confirm(`Remove every image from the ${state.side}?`)) { state.sides[state.side] = []; state.sel = null; drawStage(); save(); } }, "btn ghost") : null);
+      layers().length ? btn("Clear this side", () => { if (confirm(`Remove every image from the ${state.side}?`)) { state.sides[state.side] = []; state.sel = null; drawStage(); save(); } }, "btn ghost") : "");
   }
 
   // drag, resize and rotate with one pointer handler
