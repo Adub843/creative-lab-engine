@@ -654,13 +654,77 @@ async function main() {
     const [mk] = await Promise.all([page.waitForEvent("download"), page.click('button:has-text("Download mockup photo")')]);
     assert.match(mk.suggestedFilename(), /^mockup-hoodie-front-.*\.jpg$/);
     if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "studio-1280.png") }); }
-    page.once("dialog", (d) => d.dismiss());
+    // clearing takes two clicks (no browser dialog), and Undo brings it back
     await page.getByRole("button", { name: "Clear this side" }).click();
-    assert.equal(await page.locator(".print-area .layer").count(), 1, "cancel keeps the shirt");
-    page.once("dialog", (d) => d.accept());
-    await page.getByRole("button", { name: "Clear this side" }).click();
+    assert.equal(await page.locator(".print-area .layer").count(), 1, "one click only asks");
+    await page.getByRole("button", { name: "Click again to clear" }).click();
     assert.equal(await page.locator(".print-area .layer").count(), 0);
+    await page.click('button[aria-label="Undo"]');
+    assert.equal(await page.locator(".print-area .layer").count(), 1, "undo brings the side back");
+    await page.keyboard.press("Control+Shift+Z");
+    assert.equal(await page.locator(".print-area .layer").count(), 0, "redo clears it again");
     images.delete("k-pub-0123abcd"); images.delete("k-priv-0123abcd");
+  });
+
+  await step("studio: text tool, sliders that keep dragging, print checks, undo, and save to the library", async () => {
+    for (const k of [...images.keys()]) images.delete(k);
+    images.set("k-pub-0123abcd", { key: "k-pub-0123abcd", name: "tiny.png", type: "image/png", size: 10, tags: "", public: true, added: 2 });
+    await page.evaluate(() => { localStorage.removeItem("bc-console-key"); localStorage.removeItem("bc-design-2"); });
+    await page.click('a.nav[data-route="dashboard"]');
+    await page.click('a.nav[data-route="studio"]');
+    await page.waitForSelector('.lib .tile:has-text("tiny.png")');
+    await page.click('.lib .tile:has-text("tiny.png")');
+    await page.waitForSelector(".print-area .layer.sel");
+    assert.match(await page.locator(".ed-checks").textContent(), /Print quality: low/, "a 1 px image warns it will print soft");
+    // a slider keeps working through a whole drag (it isn't rebuilt under the pointer)
+    const sl = page.locator('.ed-props input[aria-label="Size"]');
+    await sl.scrollIntoViewIfNeeded();
+    const bb = await sl.boundingBox();
+    await page.mouse.move(bb.x + bb.width * 0.5, bb.y + bb.height / 2); await page.mouse.down();
+    await page.mouse.move(bb.x + bb.width * 0.75, bb.y + bb.height / 2, { steps: 6 });
+    await page.mouse.move(bb.x + bb.width * 0.99, bb.y + bb.height / 2, { steps: 6 }); await page.mouse.up();
+    assert.ok(Number(await sl.inputValue()) >= 95, "the drag reached the end of the slider");
+    await page.getByRole("button", { name: "Center up/down" }).click();
+    await page.keyboard.press("Shift+ArrowLeft");
+    assert.match(await page.locator(".ed-checks").textContent(), /outside the print area/, "art past the dashed box is flagged");
+    await page.getByRole("button", { name: "Fit print width" }).click();
+    assert.doesNotMatch(await page.locator(".ed-checks").textContent(), /outside the print area/);
+    // text
+    await page.click('.ed-rail [data-tool="text"]');
+    await page.click('button:has-text("Add text to shirt")');
+    await page.waitForSelector(".toast >> text=Type some text first");
+    await page.fill(".ed-pane textarea", "HOLY CITY");
+    await page.click('.ed-fonts button:has-text("Anton")');
+    await page.click('button:has-text("Add text to shirt")');
+    await page.waitForFunction(() => document.querySelector(".ed-side h2")?.textContent === "Selected text");
+    assert.equal(await page.locator(".print-area .layer").count(), 2);
+    assert.equal(await page.locator(".ed-props select").inputValue(), "Anton");
+    await page.fill(".ed-props textarea", "HOLY CITY TEES");
+    assert.equal(await page.locator('.print-area .layer[title="HOLY CITY TEES"]').count(), 1, "editing the words renames the layer");
+    await page.click('[aria-label="Text Gold"]');
+    // undo steps back through the edits
+    await page.click('button[aria-label="Undo"]'); await page.click('button[aria-label="Undo"]'); await page.click('button[aria-label="Undo"]');
+    assert.equal(await page.locator(".print-area .layer").count(), 1, "three undos take the text back off");
+    await page.click('button[aria-label="Redo"]');
+    assert.equal(await page.locator(".print-area .layer").count(), 2);
+    const [dl] = await Promise.all([page.waitForEvent("download"), page.click('button:has-text("Download print file")')]);
+    assert.match(dl.suggestedFilename(), /^print-front-.*\.png$/);
+    // save to the library: asks for the key, then a name, and stores a private PNG
+    await page.click('button:has-text("Save to library for listing")');
+    await page.waitForSelector("dialog.keydlg[open] #key-in");
+    await page.fill("#key-in", KEY); await page.click("#key-save");
+    await page.waitForSelector("dialog[open] #dn-in");
+    await page.fill("#dn-in", "Holy City Tees");
+    await page.click('dialog[open] button[type="submit"]');
+    await page.waitForSelector(".toast >> text=Saved \"Holy-City-Tees.png\" to the library");
+    const saved = [...images.values()].find((i) => i.name === "Holy-City-Tees.png");
+    assert.ok(saved && saved.public === false && saved.type === "image/png", "saved as a private PNG");
+    await page.click('.ed-rail [data-tool="library"]');
+    page.once("dialog", (d) => d.accept());
+    await page.locator('.lib-item:has-text("Holy-City-Tees.png") .lib-del').click({ force: true });
+    await page.waitForSelector(".toast >> text=Image deleted");
+    await page.evaluate(() => localStorage.removeItem("bc-design-2"));
+    for (const k of [...images.keys()]) images.delete(k);
   });
 
   await step("studio: uploading asks for the key, then upload, see private images, delete", async () => {
