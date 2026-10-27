@@ -2,6 +2,7 @@ import { BRANDS, STATUS, SERVICES, ROUTES, CLEANUP, TOPOLOGY } from "./data.js";
 import { GROUPS, TOOLS, toolsFor } from "./tools.js";
 import { takeStoreHandler, cancelKeyPrompt, consoleKey } from "./api.js";
 import { filesPage } from "./files.js";
+import { generate3dPage } from "./generate3d.js";
 
 // ---------- helpers ----------
 export const el = (tag, attrs = {}, ...kids) => {
@@ -412,7 +413,7 @@ async function render() {
   const frameTool = TOOLS.find((t) => t.frame && t.id === route);
   // A tool of the other store: show this store's Home rather than mixing the brands.
   if (frameTool && frameTool.store !== k) { location.hash = `#home/${k}`; return; }
-  if ((route === "studio" && k !== "ed") || (route === "files" && k !== "c3d")) { location.hash = `#home/${k}`; return; }
+  if ((route === "studio" && k !== "ed") || ((route === "files" || route === "generate3d") && k !== "c3d")) { location.hash = `#home/${k}`; return; }
   const pages = {
     home,
     map: () => mapPage(pendingFilter ?? k),
@@ -424,6 +425,7 @@ async function render() {
     share: sharePage,
     team: teamPage,
     files: () => filesPage(header),
+    generate3d: () => generate3dPage(header),
   };
   const make = frameTool ? () => framePage(frameTool) : pages[route] ?? home;
   const nodes = await make();

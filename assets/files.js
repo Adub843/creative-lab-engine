@@ -18,7 +18,7 @@ async function keyOrAsk(reason) {
 }
 
 // Sends one file, then its preview picture. Returns the saved item, or throws with a plain reason.
-async function send(file, key) {
+export async function send(file, key) {
   if (file.size > MAX) throw new Error(`${file.name} is over 20 MB.`);
   const res = await fetch(API, { method: "POST", headers: { "x-filename": file.name, "x-console-key": key, "content-type": "application/octet-stream" }, body: file });
   const out = await res.json().catch(() => ({}));

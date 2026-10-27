@@ -3199,3 +3199,126 @@ test("worker: /api/team uses the MARKETING KV", async () => {
   assert.ok(kv.m.has("team:c3d"));
   assert.equal((await W.handleRequest(new Request("https://console.example/api/team?store=c3d"), env)).status, 401);
 });
+
+// ---------- 3D generator (lib/meshy.mjs) ----------
+const { handleMeshy, parseCreate, shapeTask } = await import("../lib/meshy.mjs");
+const MESHY_KEY = "msy_TEST_SECRET_MESHY_KEY_42";
+function fakeMeshy({ status = 200, balance = 1234 } = {}) {
+  const calls = [];
+  const task = { id: "0193bfc5-ee4f-73f8-8525-44b398884ce9", type: "image-to-3d", status: "SUCCEEDED", progress: 100, prompt: "",
+    model_urls: { glb: "https://assets.meshy.ai/x/model.glb?Expires=1", stl: "https://assets.meshy.ai/x/model.stl?Expires=1", "3mf": "https://assets.meshy.ai/x/model.3mf?Expires=1", usdz: "https://assets.meshy.ai/x/model.usdz" },
+    thumbnail_url: "https://assets.meshy.ai/x/preview.png", consumed_credits: 30, created_at: 1700000000000 };
+  const fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), init });
+    const u = new URL(url);
+    if (u.hostname === "assets.meshy.ai") return new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/png", "content-length": "3" } });
+    if (init.headers?.authorization !== `Bearer ${MESHY_KEY}`) return new Response(JSON.stringify({ message: "bad key" }), { status: 401 });
+    if (status !== 200) return new Response(JSON.stringify({ message: "nope" }), { status });
+    if (u.pathname === "/openapi/v1/balance") return Response.json({ balance });
+    if (init.method === "POST") return Response.json({ result: "0193bfc5-0000-7000-8000-000000000001" });
+    if (/\/openapi\/v1\/image-to-3d\/[\w-]+$/.test(u.pathname)) return Response.json(task);
+    if (u.pathname === "/openapi/v1/image-to-3d") return Response.json([task]);
+    if (/to-3d$/.test(u.pathname)) return Response.json([]);
+    return new Response("{}", { status: 404 });
+  };
+  return { fetch, calls, task };
+}
+const meshyEnv = (over = {}) => envOf({ MESHY_API_KEY: MESHY_KEY, ...over });
+const TASK_PATH = "/api/meshy/tasks/image/0193bfc5-ee4f-73f8-8525-44b398884ce9";
+
+test("meshy: every route needs the console key before Meshy is called; the Meshy key never reaches the page", async () => {
+  const m = fakeMeshy();
+  for (const p of ["/api/meshy", "/api/meshy/tasks", TASK_PATH])
+    assert.equal((await handleMeshy(imgReq(p), { env: meshyEnv(), fetch: m.fetch })).status, 401, p);
+  assert.equal((await handleMeshy(imgReq("/api/meshy/tasks", { method: "POST", body: "{}" }), { env: meshyEnv(), fetch: m.fetch })).status, 401);
+  assert.equal(m.calls.length, 0, "no Meshy call without the key");
+  const r = await handleMeshy(imgReq("/api/meshy", { headers: KEYH }), { env: meshyEnv(), fetch: m.fetch });
+  assert.deepEqual(await r.json(), { configured: true, balance: 1234 });
+  const list = await (await handleMeshy(imgReq("/api/meshy/tasks", { headers: KEYH }), { env: meshyEnv(), fetch: m.fetch })).text();
+  assert.ok(!list.includes(MESHY_KEY) && !list.includes("assets.meshy.ai"), "no Meshy key or Meshy links in the answer");
+  const { items } = JSON.parse(list);
+  assert.equal(items.length, 1);
+  assert.deepEqual(Object.keys(items[0].files), ["glb", "stl", "3mf"], "only the formats the console uses");
+  assert.match(items[0].files.stl, /^\/api\/meshy\/tasks\/image\/0193bfc5-ee4f-73f8-8525-44b398884ce9\/stl\?exp=\d+&sig=/);
+});
+
+test("meshy: without MESHY_API_KEY the page is told how to connect it, and nothing is sent", async () => {
+  const m = fakeMeshy();
+  const out = await (await handleMeshy(imgReq("/api/meshy", { headers: KEYH }), { env: envOf(), fetch: m.fetch })).json();
+  assert.equal(out.configured, false);
+  assert.match(out.error, /wrangler secret put MESHY_API_KEY/);
+  assert.equal((await handleMeshy(imgReq("/api/meshy/tasks", { headers: KEYH }), { env: envOf(), fetch: m.fetch })).status, 503);
+  assert.equal(m.calls.length, 0);
+});
+
+test("meshy: requests are checked before credits are spent; photos and descriptions map to the right Meshy task", () => {
+  const img = "data:image/jpeg;base64,/9j/4AAQSkZJRg==";
+  const formats = ["glb", "stl", "3mf", "obj"];
+  assert.ok(parseCreate({ kind: "text", prompt: "a" }).error, "description too short");
+  assert.ok(parseCreate({ kind: "image", images: [] }).error, "no photo");
+  assert.ok(parseCreate({ kind: "image", images: ["https://evil.example/x.jpg"] }).error, "only uploaded photos, never a URL");
+  assert.ok(parseCreate({ kind: "image", images: ["data:image/svg+xml;base64,PHN2Zz4="] }).error, "no SVG");
+  assert.ok(parseCreate({ kind: "image", images: [img, img, img, img, img] }).error, "at most 4 photos");
+  assert.ok(parseCreate({ kind: "refine", previewId: "../../balance" }).error, "refine needs a real task id");
+  const one = parseCreate({ kind: "image", images: [img], texture: false });
+  assert.equal(one.kind, "image");
+  assert.deepEqual(one.payload, { image_url: img, should_texture: false, target_formats: formats });
+  assert.equal(parseCreate({ kind: "image", images: [img, img] }).kind, "multi");
+  assert.deepEqual(parseCreate({ kind: "text", prompt: "  a chess knight  " }), { kind: "text", payload: { mode: "preview", prompt: "a chess knight", target_formats: formats } });
+  assert.equal(parseCreate({ kind: "refine", previewId: "0193bfc5-ee4f-73f8-8525-44b398884ce9" }).payload.mode, "refine");
+});
+
+test("meshy: starting a model posts once to Meshy; Meshy's errors come back as plain reasons", async () => {
+  const m = fakeMeshy();
+  const body = JSON.stringify({ kind: "text", prompt: "a palmetto tree keychain" });
+  const r = await handleMeshy(imgReq("/api/meshy/tasks", { method: "POST", headers: { ...KEYH, "content-type": "application/json" }, body }), { env: meshyEnv(), fetch: m.fetch });
+  assert.equal(r.status, 201);
+  assert.equal((await r.json()).item.kind, "text");
+  const posts = m.calls.filter((c) => c.init.method === "POST");
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].url, "https://api.meshy.ai/openapi/v2/text-to-3d");
+  assert.deepEqual(JSON.parse(posts[0].init.body).target_formats, ["glb", "stl", "3mf", "obj"]);
+  const broke = fakeMeshy({ status: 402 });
+  const r2 = await handleMeshy(imgReq("/api/meshy/tasks", { method: "POST", headers: KEYH, body }), { env: meshyEnv(), fetch: broke.fetch });
+  assert.equal(r2.status, 402);
+  assert.match((await r2.json()).error, /credits/);
+  const bad = await handleMeshy(imgReq("/api/meshy/tasks", { method: "POST", headers: KEYH, body: JSON.stringify({ kind: "text", prompt: "x" }) }), { env: meshyEnv(), fetch: m.fetch });
+  assert.equal(bad.status, 400);
+});
+
+test("meshy: files and pictures come through the Worker with the key or a signed link, only from Meshy's own host", async () => {
+  const m = fakeMeshy();
+  const ctx = { env: meshyEnv(), fetch: m.fetch };
+  const { items } = await (await handleMeshy(imgReq("/api/meshy/tasks", { headers: KEYH }), ctx)).json();
+  const file = await handleMeshy(imgReq(items[0].files.stl), ctx);
+  assert.equal(file.status, 200);
+  assert.match(file.headers.get("content-disposition"), /attachment; filename=".+\.stl"/);
+  assert.equal((await handleMeshy(imgReq(items[0].thumbUrl), ctx)).headers.get("content-type"), "image/png");
+  const path = `${TASK_PATH}/stl`;
+  assert.equal((await handleMeshy(imgReq(path), ctx)).status, 404, "no key, no link");
+  assert.equal((await handleMeshy(imgReq(`${path}?exp=${Date.now() + 1000}&sig=forged`), ctx)).status, 404, "forged link");
+  assert.equal((await handleMeshy(imgReq(`${TASK_PATH}/usdz`, { headers: KEYH }), ctx)).status, 404, "only the listed formats");
+  assert.equal((await handleMeshy(imgReq(path, { headers: KEYH }), ctx)).status, 200);
+  // A task pointing anywhere but Meshy's own host is never fetched.
+  m.task.model_urls.stl = "https://169.254.169.254/latest/meta-data";
+  const before = m.calls.length;
+  assert.equal((await handleMeshy(imgReq(path, { headers: KEYH }), ctx)).status, 404);
+  assert.ok(!m.calls.slice(before).some((c) => c.url.includes("169.254")));
+});
+
+test("meshy: the Worker routes /api/meshy and keeps the console key check", async () => {
+  const W = await import("../worker/app.mjs");
+  const env = { CONSOLE_KEY: ENV.CONSOLE_KEY };
+  assert.equal((await W.handleRequest(new Request("https://console.example/api/meshy"), env)).status, 401);
+  const r = await W.handleRequest(new Request("https://console.example/api/meshy", { headers: KEYH }), env);
+  assert.equal((await r.json()).configured, false);
+});
+
+test("meshy: a finished text shape offers colour; failed tasks keep their reason and no files", () => {
+  const env = meshyEnv();
+  const s = shapeTask({ id: "0193bfc5-ee4f-73f8-8525-44b398884ce9", type: "text-to-3d-preview", status: "SUCCEEDED", model_urls: { glb: "https://assets.meshy.ai/a.glb" } }, "text", env);
+  assert.equal(s.mode, "preview");
+  const f = shapeTask({ id: "0193bfc5-ee4f-73f8-8525-44b398884ce9", status: "FAILED", task_error: { message: "bad photo" }, consumed_credits: 0 }, "image", env);
+  assert.equal(f.error, "bad photo");
+  assert.deepEqual(f.files, {});
+});

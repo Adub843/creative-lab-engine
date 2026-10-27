@@ -577,3 +577,18 @@ textarea.field { resize: vertical; font-family: var(--f-body); }
   .tasks .task .task-t { flex-basis: calc(100% - 60px); }
   .tasks select.owner { margin-left: 27px; }
 }
+
+/* 3D generator (assets/generate3d.js) */
+.gen-photos { display: flex; flex-wrap: wrap; gap: 10px; }
+.gen-photos:empty { display: none; }
+.gen-photo { margin: 0; display: grid; gap: 6px; justify-items: center; width: 120px; }
+.gen-photo img { width: 120px; height: 120px; object-fit: contain; background: var(--sunk); border: 1px solid var(--line); border-radius: 8px; }
+.gen-label { gap: 6px; }
+.gen-prompt { resize: vertical; min-height: 64px; width: 100%; }
+.gen-progress { height: 6px; border-radius: 999px; background: var(--sunk); overflow: hidden; }
+.gen-progress span { display: block; height: 100%; background: var(--c3d); transition: width .4s ease; }
+.gen-status.s-SUCCEEDED { color: var(--ok); }
+.gen-status.s-FAILED { color: var(--bad); }
+.gen-card .file-acts .btn { padding: 6px 10px; font-size: 13px; }
+.btn.small { padding: 4px 10px; font-size: 12.5px; }
+.gen-card .file-pic img { object-fit: contain; }

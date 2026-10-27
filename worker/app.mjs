@@ -11,12 +11,13 @@
 //   MARKETING  Workers KV namespace holding each store's daily marketing scores and change log
 //              (lib/marketing.mjs, lib/promotions.mjs) and the Team task boards (lib/team.mjs)
 // Secrets (set with `npx wrangler secret put NAME`, never in code): CONSOLE_KEY, the Shopify
-// domains and tokens (C3D_*, ED_*), and optionally INDEXNOW_KEY, ED_HANDLING_DAYS, *_SITE_URL.
+// domains and tokens (C3D_*, ED_*), and optionally INDEXNOW_KEY, ED_HANDLING_DAYS, *_SITE_URL, MESHY_API_KEY.
 import { handleProducts, HttpError } from "../lib/shopify.mjs";
 import { handleInsights } from "../lib/insights.mjs";
 import { handleListings, libraryReader } from "../lib/listings.mjs";
 import { handleImages } from "../lib/images.mjs";
 import { handleFiles } from "../lib/files.mjs";
+import { handleMeshy } from "../lib/meshy.mjs";
 import { kvBlobStore } from "../lib/kv-store.mjs";
 import { handlePricing, scheduledPricing } from "../lib/pricing.mjs";
 import { handleMarketing, runScheduledAudits, runScheduledFixes } from "../lib/marketing.mjs";
@@ -133,6 +134,9 @@ export async function handleRequest(req, env) {
       imageStore(env); // same binding check and message as the image library
       return await handleFiles(req, { blobs: kvBlobStore(env.IMAGES, "c3d-file:"), thumbs: kvBlobStore(env.IMAGES, "c3d-thumb:"), env: envReader(env) });
     }
+    // Charleston 3D's 3D generator: Meshy, with the key kept in the Worker (secret MESHY_API_KEY).
+    if (pathname === "/api/meshy" || pathname.startsWith("/api/meshy/"))
+      return await handleMeshy(req, { env: envReader(env), fetch: (input, init) => fetch(input, init) });
     if (pathname === "/api" || pathname.startsWith("/api/")) return json({ error: "Not found" }, 404);
   } catch (e) {
     if (e instanceof HttpError) return json({ error: e.message, code: e.code }, e.status);

@@ -30,6 +30,8 @@ export const TOOLS = [
   { id: "hypechain", group: "make", store: "c3d", name: "Hype chain maker", ico: "◇",
     sub: "Custom pendant designer: logo or text to a printable chain pendant",
     frame: "tools/hype-chain-maker/" },
+  { id: "generate3d", group: "make", store: "c3d", name: "3D generator", ico: "◆", page: "generate3d",
+    sub: "Photo or description in, printable model out (Meshy): STL, 3MF, GLB" },
   { id: "maker", group: "make", store: "c3d", name: "Maker", ico: "◫",
     sub: "Picture in, Bambu file out: light boxes, keychains, signs and lithophanes",
     frame: "tools/maker/" },
