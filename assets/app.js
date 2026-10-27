@@ -203,7 +203,6 @@ function dashboard() {
     el("div", { class: "kpis" },
       el("button", { class: "kpi warn", type: "button", onclick: () => go("map", "attn") }, el("b", {}, String(attn.length)), el("span", {}, "need attention")),
       el("button", { class: "kpi", type: "button", onclick: () => go("map", "live") }, el("b", {}, String(count((s) => s.status === "live"))), el("span", {}, "live services")),
-      el("button", { class: "kpi", type: "button", onclick: () => go("map", "empty") }, el("b", {}, String(count((s) => s.status === "empty"))), el("span", {}, "never launched")),
       el("button", { class: "kpi bad", type: "button", onclick: () => go("map", "blind") }, el("b", {}, String(count((s) => s.status === "blind"))), el("span", {}, "not connected"))),
     el("div", { class: "grid-2" },
       el("section", { class: "panel brand-c3d brand-band" },
@@ -237,7 +236,7 @@ function brandPage(key, groups, extra = []) {
 }
 
 function mapPage(initial = "all") {
-  const FILTERS = [["all", "All"], ["c3d", "Charleston 3D"], ["ed", "Elevated Designs"], ["other", "Other"], ["attn", "Needs attention"], ["empty", "Never launched"], ["blind", "Not connected"]];
+  const FILTERS = [["all", "All"], ["c3d", "Charleston 3D"], ["ed", "Elevated Designs"], ["other", "Other"], ["attn", "Needs attention"], ["blind", "Not connected"]];
   let f = initial, q = "";
   const grid = el("div");
   const chips = el("div", { class: "toolbar", role: "group", "aria-label": "Filter" });

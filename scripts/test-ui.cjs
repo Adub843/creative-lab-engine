@@ -626,9 +626,9 @@ async function main() {
     // the shirt is a photo with the print blended under its shading, never a drawing
     await page.waitForSelector(".ed-stage.is-ready");
     assert.equal(await page.locator(".ed-stage svg").count(), 0, "no drawn shirt");
-    assert.match(await page.locator(".ed-base").getAttribute("src"), /blanks\/tee-front\.jpg$/);
-    assert.match(await page.locator(".ed-shade").getAttribute("src"), /blanks\/tee-front-shade\.jpg$/);
-    assert.equal(await page.locator(".ed-shade").evaluate((n) => getComputedStyle(n).mixBlendMode), "multiply");
+    assert.match(await page.locator(".ed-stage .ed-base").getAttribute("src"), /blanks\/tee-front\.jpg$/);
+    assert.match(await page.locator(".ed-stage .ed-shade").getAttribute("src"), /blanks\/tee-front-shade\.jpg$/);
+    assert.equal(await page.locator(".ed-stage .ed-shade").evaluate((n) => getComputedStyle(n).mixBlendMode), "multiply");
     await page.click('.lib .tile:has-text("palm-tree.png")');
     await page.waitForSelector(".ed-print .ed-pl");
     await page.waitForSelector(".print-area .layer.sel");
@@ -637,10 +637,10 @@ async function main() {
     await page.click('.ed-rail [data-tool="shirt"]');
     await page.click('.ed-styles button:has-text("Hoodie")');
     await page.click('.swatches [aria-label="Navy"]');
-    await page.waitForFunction(() => /hoodie-front\.jpg$/.test(document.querySelector(".ed-base").src));
+    await page.waitForFunction(() => /hoodie-front\.jpg$/.test(document.querySelector(".ed-stage .ed-base").src));
     assert.equal(await page.locator(".ed-tint").evaluate((n) => getComputedStyle(n).backgroundColor), "rgb(31, 42, 68)");
     await page.click('.seg-btn[data-side="back"]');
-    await page.waitForFunction(() => /hoodie-back\.jpg$/.test(document.querySelector(".ed-base").src));
+    await page.waitForFunction(() => /hoodie-back\.jpg$/.test(document.querySelector(".ed-stage .ed-base").src));
     assert.equal(await page.locator(".print-area .layer").count(), 0, "the back starts empty");
     await page.click('.seg-btn[data-side="front"]');
     await page.waitForSelector(".print-area .layer");
@@ -660,6 +660,7 @@ async function main() {
   });
 
   await step("studio: uploading asks for the key, then upload, see private images, delete", async () => {
+    for (const k of [...images.keys()]) images.delete(k);
     await page.evaluate(() => sessionStorage.removeItem("bc-console-key"));
     await page.click('a.nav[data-route="dashboard"]');
     await page.click('a.nav[data-route="studio"]');

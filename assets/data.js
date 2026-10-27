@@ -34,10 +34,10 @@ export const STATUS = {
 
 export const SERVICES = [
   // Charleston 3D
-  { id: "c3dsite", name: "charleston3d.com", brand: "c3d", kind: "Website · Shopify theme", status: "attn",
+  { id: "c3dsite", name: "charleston3d.com", brand: "c3d", kind: "Website · Shopify theme", status: "live",
     does: "Charleston 3D's storefront: a hand-coded Shopify theme running on the Charleston3D store. Products, prices and checkout come live from Shopify, so a product switched on in Products shows up at once. No build step.",
     source: "GitHub: Adub843/charleston3d-site, branch claude/shopify-theme (Charleston 3D only)",
-    note: "The coded theme is being finished in Oct 2026; the live theme is still \"Charleston3D Lowcountry\" until it's published. The old Wix plan was canceled on 8 Oct.",
+    note: "Live since 26 Oct 2026. Shopify's GitHub sync publishes new commits on claude/shopify-theme. The old Wix plan was canceled on 8 Oct.",
     links: [{ label: "Products on the site", url: "#products/c3d" }, { label: "Insights", url: "#insights/c3d" },
       { label: "Open live site", url: BRANDS.c3d.site }, { label: "Themes in Shopify", url: `${BRANDS.c3d.site}/admin/themes` }] },
   { id: "c3dshop", name: "Charleston3D store", brand: "c3d", kind: "Store backend · Shopify", status: "live",
@@ -69,7 +69,8 @@ export const SERVICES = [
     links: [{ label: "Open the app", url: BRANDS.ed.app }, { label: "Orders in Shopify", url: `${BRANDS.ed.site}/admin/orders` },
       { label: "Open repository", url: "https://github.com/Adub843/elevated-shirt-app" }] },
   { id: "ghedtheme", name: "GitHub · elevated-designs-site", brand: "ed", kind: "Code storage · GitHub", status: "attn",
-    does: "The single home for Elevated Designs' own Shopify theme. Shopify's GitHub integration deploys it to the store.",
+    does: "The single home for Elevated Designs' own Shopify theme.",
+    note: "Not connected to the store yet, so theme changes are uploaded by hand. Connect it in Shopify (Online Store, Themes, Add theme, Connect from GitHub) to deploy on every commit.",
     links: [{ label: "Open repository", url: "https://github.com/Adub843/elevated-designs-site" }] },
   { id: "studio", name: "Design Studio", brand: "ed", kind: "In this console", status: "live",
     does: "Image library and shirt designer. Images are stored online, so your PC doesn't need to be on. Any library design can be listed on the Elevated Designs store in one click from Products (Elevated Designs).",
