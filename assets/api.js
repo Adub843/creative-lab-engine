@@ -8,14 +8,21 @@ export const STORES = Object.fromEntries(["c3d", "ed"].map((k) => [k, { name: BR
 export const SETUP_URL = "https://github.com/Adub843/Business-console#connect-a-store";
 export const host = (url) => { try { return new URL(url).host; } catch { return url; } };
 
-// ---------- console key: sessionStorage only, gone when the tab closes ----------
+// ---------- console key: remembered on this device, so it's typed once ----------
+// A key the server refuses is dropped at once (see call() below), so a wrong one never sticks.
 const KEY = "bc-console-key";
 export const consoleKey = {
-  get() { try { return sessionStorage.getItem(KEY) ?? ""; } catch { return ""; } },
-  set(v) { try { v ? sessionStorage.setItem(KEY, v) : sessionStorage.removeItem(KEY); } catch { /* storage blocked */ } },
+  get() { try { return localStorage.getItem(KEY) ?? ""; } catch { return ""; } },
+  set(v) { try { v ? localStorage.setItem(KEY, v) : localStorage.removeItem(KEY); } catch { /* storage blocked */ } },
   clear() { this.set(""); },
 };
-try { localStorage.removeItem("bc-key"); } catch { /* older versions kept the key here */ }
+try {
+  // Earlier versions kept the key for one tab only (sessionStorage), or under an older name.
+  const old = sessionStorage.getItem(KEY);
+  if (old && !localStorage.getItem(KEY)) localStorage.setItem(KEY, old);
+  sessionStorage.removeItem(KEY);
+  localStorage.removeItem("bc-key");
+} catch { /* storage blocked */ }
 
 let dlg = null, asking = null;
 export function askForKey(reason = "Changes to the stores need the console key (the CONSOLE_KEY value set for this console).") {
@@ -28,7 +35,7 @@ export function askForKey(reason = "Changes to the stores need the console key (
     const form = el("form", { method: "dialog", class: "stack" },
       el("h2", { id: "key-title" }, "Console key"), msg,
       el("label", { class: "stack", style: "gap:4px", for: "key-in" }, "Key", input),
-      el("p", { class: "muted small" }, "Kept for this browser tab only, and cleared when you close it."),
+      el("p", { class: "muted small" }, "Remembered on this device, so you only type it once."),
       el("div", { class: "row", style: "justify-content:flex-end" }, cancel, el("button", { class: "btn primary", type: "submit", id: "key-save" }, "Use key")));
     dlg = el("dialog", { class: "palette keydlg", "aria-labelledby": "key-title", "aria-describedby": "key-msg" }, form);
     document.body.append(dlg);

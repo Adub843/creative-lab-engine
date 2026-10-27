@@ -253,18 +253,22 @@ async function main() {
     }
   });
 
-  await step("products: toggle uses the session key and goes live (optimistic)", async () => {
+  await step("products: toggle uses the saved key and goes live (optimistic)", async () => {
     await sw("Rainbow Row").click();
     assert.equal(await sw("Rainbow Row").getAttribute("aria-checked"), "true", "optimistic flip before the server answers");
     await page.waitForFunction(() => document.querySelector('.prow[data-id="gid://shopify/Product/102"] .plive > span')?.textContent === "Live");
     assert.equal(await sw("Rainbow Row").getAttribute("aria-checked"), "true");
     assert.equal(posts.at(-1).key, KEY);
     assert.deepEqual(posts.at(-1).body, { store: "c3d", id: "gid://shopify/Product/102", live: true });
-    const store = await page.evaluate(() => ({ s: sessionStorage.getItem("bc-console-key"), l: Object.keys(localStorage).filter((k) => /key/i.test(k)) }));
-    assert.equal(store.s, KEY);
-    assert.deepEqual(store.l, [], "key never in localStorage");
+    const store = await page.evaluate(() => ({ l: localStorage.getItem("bc-console-key"), s: Object.keys(sessionStorage).filter((k) => /key/i.test(k)) }));
+    assert.equal(store.l, KEY, "the key is remembered on this device");
+    assert.deepEqual(store.s, []);
     assert.match(await page.locator("#prod-summary").textContent(), /2 of 4/);
     assert.equal(await page.locator(".prow", { hasText: "Rainbow Row" }).locator('a[data-act="view"]').count(), 1);
+    // typed once: reloading (or a new tab, which shares localStorage) doesn't ask again
+    await page.reload();
+    await page.waitForSelector(".prow");
+    assert.equal(await page.locator("dialog.keydlg[open]").count(), 0, "a reload doesn't ask for the key again");
   });
 
   await step("products: failed toggle rolls back and shows the error", async () => {
@@ -401,7 +405,7 @@ async function main() {
   });
 
   await step("insights: cancelling the key prompt shows Enter key, which then loads", async () => {
-    await page.evaluate(() => sessionStorage.clear());
+    await page.evaluate(() => localStorage.removeItem("bc-console-key"));
     await page.click("#ins-refresh");
     await page.waitForSelector("dialog.keydlg[open]");
     await page.click("#key-cancel");
@@ -452,10 +456,10 @@ async function main() {
 
   await step("products: wrong key on a change re-prompts, right key saves", async () => {
     await clearToasts();
-    await page.evaluate(() => sessionStorage.setItem("bc-console-key", "wrong-key"));
+    await page.evaluate(() => localStorage.setItem("bc-console-key", "wrong-key"));
     await sw("Pineapple").click();
     await page.waitForSelector("dialog.keydlg[open] >> text=didn't work");
-    assert.equal(await page.evaluate(() => sessionStorage.getItem("bc-console-key")), null, "refused key is dropped");
+    assert.equal(await page.evaluate(() => localStorage.getItem("bc-console-key")), null, "refused key is dropped");
     await page.fill("#key-in", KEY);
     await page.click("#key-save");
     await page.waitForFunction(() => document.querySelector('.prow[data-id="gid://shopify/Product/103"] .plive > span')?.textContent === "Off");
@@ -465,7 +469,7 @@ async function main() {
 
   await step("products: cancelling the key prompt rolls the switch back", async () => {
     await clearToasts();
-    await page.evaluate(() => sessionStorage.removeItem("bc-console-key"));
+    await page.evaluate(() => localStorage.removeItem("bc-console-key"));
     const before = posts.length;
     await sw("Pineapple").click();
     await page.waitForSelector("dialog.keydlg[open]");
@@ -475,13 +479,13 @@ async function main() {
     assert.equal(posts.length, before, "nothing sent without a key");
     assert.match(await toastText(), /No console key entered/);
     // wrong key, then cancel the re-prompt: also rolled back
-    await page.evaluate(() => sessionStorage.setItem("bc-console-key", "wrong-key"));
+    await page.evaluate(() => localStorage.setItem("bc-console-key", "wrong-key"));
     await sw("Pineapple").click();
     await page.waitForSelector("dialog.keydlg[open] >> text=didn't work");
     await page.click("#key-cancel");
     await page.waitForFunction(() => document.querySelector('.prow[data-id="gid://shopify/Product/103"] .switch').getAttribute("aria-checked") === "false");
     assert.equal(await page.locator("dialog.keydlg[open]").count(), 0);
-    await page.evaluate((k) => sessionStorage.setItem("bc-console-key", k), KEY);
+    await page.evaluate((k) => localStorage.setItem("bc-console-key", k), KEY);
   });
 
   await step("products: switching store mid-change keeps each store's list right", async () => {
@@ -609,7 +613,7 @@ async function main() {
   await step("studio: no key needed to design: the shirt-app library on a real shirt photo", async () => {
     images.set("k-pub-0123abcd", { key: "k-pub-0123abcd", name: "palm-tree.png", type: "image/png", size: 10, tags: "palm, zzq-only-tag", category: "Charleston", public: true, added: 2 });
     images.set("k-priv-0123abcd", { key: "k-priv-0123abcd", name: "secret.png", type: "image/png", size: 10, tags: "", public: false, added: 1 });
-    await page.evaluate(() => { sessionStorage.removeItem("bc-console-key"); localStorage.removeItem("bc-design-2"); });
+    await page.evaluate(() => { localStorage.removeItem("bc-console-key"); localStorage.removeItem("bc-design-2"); });
     await page.click('a.nav[data-route="dashboard"]');
     await page.click('a.nav[data-route="studio"]');
     await page.waitForSelector('.lib .tile:has-text("palm-tree.png")');
@@ -661,7 +665,7 @@ async function main() {
 
   await step("studio: uploading asks for the key, then upload, see private images, delete", async () => {
     for (const k of [...images.keys()]) images.delete(k);
-    await page.evaluate(() => sessionStorage.removeItem("bc-console-key"));
+    await page.evaluate(() => localStorage.removeItem("bc-console-key"));
     await page.click('a.nav[data-route="dashboard"]');
     await page.click('a.nav[data-route="studio"]');
     await page.waitForSelector(".editor");
@@ -850,7 +854,7 @@ async function main() {
 
   await step("customizable: no key asks for it; cancelling rolls back and sends nothing", async () => {
     await clearToasts();
-    await page.evaluate(() => sessionStorage.removeItem("bc-console-key"));
+    await page.evaluate(() => localStorage.removeItem("bc-console-key"));
     const before = posts.length;
     await csw("Pineapple").click();
     await page.waitForSelector("dialog.keydlg[open]");
@@ -1230,7 +1234,7 @@ async function main() {
   });
 
   await step("list a design: with no key, List it asks for it, then lists", async () => {
-    await page.evaluate(() => sessionStorage.removeItem("bc-console-key"));
+    await page.evaluate(() => localStorage.removeItem("bc-console-key"));
     await openSheet("palmetto");
     await page.click("#ls-submit");
     await page.waitForSelector("dialog.keydlg[open]");
