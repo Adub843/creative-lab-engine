@@ -1,0 +1,22 @@
+# Creative Lab Studios (Aaron's main console) on Cloudflare Workers.
+# Secrets are never written here. Set them on Aaron's PC, in this folder:
+#   npx.cmd wrangler secret put CONSOLE_KEY        (the team key used to sign in)
+#   npx.cmd wrangler secret put ANTHROPIC_API_KEY  (Ask Stephanie and the AI helpers)
+name = "creative-lab-hq"
+main = "worker.mjs"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "creative-lab-hq"
+database_id = "dd1458bf-7b6f-4c11-a9bd-d6a5c5d2cf97"
+
+[[kv_namespaces]]
+binding = "HQ_ASSETS"
+id = "d89d74c2e9b943cfafd6bf2ecc2fd6af"
