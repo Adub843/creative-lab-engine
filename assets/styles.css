@@ -424,6 +424,14 @@ code { font-family: var(--f-mono); font-size: 13px; background: var(--sunk); pad
 textarea.field { resize: vertical; font-family: var(--f-body); }
 .utm-out { display: block; font-family: var(--f-mono); font-size: 13px; background: var(--sunk); border-radius: 8px; padding: 10px 12px; overflow-wrap: anywhere; }
 
+/* rank tracker */
+.tbl.trk-tbl { display: block; }
+.trk-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 16px; }
+.movers, .ideas { list-style: none; margin: 0; padding: 0; display: grid; }
+.movers li, .ideas li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 8px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.movers li:last-child, .ideas li:last-child { border-bottom: 0; }
+.movers li > a, .ideas li > span:first-child { flex: 1 1 200px; min-width: 0; }
+
 .legend-mark { display: inline-block; width: 10px; height: 10px; border-left: 2px dashed var(--warn); vertical-align: -1px; }
 .notes { margin: 0; padding-left: 18px; }
 .topo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
