@@ -25,6 +25,23 @@ export const BRANDS = {
   other: { name: "Other projects", tagline: "Video, content and personal apps" },
 };
 
+// The Design Studio and everywhere else the team works, one click from every page: the Go to menu in
+// the top bar, the Design Studio link in the sidebar and the jump palette. Keep it in step with the
+// studio's own Go to menu.
+export const STUDIO_URL = "https://epix3d.com";
+export const GO_TO = [
+  { group: "Back office", links: [
+    { label: "Design Studio", note: "Art for every brand and the shirt designer", url: STUDIO_URL }] },
+  { group: "Sites", links: [
+    { label: "Charleston 3D shop", note: "charleston3d.com", url: "https://charleston3d.com" },
+    { label: "Charleston 3D order app", note: "app.charleston3d.com", url: "https://app.charleston3d.com" },
+    { label: "Elevated Designs shop", note: "elevatedshirts.com", url: "https://elevatedshirts.com" },
+    { label: "Elevated Designs shirt app", note: "design.elevatedshirts.com", url: "https://design.elevatedshirts.com" }] },
+  { group: "Reference", links: [
+    { label: "Accounts and connections", note: "Every account and what connects to what", url: "https://claude.ai/artifact/Xek7W6RMuhNjUHaPmoRtuY" },
+    { label: "Master links", note: "Every link in one sheet", url: "https://docs.google.com/spreadsheets/d/11SqwifuaDQjHgIGcuaZNRkdkG7JxfQacmT-7sEAH7Y4/edit" }] },
+];
+
 export const STATUS = {
   attn: "Needs attention",
   blind: "Can't see",
@@ -72,11 +89,10 @@ export const SERVICES = [
     does: "The single home for Elevated Designs' own Shopify theme.",
     note: "Not connected to the store yet, so theme changes are uploaded by hand. Connect it in Shopify (Online Store, Themes, Add theme, Connect from GitHub) to deploy on every commit.",
     links: [{ label: "Open repository", url: "https://github.com/Adub843/elevated-designs-site" }] },
-  { id: "studio", name: "Design Studio", brand: "ed", kind: "Web app · Cloudflare Worker", status: "attn",
-    does: "The art library and shirt designer for every brand, each with its own library, on its own address. It shares this console's image library, so a design saved there shows up here and in the shirt apps. It moves to epix3d.com once that domain is on Cloudflare.",
-    note: "Set its key once: in Desktop\\design-studio run npx.cmd wrangler secret put CONSOLE_KEY and type the console's key.",
-    source: "GitHub: Adub843/design-studio (deployed by hand from the PC)",
-    links: [{ label: "Open Design Studio", url: "https://design-studio.business-console.workers.dev" }, { label: "Design library in this console", url: "#designs/ed" }, { label: "Shirt designer in this console", url: "#studio/ed" },
+  { id: "studio", name: "Design Studio", brand: "ed", kind: "Web app · Cloudflare Worker", status: "live",
+    does: "The art library and shirt designer for every brand, each with its own library, at epix3d.com. It shares this console's image library, so a design saved there shows up here and in the shirt apps. Its key is the same as this console's.",
+    source: "GitHub: Adub843/design-studio (deployed by hand from the PC). epix3d.com's DNS is on Cloudflare; the domain is registered at Wix. Backup address: design-studio.business-console.workers.dev",
+    links: [{ label: "Open Design Studio", url: "https://epix3d.com" }, { label: "Design library in this console", url: "#designs/ed" }, { label: "Shirt designer in this console", url: "#studio/ed" },
       { label: "Open repository", url: "https://github.com/Adub843/design-studio" }] },
   { id: "publish", name: "Products and Insights", brand: "other", kind: "In this console · both stores", status: "live",
     does: "Switch products on or off each store's Shopify site, choose which Charleston 3D products are customizable (the theme then asks for a name to print), list a library design on Elevated Designs in one click, and see sales, visits, a 30-day forecast and next steps for each store.",

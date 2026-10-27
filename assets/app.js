@@ -1,4 +1,4 @@
-import { BRANDS, STATUS, SERVICES, ROUTES, CLEANUP, TOPOLOGY } from "./data.js";
+import { BRANDS, STATUS, SERVICES, ROUTES, CLEANUP, TOPOLOGY, GO_TO, STUDIO_URL } from "./data.js";
 import { GROUPS, TOOLS, toolsFor } from "./tools.js";
 import { takeStoreHandler, cancelKeyPrompt, consoleKey } from "./api.js";
 import { filesPage } from "./files.js";
@@ -71,7 +71,7 @@ const pal = document.getElementById("palette");
 const palQ = document.getElementById("pal-q");
 const palList = document.getElementById("pal-list");
 function palItems(q) {
-  const all = [...PAGES(), ...SERVICES.flatMap((s) => s.links.map((l) => ({ name: `${s.name}: ${l.label}`, url: l.url, kind: BRANDS[s.brand].name })))];
+  const all = [...PAGES(), ...GO_TO.flatMap((g) => g.links.map((l) => ({ name: l.label, url: l.url, kind: g.group }))), ...SERVICES.flatMap((s) => s.links.map((l) => ({ name: `${s.name}: ${l.label}`, url: l.url, kind: BRANDS[s.brand].name })))];
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   return all.filter((i) => words.every((w) => i.name.toLowerCase().includes(w))).slice(0, 12);
 }
@@ -142,6 +142,16 @@ function activeTool() {
     ?? toolsFor(k).find((t) => (t.page ?? t.id) === route && !t.path);
 }
 
+// The Go to menu: the Design Studio, both shops, both apps and the reference pages, from every page.
+const goMenu = el("div", { class: "go-menu", id: "go-menu", popover: "auto", role: "menu", "aria-label": "Go to" },
+  GO_TO.map((g) => el("div", { class: "go-group" }, el("span", { class: "eyebrow" }, g.group),
+    g.links.map((l) => el("a", { class: "go-link", href: l.url, target: "_blank", rel: "noopener", role: "menuitem", onclick: () => goMenu.hidePopover?.() },
+      el("span", { class: "go-text" }, el("strong", {}, l.label), el("span", { class: "muted" }, l.note)),
+      el("span", { class: "ext", "aria-hidden": "true" }, "↗"))))));
+document.body.append(goMenu);
+const goBtn = el("button", { class: "btn ghost go-btn", type: "button", popovertarget: "go-menu", "aria-haspopup": "menu", title: "Go to the Design Studio and every site" },
+  el("span", { class: "go-ico", "aria-hidden": "true" }, "⊞"), "Go to");
+
 const seg = document.getElementById("store-seg");
 const navs = document.getElementById("navs");
 STORE_KEYS.forEach((k) => seg.append(el("button", { type: "button", class: `seg-btn brand-${k}`, "data-store": k, "aria-label": BRANDS[k].name, onclick: () => setStore(k) },
@@ -159,6 +169,7 @@ function drawNav() {
     el("span", { class: "ico", "aria-hidden": "true" }, ico), el("span", {}, label), ext(href) ? el("span", { class: "nav-ext", "aria-hidden": "true" }, "↗") : null);
   navs.replaceChildren(
     link("home", "Home", "⌂", `#home/${k}`),
+    link("design-studio", "Design Studio", "✦", STUDIO_URL),
     ...GROUPS.map((g) => {
       const items = toolsFor(k).filter((t) => t.group === g.id);
       return items.length ? el("div", { class: "nav-group" }, el("span", { class: "nav-label" }, g.name),
@@ -168,7 +179,8 @@ function drawNav() {
   document.getElementById("store-links").replaceChildren(
     el("a", { class: "btn ghost", href: b.site, target: "_blank", rel: "noopener" }, "Live site", el("span", { class: "ext", "aria-hidden": "true" }, "↗")),
     el("a", { class: "btn ghost", href: b.admin.url, target: "_blank", rel: "noopener" }, "Shopify", el("span", { class: "ext", "aria-hidden": "true" }, "↗")),
-    b.app ? el("a", { class: "btn ghost hide-sm", href: b.app, target: "_blank", rel: "noopener" }, "App", el("span", { class: "ext", "aria-hidden": "true" }, "↗")) : null);
+    b.app ? el("a", { class: "btn ghost hide-sm", href: b.app, target: "_blank", rel: "noopener" }, "App", el("span", { class: "ext", "aria-hidden": "true" }, "↗")) : null,
+    goBtn);
   const crumb = document.getElementById("crumb");
   const g = active && GROUPS.find((x) => x.id === active.group);
   crumb.replaceChildren(el("span", { class: `crumb-store brand-${k}` }, b.name),

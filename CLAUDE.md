@@ -186,3 +186,4 @@ The skills live in project files `agent-skills-catalog/skills/` and on the Deskt
 - Before deploying, make sure the branch contains every merged PR (#5, #6, #7, #8). `npm run check` and `npm test` must pass.
 - The two brands never share a request: every call names its store (`c3d` or `ed`). The price sync touches only products tagged "Elevated Designs".
 - Admin API is pinned to 2025-10. Validate every GraphQL change with `scripts/schema`.
+- Every page has a "Go to" menu in the top bar and a Design Studio link in the sidebar: the Design Studio (https://epix3d.com), both shops, both apps, the accounts map and the Master Links sheet. The list is `GO_TO` in `assets/data.js`; keep it in step with the studio's own Go to menu.
