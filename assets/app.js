@@ -2,6 +2,7 @@ import { BRANDS, STATUS, SERVICES, ROUTES, CLEANUP, TOPOLOGY } from "./data.js";
 import { GROUPS, TOOLS, toolsFor } from "./tools.js";
 import { takeStoreHandler, cancelKeyPrompt } from "./api.js";
 import { filesPage } from "./files.js";
+import { meshyPage } from "./meshy.js";
 
 // ---------- helpers ----------
 export const el = (tag, attrs = {}, ...kids) => {
@@ -436,7 +437,7 @@ async function render() {
   const frameTool = TOOLS.find((t) => t.frame && t.id === route);
   // A tool of the other store: show this store's Home rather than mixing the brands.
   if (frameTool && frameTool.store !== k) { location.hash = `#home/${k}`; return; }
-  if ((route === "studio" && k !== "ed") || (route === "files" && k !== "c3d")) { location.hash = `#home/${k}`; return; }
+  if ((route === "studio" && k !== "ed") || ((route === "files" || route === "maker3d") && k !== "c3d")) { location.hash = `#home/${k}`; return; }
   const pages = {
     home,
     map: () => mapPage(pendingFilter ?? k),
@@ -447,13 +448,14 @@ async function render() {
     promote: promotePage,
     share: sharePage,
     files: () => filesPage(header),
+    maker3d: () => meshyPage(header),
   };
   const make = frameTool ? () => framePage(frameTool) : pages[route] ?? home;
   const nodes = await make();
   pageStoreHandler = takeStoreHandler();
   pendingFilter = null;
   view.replaceChildren(...[nodes].flat().filter(Boolean));
-  view.classList.toggle("wide", route === "studio" || !!frameTool);
+  view.classList.toggle("wide", route === "studio" || route === "maker3d" || !!frameTool);
   view.classList.toggle("framed", !!frameTool);
   const t = activeTool();
   document.title = `${t ? t.name : "Home"} · ${BRANDS[k].name} · Business Console`;

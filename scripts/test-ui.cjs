@@ -799,7 +799,7 @@ async function main() {
   });
 
   await step("home pages: store links go to the Shopify sites, not Netlify", async () => {
-    const pages = ["home", "products", "insights", "marketing", "promote", "studio", "map", "share", "trends", "nameplate", "hypechain", "maker", "files"];
+    const pages = ["home", "products", "insights", "marketing", "promote", "studio", "map", "share", "trends", "nameplate", "hypechain", "maker", "files", "maker3d"];
     const hashes = new Set();
     for (const [k, site, app] of [["c3d", "https://charleston3d.com", "https://app.charleston3d.com"], ["ed", "https://elevatedshirts.com", "https://design.elevatedshirts.com"]]) {
       await page.click('a.nav[data-route="home"]');
@@ -931,6 +931,73 @@ async function main() {
     await noOverflow("files 1280");
     await page.setViewportSize({ width: 390, height: 844 });
     await noOverflow("files 390");
+    await page.setViewportSize({ width: 1280, height: 900 });
+  });
+
+  // ---------- Charleston 3D: 3D maker (Meshy) ----------
+  const mJobs = [], mCalls = [];
+  const PNG1 = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+  await page.route("**/api/meshy**", async (route) => {
+    const req = route.request(), url = new URL(req.url()), [, , , section, id, action, fmt] = url.pathname.split("/");
+    const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    const body = req.postData() ? JSON.parse(req.postData()) : null;
+    mCalls.push([req.method(), url.pathname, body]);
+    if (req.headers()["x-console-key"] !== KEY) return json(401, { error: "Wrong or missing console key.", code: "bad_key" });
+    if (!section) return json(200, { configured: true, balance: 300, jobs: mJobs.map(({ polls, ...j }) => j) });
+    if (req.method() === "POST" && !id) {
+      const j = { id: `0193bfc5-0000-7000-8000-00000000000${mJobs.length + 1}`, kind: body.mode === "words" ? "words" : body.images.length > 1 ? "photos" : "photo",
+        name: body.name, color: !!body.color, detail: body.detail, created: Date.now(), cost: 20, status: "PENDING", progress: 0, formats: [], polls: 0 };
+      mJobs.unshift(j);
+      return json(201, { job: j });
+    }
+    const j = mJobs.find((x) => x.id === id);
+    if (!j) return json(404, { error: "That job isn't on the list." });
+    if (req.method() === "GET" && !action) {
+      if (++j.polls >= 1) Object.assign(j, { status: "SUCCEEDED", progress: 100, formats: ["glb", "stl", "3mf"], picture: true, expiresAt: Date.now() + 71 * 3600000 });
+      return json(200, { job: j });
+    }
+    if (action === "file") return route.fulfill({ status: 200, contentType: fmt === "picture" ? "image/png" : "application/octet-stream", body: fmt === "picture" ? PNG1 : cubeStl() });
+    if (action === "save") { j.saved = "m1-0123abcd"; files.set("m1-0123abcd", { key: "m1-0123abcd", name: `${j.name}.3mf`, type: "model/3mf", size: 9, added: Date.now(), store: "c3d", url: "/api/files/m1-0123abcd?exp=1&sig=x" }); return json(201, { item: files.get("m1-0123abcd") }); }
+    return json(405, { error: "Not supported" });
+  });
+  await step("3D maker: Charleston 3D only; photos in, two clicks to spend credits, model shows in 3D, save to the library", async () => {
+    await page.click('a.nav[data-route="home"]');
+    await page.click('.seg-btn[data-store="ed"]');
+    await page.waitForSelector('.seg-btn[data-store="ed"][aria-pressed="true"]');
+    await page.waitForSelector('a.nav[data-route="studio"]');
+    assert.equal(await page.locator('a.nav[data-route="maker3d"]').count(), 0, "no 3D maker on Elevated Designs");
+    await page.click('.seg-btn[data-store="c3d"]');
+    await page.click('a.nav[data-route="maker3d"]');
+    await page.waitForSelector("text=Nothing made yet");
+    await page.waitForSelector("text=300 Meshy credits left");
+    assert.ok(await page.locator(".m3d-go").isDisabled(), "nothing to make until a photo is added");
+    await page.setInputFiles("#m3d-photos", { name: "pineapple-ornament.png", mimeType: "image/png", buffer: PNG1 });
+    await page.waitForSelector(".m3d-thumb img");
+    assert.equal(await page.inputValue("#m3d-name"), "pineapple ornament", "the name comes from the photo");
+    await page.click('.m3d .seg-btn:has-text("With color")');
+    assert.match(await page.locator(".m3d-go").textContent(), /30 credits/);
+    await page.click('.m3d .seg-btn:has-text("Plain")');
+    await page.click(".m3d-go");
+    assert.match(await page.locator(".m3d-go").textContent(), /Click again to spend 20 credits/);
+    assert.equal(mCalls.filter(([m]) => m === "POST").length, 0, "the first click only asks");
+    await page.click(".m3d-go");
+    await page.waitForSelector('.m3d-row:has-text("pineapple ornament")');
+    const start = mCalls.find(([m]) => m === "POST")[2];
+    assert.deepEqual([start.mode, start.color, start.images.length], ["photos", false, 1]);
+    assert.match(start.images[0], /^data:image\/png;base64,/);
+    await page.waitForSelector('.m3d-row .m3d-st:has-text("Ready")', { timeout: 15000 });
+    await page.waitForSelector(".m3d-stage canvas", { timeout: 15000 });
+    assert.ok(await page.locator('.m3d-acts button:has-text("Download 3MF")').isVisible());
+    await page.click('.m3d-acts button:has-text("Save to 3D file library")');
+    await page.waitForSelector('.m3d-acts a:has-text("Open in 3D file library")');
+    assert.ok(mCalls.some(([m, p, b]) => m === "POST" && p.endsWith("/save") && b.format === "3mf"), "saved as a 3MF");
+    await page.click('.m3d .seg-btn:has-text("From words")');
+    assert.equal(await page.locator('.m3d .seg-btn:has-text("With color")').isVisible(), false, "words pick color after the shape");
+    await page.fill("#m3d-prompt", "a palmetto tree desk ornament");
+    assert.ok(!(await page.locator(".m3d-go").isDisabled()));
+    await noOverflow("3D maker 1280");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await noOverflow("3D maker 390");
     await page.setViewportSize({ width: 1280, height: 900 });
   });
 

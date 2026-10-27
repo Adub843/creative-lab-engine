@@ -299,6 +299,23 @@ th { font-family: var(--f-mono); font-size: 11.5px; text-transform: uppercase; l
 .layers button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .layers button[aria-pressed="true"] { border-color: var(--accent); }
 .layers img { width: 30px; height: 30px; object-fit: contain; flex: none; }
+.layer-t { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border-radius: 4px; background: var(--surface); font-family: Georgia, serif; font-weight: 700; color: var(--muted); }
+.ed-fonts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ed-fonts button { font-size: 15px; line-height: 1.2; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 9px 6px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ed-fonts button[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.ed-pane textarea.field, .ed-props textarea.field { width: 100%; resize: vertical; font: inherit; }
+.ed-props select.field { width: 100%; }
+.swatches.sm { gap: 6px; }
+.swatches.sm button { width: 24px; height: 24px; }
+.ed-hist { gap: 4px; margin-right: auto; flex-wrap: nowrap; }
+.icon-btn { padding: 6px 8px; }
+.ed-size { white-space: nowrap; }
+.icon-btn .ed-ico { width: 18px; height: 18px; }
+.ed-checks:empty { display: none; }
+.ed-checks .note { margin: 0; padding: 7px 10px; border-radius: 8px; line-height: 1.4; }
+.note.ok { background: var(--ok-soft); color: var(--ok); }
+.note.warn { background: var(--warn-soft); color: var(--warn); }
+.note.bad { background: var(--bad-soft); color: var(--bad); }
 @media (max-width: 1180px) {
   .editor { grid-template-columns: 72px minmax(230px, 280px) minmax(0, 1fr); }
   .ed-side { grid-column: 2 / -1; border-left: 0; border-top: 1px solid var(--line); }
@@ -549,3 +566,55 @@ textarea.field { resize: vertical; font-family: var(--f-body); }
 .file-meta { display: grid; gap: 2px; padding: 10px 12px 4px; min-width: 0; }
 .file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-acts { padding: 8px 12px 12px; gap: 8px; }
+
+/* 3D maker (assets/meshy.js): what to make on the left, the model and the list on the right */
+.m3d { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 18px; align-items: start; }
+.m3d-form { position: sticky; top: 74px; }
+.m3d-form textarea.field { width: 100%; resize: vertical; font: inherit; }
+.m3d-form .seg { justify-self: start; }
+.m3d .seg-btn[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.m3d-drop { padding: 22px 14px; }
+.m3d-thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.m3d-thumbs:empty { display: none; }
+.m3d-thumb { position: relative; margin: 0; aspect-ratio: 1; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--sunk); }
+.m3d-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.m3d-x { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: rgba(13, 27, 56, .75); color: #fff; font-size: 14px; line-height: 1; cursor: pointer; }
+.m3d-opt { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.m3d-go { width: 100%; justify-content: center; padding: 11px 14px; }
+.m3d-form .note { margin: 0; padding: 10px 12px; border-radius: 8px; line-height: 1.5; font-size: 13.5px; }
+.m3d-view { padding: 0; overflow: hidden; gap: 0; }
+.m3d-stage { height: clamp(320px, 52vh, 560px); background: radial-gradient(circle at 50% 40%, var(--surface), var(--sunk)); display: grid; place-items: center; border-bottom: 1px solid var(--line); }
+.m3d-stage canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+.m3d-stage canvas:active { cursor: grabbing; }
+.m3d-empty { display: grid; gap: 8px; justify-items: center; text-align: center; padding: 24px; max-width: 380px; }
+.m3d-stage-info { padding: 14px 18px 0; display: grid; gap: 2px; }
+.m3d-stage-info:empty { display: none; }
+.m3d-acts { padding: 12px 18px 16px; gap: 8px; }
+.m3d-acts:empty { display: none; }
+.m3d-list { display: grid; gap: 6px; }
+.m3d-row { position: relative; display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 12px; align-items: center; text-align: left; font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px 8px 8px; cursor: pointer; overflow: hidden; }
+.m3d-row:hover { border-color: var(--accent); }
+.m3d-row[aria-current="true"] { border-color: var(--c3d); box-shadow: 0 0 0 1px var(--c3d); }
+.m3d-pic { width: 56px; height: 56px; border-radius: 8px; overflow: hidden; background: var(--sunk); display: grid; place-items: center; }
+.m3d-pic img { width: 100%; height: 100%; object-fit: cover; }
+.m3d-ph { font-family: var(--f-mono); color: var(--muted); font-size: 15px; }
+.m3d-meta { display: grid; gap: 2px; min-width: 0; }
+.m3d-meta strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m3d-st { background: var(--sunk); color: var(--muted); }
+.m3d-st.st-succeeded { background: var(--ok-soft); color: var(--ok); }
+.m3d-st.st-failed { background: var(--bad-soft); color: var(--bad); }
+.m3d-st.st-in_progress, .m3d-st.st-pending { background: var(--c3d-soft); color: var(--c3d); }
+.m3d-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--sunk); }
+.m3d-bar > span { display: block; height: 100%; background: var(--c3d); transition: width .6s ease; }
+.m3d-bar.big { position: static; width: 220px; height: 6px; border-radius: 3px; overflow: hidden; }
+@media (max-width: 960px) {
+  .m3d { grid-template-columns: 1fr; }
+  .m3d-form { position: static; }
+}
+@media (max-width: 760px) {
+  .m3d-stage { height: 320px; }
+  .m3d-row { grid-template-columns: 48px minmax(0, 1fr); }
+  .m3d-pic { width: 48px; height: 48px; }
+  .m3d-row .m3d-st { grid-column: 2; justify-self: start; }
+  .m3d-acts .btn { flex: 1 1 calc(50% - 8px); justify-content: center; }
+}
