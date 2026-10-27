@@ -2,13 +2,23 @@
 // Switching one on makes it active in Shopify and publishes it to the Online Store channel, so the
 // theme shows it straight away. The switch flips at once and flips back if Shopify says no.
 // Charleston 3D rows also have a Customizable switch (the "customizable" tag: the theme then asks
-// for a name to print). Elevated Designs gets the "List a design" panel instead (list-design.js).
+// for a name to print). Elevated Designs rows have a Shirt builder switch instead (the "builder-blank"
+// tag: the blank shows in the shirt apps), plus the "List a design" panel (list-design.js).
 import { el, toast } from "./app.js";
 import { SETUP_URL, STORES, api, host, initialStore, money, storeSwitcher } from "./api.js";
 import { listPanel } from "./list-design.js";
 
 const API = "/api/products";
-const FILTERS = [["all", "All products"], ["live", "Live on the site"], ["off", "Not live"], ["draft", "Drafts"]];
+const FILTERS = [["all", "All products"], ["live", "Live on the site"], ["off", "Not live"], ["draft", "Drafts"], ["builder", "In the shirt builder"]];
+// The second switch on each row: one per store, never shared between the brands.
+const TAG_SWITCH = {
+  c3d: { field: "customizable", label: "Customizable", aria: "Customizable (asks for a name to print)",
+    title: (site) => `On: ${site} shows the "Name to print" field for this product`,
+    on: (t) => `${t} now asks for a name to print`, off: (t) => `${t} no longer asks for a name` },
+  ed: { field: "builder", label: "Shirt builder", aria: "Offered in the shirt builder",
+    title: () => "On: customers can pick this blank in the shirt apps (they update within the hour)",
+    on: (t) => `${t} is in the shirt builder`, off: (t) => `${t} is out of the shirt builder` },
+};
 
 const thumb = (url) => {
   try { const u = new URL(url); u.searchParams.set("width", "96"); return u.toString(); } catch { return url; }
@@ -38,6 +48,7 @@ export async function renderProducts() {
     if (f === "live" && !p.live) return false;
     if (f === "off" && p.live) return false;
     if (f === "draft" && p.status !== "DRAFT") return false;
+    if (f === "builder" && !p.builder) return false;
     const q = state.q.trim().toLowerCase();
     return !q || `${p.title} ${p.type} ${p.handle}`.toLowerCase().includes(q);
   };
@@ -54,20 +65,22 @@ export async function renderProducts() {
       "aria-label": `Live on ${host(STORES[state.store].site)}: ${p.title}`, "aria-busy": p.pending ? "true" : null,
       "aria-disabled": p.pending ? "true" : null, onclick: () => toggle(p),
     }, el("span", { class: "knob", "aria-hidden": "true" }));
-    // Charleston 3D only: some 3D files can't be personalized, so this is chosen per product.
-    const custom = state.store === "c3d" ? el("label", { class: "plive pcust", title: `On: ${host(STORES.c3d.site)} shows the "Name to print" field for this product` },
+    // Charleston 3D: some 3D files can't be personalized. Elevated Designs: which blanks the shirt apps offer.
+    const ts = TAG_SWITCH[state.store];
+    const pendingTag = p.pendingTag === ts.field;
+    const tagged = el("label", { class: "plive pcust", title: ts.title(host(STORES[state.store].site)) },
       el("button", {
-        type: "button", class: "switch", role: "switch", "aria-checked": String(!!p.customizable), "data-id": p.id, "data-field": "customizable",
-        "aria-label": `Customizable (asks for a name to print): ${p.title}`, "aria-busy": p.pendingCustom ? "true" : null,
-        "aria-disabled": p.pendingCustom ? "true" : null, onclick: () => toggleCustom(p),
+        type: "button", class: "switch", role: "switch", "aria-checked": String(!!p[ts.field]), "data-id": p.id, "data-field": ts.field,
+        "aria-label": `${ts.aria}: ${p.title}`, "aria-busy": pendingTag ? "true" : null,
+        "aria-disabled": pendingTag ? "true" : null, onclick: () => toggleTag(p, state.store),
       }, el("span", { class: "knob", "aria-hidden": "true" })),
-      el("span", {}, p.pendingCustom ? "Saving…" : "Customizable")) : null;
+      el("span", {}, pendingTag ? "Saving…" : ts.label));
     const statusPill = el("span", { class: `pill ${p.status === "ACTIVE" ? "s-live" : p.status === "ARCHIVED" ? "s-blind" : "s-empty"}` },
       { ACTIVE: "Active", DRAFT: "Draft", ARCHIVED: "Archived" }[p.status] ?? p.status);
     const view = p.live
       ? el("a", { class: "btn", href: p.url, target: "_blank", rel: "noopener", "data-act": "view" }, "View on site", el("span", { class: "ext", "aria-hidden": "true" }, "↗"))
       : el("span", { class: "btn is-off", "aria-disabled": "true", title: "Switch it on to put it on the site" }, "Not on site");
-    return el("div", { class: `prow${p.pending || p.pendingCustom ? " pending" : ""}`, role: "listitem", "data-id": p.id },
+    return el("div", { class: `prow${p.pending || p.pendingTag ? " pending" : ""}`, role: "listitem", "data-id": p.id },
       p.image ? el("img", { src: thumb(p.image), alt: "", width: "56", height: "56", loading: "lazy" }) : el("span", { class: "noimg", "aria-hidden": "true" }, "▢"),
       el("div", { class: "pinfo" },
         el("strong", {}, p.title),
@@ -76,7 +89,7 @@ export async function renderProducts() {
         el("span", { class: "tags" }, statusPill)),
       el("div", { class: "pswitches" },
         el("label", { class: "plive" }, sw, el("span", {}, p.pending ? "Saving…" : p.live ? "Live" : "Off")),
-        custom),
+        tagged),
       el("div", { class: "pacts" }, view,
         el("a", { class: "btn ghost", href: p.adminUrl, target: "_blank", rel: "noopener", "data-act": "edit" }, "Edit in Shopify", el("span", { class: "ext", "aria-hidden": "true" }, "↗"))));
   }
@@ -85,6 +98,10 @@ export async function renderProducts() {
     const s = STORES[state.store];
     wrap.className = `panel brand-band brand-${state.store}`;
     title.textContent = `Products on ${host(s.site)}`;
+    // "In the shirt builder" is an Elevated Designs filter only.
+    const builderOpt = filter.querySelector('option[value="builder"]');
+    builderOpt.hidden = builderOpt.disabled = state.store !== "ed";
+    if (state.store !== "ed" && state.filter === "builder") { state.filter = filter.value = "all"; }
     const focused = document.activeElement?.closest?.(".plist") ? document.activeElement : null;
     const focusedId = focused?.dataset.id, focusedField = focused?.dataset.field ?? "live";
     list.setAttribute("aria-busy", String(state.loading));
@@ -147,23 +164,22 @@ export async function renderProducts() {
     }
   }
 
-  async function toggleCustom(p) {
-    if (p.pendingCustom) return;
-    const before = !!p.customizable;
+  async function toggleTag(p, storeAt) {
+    const ts = TAG_SWITCH[storeAt];
+    if (p.pendingTag || state.store !== storeAt) return;
+    const before = !!p[ts.field];
     const next = !before;
-    const storeAt = state.store;
-    if (storeAt !== "c3d") return; // never offered for Elevated Designs; the server refuses it too
-    p.customizable = next; p.pendingCustom = true;
+    p[ts.field] = next; p.pendingTag = ts.field;
     draw();
     try {
-      const out = await api(API, { method: "POST", key: true, body: { store: "c3d", id: p.id, customizable: next } });
-      p.customizable = out.product?.customizable ?? out.customizable ?? next;
-      toast(p.customizable ? `${p.title} now asks for a name to print` : `${p.title} no longer asks for a name`);
+      const out = await api(API, { method: "POST", key: true, body: { store: storeAt, id: p.id, [ts.field]: next } });
+      p[ts.field] = out.product?.[ts.field] ?? out[ts.field] ?? next;
+      toast(p[ts.field] ? ts.on(p.title) : ts.off(p.title));
     } catch (e) {
-      p.customizable = before;
+      p[ts.field] = before;
       toast(e.code === "cancelled" ? e.message : `Couldn't change ${p.title}: ${e.message}`);
     } finally {
-      p.pendingCustom = false;
+      p.pendingTag = null;
       if (state.store === storeAt) draw();
     }
   }

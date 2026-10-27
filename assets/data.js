@@ -72,9 +72,12 @@ export const SERVICES = [
     does: "The single home for Elevated Designs' own Shopify theme.",
     note: "Not connected to the store yet, so theme changes are uploaded by hand. Connect it in Shopify (Online Store, Themes, Add theme, Connect from GitHub) to deploy on every commit.",
     links: [{ label: "Open repository", url: "https://github.com/Adub843/elevated-designs-site" }] },
-  { id: "studio", name: "Design Studio", brand: "ed", kind: "In this console", status: "live",
-    does: "Image library and shirt designer. Images are stored online, so your PC doesn't need to be on. Any library design can be listed on the Elevated Designs store in one click from Products (Elevated Designs).",
-    links: [{ label: "Open Design Studio", url: "#studio" }] },
+  { id: "studio", name: "Design Studio", brand: "ed", kind: "Web app · Cloudflare Worker", status: "attn",
+    does: "The art library and shirt designer for every brand, each with its own library, on its own address. It shares this console's image library, so a design saved there shows up here and in the shirt apps. It moves to epix3d.com once that domain is on Cloudflare.",
+    note: "Set its key once: in Desktop\\design-studio run npx.cmd wrangler secret put CONSOLE_KEY and type the console's key.",
+    source: "GitHub: Adub843/design-studio (deployed by hand from the PC)",
+    links: [{ label: "Open Design Studio", url: "https://design-studio.business-console.workers.dev" }, { label: "Shirt designer in this console", url: "#studio" },
+      { label: "Open repository", url: "https://github.com/Adub843/design-studio" }] },
   { id: "publish", name: "Products and Insights", brand: "other", kind: "In this console · both stores", status: "live",
     does: "Switch products on or off each store's Shopify site, choose which Charleston 3D products are customizable (the theme then asks for a name to print), list a library design on Elevated Designs in one click, and see sales, visits, a 30-day forecast and next steps for each store.",
     links: [{ label: "Products", url: "#products" }, { label: "List a design (Elevated Designs)", url: "#products/ed/list" }, { label: "Insights", url: "#insights" }] },
@@ -91,9 +94,6 @@ export const SERVICES = [
   { id: "ghtheme", name: "GitHub · charleston3d-site", brand: "c3d", kind: "Code storage · GitHub", status: "live",
     does: "The single home for Charleston 3D's Shopify theme. Charleston 3D only; Elevated Designs gets its own repo.",
     links: [{ label: "Open theme code", url: "https://github.com/Adub843/charleston3d-site/tree/claude/shopify-theme" }] },
-  { id: "ts", name: "Tailscale", brand: "other", kind: "Private network · Tailscale", status: "blind",
-    does: "Probably links your computers together. Not connected to the console.",
-    links: [{ label: "Open Tailscale machines", url: "https://login.tailscale.com/admin/machines" }] },
 ];
 
 export const ROUTES = [

@@ -948,6 +948,48 @@ test("customizable: bad input, both fields, key, 404 and userErrors", async () =
   assert.match(rej.body.error, /customizable tag: Tags is too long/);
 });
 
+// ---------- shirt builder (Elevated Designs only) ----------
+test("list: ED products say whether they're in the shirt builder; C3D products don't carry it", async () => {
+  const node = (id, tags) => ({ id: `gid://shopify/Product/${id}`, handle: `p${id}`, title: `P${id}`, status: "ACTIVE", productType: "", tags, updatedAt: "2026-10-20T10:00:00Z", totalInventory: 0, tracksInventory: false, featuredMedia: null, priceRangeV2: null, publishedOnPublication: true });
+  const sh = fakeShopify({ override: { ConsoleProducts: (v, data) => data({ products: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [node(1, ["Builder-Blank", "tee"]), node(2, ["builder-blanks"])] } }) } });
+  const ed = await handleProducts(keyed({ store: "ed" }), { env: envOf(), fetch: sh.fetch });
+  assert.deepEqual(ed.body.products.map((p) => p.builder), [true, false]);
+  const c3d = await handleProducts(keyed({ store: "c3d" }), { env: envOf(), fetch: sh.fetch });
+  assert.ok(c3d.body.products.every((p) => !("builder" in p)));
+});
+
+test("shirt builder off: removes every spelling of builder-blank and nothing else", async () => {
+  const sh = fakeShopify({ product: { tags: ["builder-blank", "Builder-Blank", "tee"] } });
+  const res = await handleProducts(post({ store: "ed", id: PID, builder: false }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.builder, false);
+  assert.equal(res.body.product.builder, false);
+  assert.deepEqual(sh.calls.find((c) => c.op === "ConsoleTagsRemove").variables, { id: PID, tags: ["builder-blank", "Builder-Blank"] });
+  assert.ok(!sh.calls.some((c) => c.op === "ConsoleTagsAdd" || c.op === "ConsolePublish" || c.op === "ConsoleUnpublish" || c.op === "ConsoleActivate"), "only the tag changes; the product stays on the site");
+});
+
+test("shirt builder on: adds builder-blank once", async () => {
+  const sh = fakeShopify({ product: { tags: ["tee"] } });
+  const res = await handleProducts(post({ store: "ed", id: PID, builder: true }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.builder, true);
+  assert.deepEqual(sh.calls.find((c) => c.op === "ConsoleTagsAdd").variables, { id: PID, tags: ["builder-blank"] });
+  const again = fakeShopify({ product: { tags: ["builder-blank"] } });
+  await handleProducts(post({ store: "ed", id: PID, builder: true }), { env: envOf(), fetch: again.fetch });
+  assert.ok(!again.calls.some((c) => /Tags(Add|Remove)/.test(c.op ?? "")));
+});
+
+test("shirt builder is refused for Charleston 3D before any Shopify call; one switch per request", async () => {
+  const sh = fakeShopify();
+  const res = await handleProducts(post({ store: "c3d", id: PID, builder: false }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 400);
+  assert.equal(res.body.code, "wrong_store");
+  for (const body of [{ store: "ed", id: PID, builder: "no" }, { store: "ed", id: PID, builder: true, live: true }, { store: "ed", id: PID, builder: true, customizable: true }])
+    assert.equal((await handleProducts(post(body), { env: envOf(), fetch: sh.fetch })).status, 400, JSON.stringify(body));
+  assert.equal((await handleProducts(post({ store: "ed", id: PID, builder: true }, { "content-type": "application/json" }), { env: envOf(), fetch: sh.fetch })).status, 401);
+  assert.equal(sh.calls.length, 0);
+});
+
 // ---------- make-active worked, publish didn't ----------
 test("publish fails after making it active: 422 with Shopify's current state, not a rollback", async () => {
   let reads = 0;
@@ -3083,4 +3125,77 @@ test("tracker: competitors, compare, suggestions, who links here and snapshot ac
   const nokey = await MK.handleMarketing(post({ store: "c3d", action: "compare" }, { "content-type": "application/json" }), ctx);
   assert.equal(nokey.status, 401, "actions need the console key");
   delete mkFetch.bing;
+});
+
+// ---------- team board ----------
+const { handleTeam, ownersFor, MAX_TASKS } = await import("../lib/team.mjs");
+const teamReq = (method, body, headers = { "content-type": "application/json", "x-console-key": "open-sesame-test-key-0001" }) =>
+  ({ method, query: new URLSearchParams(), header: (k) => headers[k.toLowerCase()] ?? null, text: async () => JSON.stringify(body) });
+
+test("team: the board needs the key and the KV; each store has its own board and roster", async () => {
+  const kv = fakeKV();
+  assert.equal((await handleTeam(get({ store: "ed" }), { env: envOf(), kv })).status, 401);
+  assert.equal((await handleTeam(keyed({ store: "ed" }), { env: envOf(), kv: null })).status, 503);
+  assert.equal((await handleTeam(keyed({ store: "both" }), { env: envOf(), kv })).status, 400);
+  const add = await handleTeam(teamReq("POST", { store: "ed", text: "  Check the   shirt app  ", owner: "ed" }), { env: envOf(), kv });
+  assert.equal(add.status, 201, JSON.stringify(add.body));
+  assert.equal(add.body.added[0].text, "Check the shirt app");
+  const ed = await handleTeam(keyed({ store: "ed" }), { env: envOf(), kv });
+  assert.deepEqual(ed.body.tasks.map((t) => [t.text, t.owner, t.done]), [["Check the shirt app", "ed", false]]);
+  assert.ok(ed.body.roster.some((m) => m.id === "ed") && !ed.body.roster.some((m) => m.id === "c3d"), "ED roster has no Charleston 3D agent");
+  assert.ok(ed.body.consoleJobs.length >= 4);
+  const c3d = await handleTeam(keyed({ store: "c3d" }), { env: envOf(), kv });
+  assert.deepEqual(c3d.body.tasks, [], "the brands never share a board");
+  assert.ok(!c3d.body.roster.some((m) => m.id === "ed"));
+  assert.deepEqual([...kv.m.keys()].sort(), ["team:ed"]);
+});
+
+test("team: an agent of the other store can't be given a task; bad text is refused", async () => {
+  const kv = fakeKV();
+  assert.deepEqual(ownersFor("c3d"), ["aaron", "ops", "c3d", "marketing", "builder", "admin"]);
+  for (const body of [{ store: "c3d", text: "x", owner: "ed" }, { store: "c3d", text: "   " }, { store: "c3d", text: "x".repeat(201) }, { store: "c3d", text: 5 }, { store: "c3d", tasks: [] }])
+    assert.equal((await handleTeam(teamReq("POST", body), { env: envOf(), kv })).status, 400, JSON.stringify(body));
+  assert.equal(kv.m.size, 0);
+});
+
+test("team: done, reassign, rename and remove; unknown id is 404", async () => {
+  const kv = fakeKV();
+  const { body: { added: [t] } } = await handleTeam(teamReq("POST", { store: "c3d", text: "Print the sign" }), { env: envOf(), kv });
+  assert.equal(t.owner, "aaron");
+  let r = await handleTeam(teamReq("PATCH", { store: "c3d", id: t.id, done: true }), { env: envOf(), kv });
+  assert.equal(r.body.task.done, true); assert.ok(r.body.task.doneAt);
+  r = await handleTeam(teamReq("PATCH", { store: "c3d", id: t.id, done: false, owner: "c3d", text: "Print the big sign" }), { env: envOf(), kv });
+  assert.deepEqual([r.body.task.done, r.body.task.owner, r.body.task.text, "doneAt" in r.body.task], [false, "c3d", "Print the big sign", false]);
+  assert.equal((await handleTeam(teamReq("PATCH", { store: "c3d", id: t.id }), { env: envOf(), kv })).status, 400);
+  assert.equal((await handleTeam(teamReq("PATCH", { store: "c3d", id: t.id, done: "yes" }), { env: envOf(), kv })).status, 400);
+  assert.equal((await handleTeam(teamReq("PATCH", { store: "ed", id: t.id, done: true }), { env: envOf(), kv })).status, 404, "a task belongs to one store");
+  assert.equal((await handleTeam(teamReq("DELETE", { store: "c3d", id: t.id }), { env: envOf(), kv })).status, 200);
+  assert.equal((await handleTeam(teamReq("DELETE", { store: "c3d", id: t.id }), { env: envOf(), kv })).status, 404);
+  assert.equal((await handleTeam(teamReq("PATCH", { store: "c3d", id: "x", done: true }, { "content-type": "application/json" }), { env: envOf(), kv })).status, 401);
+});
+
+test("team: importing the old device list, and a full board drops old done tasks but never open ones", async () => {
+  const kv = fakeKV();
+  const imp = await handleTeam(teamReq("POST", { store: "ed", tasks: [{ text: "Order blanks" }, { text: "Old thing", done: true }] }), { env: envOf(), kv });
+  assert.equal(imp.status, 201);
+  assert.deepEqual(imp.body.tasks.map((t) => [t.text, t.done]), [["Order blanks", false], ["Old thing", true]]);
+  const many = Array.from({ length: MAX_TASKS - 2 }, (_, i) => ({ id: `d${i}`, text: `done ${i}`, owner: "aaron", done: true, doneAt: `2026-01-${String((i % 28) + 1).padStart(2, "0")}T00:00:00Z` }));
+  await kv.put("team:ed", JSON.stringify({ tasks: [...imp.body.tasks, ...many] }));
+  const r = await handleTeam(teamReq("POST", { store: "ed", text: "New one" }), { env: envOf(), kv });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.tasks.length, MAX_TASKS);
+  assert.ok(r.body.tasks.some((t) => t.text === "Order blanks") && r.body.tasks.some((t) => t.text === "New one"));
+  const open = Array.from({ length: MAX_TASKS }, (_, i) => ({ id: `o${i}`, text: `open ${i}`, owner: "aaron", done: false }));
+  await kv.put("team:ed", JSON.stringify({ tasks: open }));
+  assert.equal((await handleTeam(teamReq("POST", { store: "ed", text: "One more" }), { env: envOf(), kv })).status, 409);
+});
+
+test("worker: /api/team uses the MARKETING KV", async () => {
+  const W = await import("../worker/app.mjs");
+  const kv = fakeKV();
+  const env = { CONSOLE_KEY: "open-sesame-test-key-0001", MARKETING: kv };
+  const r = await W.handleRequest(new Request("https://console.example/api/team", { method: "POST", headers: { "content-type": "application/json", "x-console-key": env.CONSOLE_KEY }, body: JSON.stringify({ store: "c3d", text: "Hi" }) }), env);
+  assert.equal(r.status, 201);
+  assert.ok(kv.m.has("team:c3d"));
+  assert.equal((await W.handleRequest(new Request("https://console.example/api/team?store=c3d"), env)).status, 401);
 });
