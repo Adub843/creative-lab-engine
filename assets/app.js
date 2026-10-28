@@ -391,6 +391,10 @@ function shareCard(qr, { label, url, note }) {
         el("button", { class: "btn", type: "button", onclick: copy }, "Copy link"),
         navigator.share ? el("button", { class: "btn", type: "button", onclick: () => navigator.share({ title: label, url }).catch(() => {}) }, "Send") : null)));
 }
+async function platesPage() {
+  const { renderPlates } = await import("./plate.js");
+  return [header("Make", "Plate maker", "A license plate or plate frame with raised text, library art and flowers. Preview it in 3D, then download a multi-color 3MF or an STL for the printer."), await renderPlates()];
+}
 async function sharePage() {
   const k = currentStore(), b = BRANDS[k];
   const head = header("Stats & marketing", "Share & QR", `Every ${b.name} link with a QR code. Print them on market signs, packing slips and cards.`);
@@ -447,7 +451,7 @@ async function render() {
   const frameTool = TOOLS.find((t) => t.frame && t.id === route);
   // A tool of the other store: show this store's Home rather than mixing the brands.
   if (frameTool && frameTool.store !== k) { location.replace(`#home/${k}`); return; }
-  if (((route === "studio" || route === "designs") && k !== "ed") || ((route === "files" || route === "maker3d") && k !== "c3d")) { location.replace(`#home/${k}`); return; }
+  if (((route === "studio" || route === "designs") && k !== "ed") || ((route === "files" || route === "maker3d" || route === "plates") && k !== "c3d")) { location.replace(`#home/${k}`); return; }
   const pages = {
     home,
     map: () => mapPage(pendingFilter ?? k),
@@ -461,6 +465,7 @@ async function render() {
     files: () => filesPage(header),
     designs: async () => (await import("./design-library.js")).designLibraryPage(header),
     maker3d: () => meshyPage(header),
+    plates: platesPage,
   };
   const make = frameTool ? () => framePage(frameTool) : pages[route] ?? home;
   const nodes = [await make()].flat().filter(Boolean);
@@ -468,7 +473,7 @@ async function render() {
   pageStoreHandler = takeStoreHandler();
   pendingFilter = null;
   view.replaceChildren(...nodes);
-  view.classList.toggle("wide", route === "studio" || route === "maker3d" || !!frameTool);
+  view.classList.toggle("wide", route === "studio" || route === "maker3d" || route === "plates" || !!frameTool);
   view.classList.toggle("framed", !!frameTool);
   const t = activeTool();
   document.title = `${t ? t.name : "Home"} · ${BRANDS[k].name} · Business Console`;

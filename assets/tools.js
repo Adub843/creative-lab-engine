@@ -32,6 +32,8 @@ export const TOOLS = [
     frame: "tools/hype-chain-maker/" },
   { id: "maker3d", group: "make", store: "c3d", name: "3D maker", ico: "◈", page: "maker3d",
     sub: "Photos or a few words in, a printable 3D model out (Meshy)" },
+  { id: "plates", group: "make", store: "c3d", name: "Plate maker", ico: "▢", page: "plates",
+    sub: "License plates and frames with raised text, library art and flowers; 3MF or STL" },
   { id: "maker", group: "make", store: "c3d", name: "Maker", ico: "◫",
     sub: "Picture in, Bambu file out: light boxes, keychains, signs and lithophanes",
     frame: "tools/maker/" },

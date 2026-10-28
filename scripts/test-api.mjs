@@ -854,6 +854,36 @@ test("images: the shirt app sees only public images, with CORS for its own origi
   assert.equal((await handleImages(imgReq(`/api/images/${priv.key}`, { method: "POST", headers: { ...app, ...KEYH } }), ctx)).headers.get("access-control-allow-origin"), null, "no CORS on writes");
 });
 
+test("images: 3D models (STL, 3MF) are private, checked, and listed only with ?models=1", async () => {
+  const blobs = fakeBlobs(), ctx = { blobs, env: envOf() };
+  const stl = new Uint8Array(84 + 50); new DataView(stl.buffer).setUint32(80, 1, true);
+  const post = (type, body, h = {}) => handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": type, "x-filename": "rose.stl", "x-public": "1", ...KEYH, ...h }, body }), ctx);
+  const up = await post("model/stl", stl);
+  assert.equal(up.status, 201);
+  const { item } = await up.json();
+  assert.equal(item.public, false, "x-public is ignored for models");
+  const ascii = await post("model/stl", new TextEncoder().encode("solid r\n facet normal 0 0 1\n outer loop\n vertex 0 0 0\n vertex 1 0 0\n vertex 0 1 0\n endloop\n endfacet\nendsolid r\n"));
+  assert.equal(ascii.status, 201, "ASCII STL is taken");
+  assert.equal((await post("model/3mf", new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0, 0]))).status, 201);
+  assert.equal((await post("model/stl", PNG)).status, 415, "a PNG called STL is refused");
+  assert.equal((await post("model/3mf", stl)).status, 415, "an STL called 3MF is refused");
+  assert.equal((await post("model/obj", stl)).status, 415, "other model types are refused");
+  await post("image/png", PNG);
+  const imgs = (await (await handleImages(imgReq("/api/images", { headers: KEYH }), ctx)).json()).items;
+  assert.deepEqual(imgs.map((i) => i.type), ["image/png"], "the image list leaves models out");
+  const models = (await (await handleImages(imgReq("/api/images?models=1", { headers: KEYH }), ctx)).json()).items;
+  assert.equal(models.length, 3); assert.ok(models.every((m) => m.type.startsWith("model/") && m.url));
+  assert.equal((await handleImages(imgReq("/api/images?models=1"), ctx)).status, 401, "the model list needs the key");
+  const pub = (await (await handleImages(imgReq("/api/images?public=1"), ctx)).json()).items;
+  assert.ok(pub.every((i) => !i.type.startsWith("model/")), "the shirt app never sees models");
+  const patch = await handleImages(imgReq(`/api/images/${item.key}`, { method: "PATCH", headers: { "content-type": "application/json", ...KEYH }, body: JSON.stringify({ public: true }) }), ctx);
+  assert.equal((await patch.json()).item.public, false, "a model can't be made public");
+  assert.equal((await handleImages(imgReq(`/api/images/${item.key}`), ctx)).status, 404, "hidden from strangers");
+  const file = await handleImages(imgReq(item.url), ctx);
+  assert.equal(file.status, 200); assert.equal(file.headers.get("content-type"), "model/stl");
+  assert.equal(file.headers.get("content-disposition"), "attachment");
+});
+
 test("images: the longest name, tags and shirt-app fields still fit Workers KV's 1024-byte metadata", async () => {
   const ctx = { blobs: fakeBlobs(), env: envOf() };
   const long = "é".repeat(200);
