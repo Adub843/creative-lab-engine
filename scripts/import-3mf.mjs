@@ -25,6 +25,10 @@ if (logFile) {
     console[k] = (...a) => { orig(...a); try { fs.appendFileSync(logFile, `${a.join(" ")}\n`); } catch { /* the log is optional */ } };
   }
 }
+// Anything unexpected is written down (the error only, never the key) before the run ends.
+for (const ev of ["uncaughtException", "unhandledRejection"])
+  process.on(ev, (e) => { console.error(`Stopped by an unexpected error: ${e?.stack ?? e}`); process.exit(1); });
+process.on("exit", (code) => { if (code && logFile) try { fs.appendFileSync(logFile, `Exited with code ${code}\n`); } catch { /* optional */ } });
 const maxGb = flag("r2") ? Infinity : Number((flag("max-gb") ?? "--max-gb=0.5").split("=")[1]);
 const [folder, base = "https://business-console.business-console.workers.dev"] = args.filter((a) => !a.startsWith("--"));
 if (!folder || Number.isNaN(maxGb) || maxGb <= 0) {
@@ -32,6 +36,8 @@ if (!folder || Number.isNaN(maxGb) || maxGb <= 0) {
   process.exit(2);
 }
 const gb = (n) => `${(n / 1e9).toFixed(2)} GB`;
+// Answers worth asking again: Cloudflare busy (429) or failing (any 5xx).
+const retryable = (status) => status === 429 || status >= 500;
 
 function* walk(dir) {
   let entries;
@@ -113,7 +119,20 @@ for (let tries = 1; !existing; tries++) {
   if (!key) { console.error("No console key entered, so nothing was sent."); process.exit(1); }
   headers = { "x-console-key": key };
   try {
-    const res = await fetch(`${base}/api/files`, { headers });
+    // Listing a big library can briefly fail (a 5xx, a 429 or a dropped connection); it is asked again
+    // after 10, 30, 90 and 270 seconds, like the uploads.
+    let res;
+    for (let a = 0; ; a++) {
+      let why;
+      try {
+        res = await fetch(`${base}/api/files`, { headers });
+        if (!retryable(res.status)) break;
+        why = `answered ${res.status}`;
+      } catch (e) { res = null; why = `connection dropped (${e.cause?.code ?? e.message})`; }
+      if (a >= 4) { if (!res) throw new Error(why); break; }
+      console.log(`  the library ${why}; asking again in ${10 * 3 ** a} s`);
+      await new Promise((r) => setTimeout(r, 10000 * 3 ** a));
+    }
     if (res.status === 401) {
       console.error(`That console key was refused (${key.length} characters entered). Nothing was sent.`);
       if (tries >= 3 || process.env.CONSOLE_KEY) process.exit(1);
@@ -131,8 +150,10 @@ for (const f of todo) {
   if (existing.has(`${f.name.toLowerCase()}|${f.size}`)) { skipped++; continue; }
   if (bytes + f.size > maxGb * 1e9) { stopped = `this run's ${maxGb} GB cap`; break; }
   let res, out = {};
-  // A dropped connection is tried again after 5, 15 and 45 seconds before the run stops.
+  // A dropped connection, or Cloudflare saying it's busy or failing (429 or any 5xx), is tried again after
+  // 10, 30, 90 and 270 seconds before the run stops.
   for (let attempt = 0; ; attempt++) {
+    let why = "";
     try {
       res = await fetch(`${base}/api/files`, {
         method: "POST",
@@ -140,15 +161,16 @@ for (const f of todo) {
         body: fs.readFileSync(f.p),
       });
       out = await res.json().catch(() => ({}));
-      break;
-    } catch (e) {
-      if (attempt >= 3) { res = null; console.log(`  connection dropped on ${f.name} (${e.cause?.code ?? e.message})`); break; }
-      await new Promise((r) => setTimeout(r, 5000 * 3 ** attempt));
-    }
+      if (!retryable(res.status)) break;
+      why = `${res.status} ${out.error ?? ""}`.trim();
+    } catch (e) { res = null; why = `connection dropped (${e.cause?.code ?? e.message})`; }
+    if (attempt >= 4) { console.log(`  gave up on ${f.name}: ${why}`); break; }
+    console.log(`  ${f.name}: ${why}; trying again in ${10 * 3 ** attempt} s`);
+    await new Promise((r) => setTimeout(r, 10000 * 3 ** attempt));
   }
   if (!res) { stopped = "the connection kept dropping"; break; }
   if (res.status === 401) { stopped = "the console key was refused"; break; }
-  if (res.status === 503 || res.status === 429 || out.code === "storage_failed") { stopped = "Cloudflare refused more writes (daily write limit or storage full)"; break; }
+  if (retryable(res.status)) { stopped = `Cloudflare kept refusing writes (${res.status}: ${out.error ?? "no reason given"})`; break; }
   if (!res.ok) { failed++; console.log(`  skipped ${f.name}: ${out.error ?? res.status}`); continue; }
   sent++; bytes += f.size;
   if (sent % 25 === 0) console.log(`  ${sent} sent (${gb(bytes)})…`);
