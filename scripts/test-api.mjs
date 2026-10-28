@@ -775,7 +775,12 @@ test("files: downloads need the key or a signed link; models download, previews 
   const thumb = await handleFiles(imgReq(withThumb.thumbUrl), ctx);
   assert.equal(thumb.status, 200);
   assert.equal(thumb.headers.get("content-type"), "image/png");
-  assert.equal((await handleFiles(imgReq(withThumb.thumbUrl.replace("/thumb", "")), ctx)).status, 404, "the preview's link doesn't open the file");
+  // One signature per hour covers the whole library, so listing it costs one HMAC (the free plan's 10 ms limit).
+  assert.equal(new URL(withThumb.thumbUrl, "https://x").search, new URL(item.url, "https://x").search, "one link signature for every file");
+  const old = item.url.replace(/exp=\d+/, `exp=${Date.now() - 1000}`);
+  assert.equal((await handleFiles(imgReq(old), ctx)).status, 404, "an expired link is refused");
+  const otherKey = { ...ctx, env: envOf({ CONSOLE_KEY: "a-different-console-key-1234" }) };
+  assert.equal((await handleFiles(imgReq(item.url), otherKey)).status, 404, "a link signed with another key is refused");
   const renamed = await handleFiles(imgReq(`/api/files/${item.key}`, { method: "PATCH", headers: { ...KEYH, "content-type": "application/json" }, body: JSON.stringify({ name: "Pineapple v2.obj", tags: "ornament, fruit" }) }), ctx);
   const r = (await renamed.json()).item;
   assert.equal(r.name, "Pineapple v2.stl", "the extension always stays the file's own");
