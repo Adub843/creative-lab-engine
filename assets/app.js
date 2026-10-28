@@ -30,9 +30,6 @@ const pill = (cls, txt) => el("span", { class: `pill ${cls}` }, txt);
 const statusPill = (s) => pill(`s-${s.status}`, STATUS[s.status]);
 const brandPill = (s) => pill(`b-${s.brand}`, BRANDS[s.brand].name);
 const ext = (url) => !url.startsWith("#");
-const linkBtn = (l, cls = "btn") =>
-  el("a", { class: cls, href: l.url, target: ext(l.url) ? "_blank" : null, rel: ext(l.url) ? "noopener" : null },
-    l.label, ext(l.url) ? el("span", { class: "ext", "aria-hidden": "true" }, "↗") : null);
 const byId = (id) => SERVICES.find((s) => s.id === id);
 const count = (fn) => SERVICES.filter(fn).length;
 

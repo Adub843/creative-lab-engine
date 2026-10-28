@@ -58,4 +58,3 @@ export const TOOLS = [
 ];
 
 export const toolsFor = (store) => TOOLS.filter((t) => !t.store || t.store === store);
-export const toolById = (id) => TOOLS.find((t) => t.id === id);
