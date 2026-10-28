@@ -26,6 +26,13 @@ run_worker_first = true
 binding = "IMAGES"
 
 
+# Charleston 3D's print files (lib/r2-store.mjs). R2 has room for the whole print library; KV holds
+# about 1 GB and is shared with the Elevated Designs images. Create the bucket once before the first
+# deploy with it: npx wrangler r2 bucket create c3d-files
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "c3d-files"
+
 # Where the shirt price sync got to (lib/pricing.mjs). Created on the first deploy like IMAGES.
 [[kv_namespaces]]
 binding = "PRICING"
