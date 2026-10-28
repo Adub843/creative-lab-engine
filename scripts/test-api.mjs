@@ -1419,7 +1419,8 @@ test("build: dist/ holds only index.html, assets/ and tools/, and wrangler.toml 
   assert.match(toml, /^run_worker_first = true$/m, "API routes and security headers go through the Worker");
   assert.match(toml, /compatibility_flags = \["nodejs_compat"\]/);
   assert.match(toml, /\[\[kv_namespaces\]\]\s+binding = "IMAGES"/);
-  assert.ok(!/r2_buckets|\[vars\]|shpat_|CONSOLE_KEY\s*=|_TOKEN\s*=|_SECRET\s*=/.test(toml), "no R2, no vars, no secrets in wrangler.toml");
+  assert.ok(!/\[vars\]|shpat_|CONSOLE_KEY\s*=|_TOKEN\s*=|_SECRET\s*=/.test(toml), "no vars, no secrets in wrangler.toml");
+  assert.deepEqual([...toml.matchAll(/bucket_name\s*=\s*"([^"]+)"/g)].map((m) => m[1]), ["c3d-files"], "one R2 bucket: Charleston 3D's print files");
   // Nothing in this project runs on Netlify: no config, functions, packages, code or docs for it.
   for (const gone of ["netlify.toml", "netlify", "lib/netlify.mjs"]) assert.ok(!fs.existsSync(path.join(root, gone)), `${gone} is gone`);
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
@@ -3343,4 +3344,67 @@ test("worker: /api/team uses the MARKETING KV", async () => {
   assert.equal(r.status, 201);
   assert.ok(kv.m.has("team:c3d"));
   assert.equal((await W.handleRequest(new Request("https://console.example/api/team?store=c3d"), env)).status, 401);
+});
+
+// ---------- 3D file library in R2 (lib/r2-store.mjs) ----------
+const { r2BlobStore, combinedStore } = await import("../lib/r2-store.mjs");
+// A small stand-in for an R2 bucket binding: put/get/delete/list with customMetadata and paging.
+function fakeR2({ pageSize = 1000 } = {}) {
+  const m = new Map();
+  return { m,
+    async put(key, data, { customMetadata } = {}) {
+      for (const v of Object.values(customMetadata ?? {})) assert.equal(typeof v, "string", "R2 custom metadata values are strings");
+      const bytes = data instanceof ArrayBuffer ? data.slice(0) : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+      m.set(key, { bytes, customMetadata: { ...customMetadata } });
+    },
+    async get(key) { const o = m.get(key); return o ? { key, customMetadata: o.customMetadata, arrayBuffer: async () => o.bytes.slice(0) } : null; },
+    async delete(key) { m.delete(key); },
+    async list({ prefix = "", cursor, include = [] } = {}) {
+      const names = [...m.keys()].filter((k) => k.startsWith(prefix)).sort();
+      const start = cursor ? Number(cursor) : 0;
+      const objects = names.slice(start, start + pageSize).map((key) => ({ key, ...(include.includes("customMetadata") ? { customMetadata: m.get(key).customMetadata } : {}) }));
+      const truncated = start + pageSize < names.length;
+      return { objects, truncated, ...(truncated ? { cursor: String(start + pageSize) } : {}) };
+    },
+  };
+}
+
+test("r2 store: files keep their details, list across pages, and older KV files still work", async () => {
+  const r2 = fakeR2({ pageSize: 2 }), kv = fakeKV();
+  const store = r2BlobStore(r2, "c3d-file/");
+  for (const n of [1, 2, 3]) await store.set(`k${n}-0123abcd`, new Uint8Array([0x50, 0x4b, 3, 4, n]), { metadata: { name: `part ${n}.3mf`, size: 5, added: n } });
+  const { blobs } = await store.list();
+  assert.deepEqual(blobs.map((b) => [b.key, b.metadata.name, b.metadata.added]), [["k1-0123abcd", "part 1.3mf", 1], ["k2-0123abcd", "part 2.3mf", 2], ["k3-0123abcd", "part 3.3mf", 3]]);
+  assert.deepEqual([...new Uint8Array((await store.getWithMetadata("k2-0123abcd")).data)], [0x50, 0x4b, 3, 4, 2]);
+  assert.equal(await store.getWithMetadata("nope-0123abcd"), null);
+  // a file saved to KV before the move
+  const old = kvBlobStore(kv, "c3d-file:");
+  await old.set("old-0123abcd", new Uint8Array([0x50, 0x4b, 3, 4]), { metadata: { name: "old.3mf" } });
+  const both = combinedStore(store, old);
+  assert.equal((await both.list()).blobs.length, 4);
+  assert.equal((await both.getWithMetadata("old-0123abcd")).metadata.name, "old.3mf");
+  await both.set("new-0123abcd", new Uint8Array([1]), { metadata: { name: "new.3mf" } });
+  assert.ok(r2.m.has("c3d-file/new-0123abcd") && !kv.m.has("c3d-file:new-0123abcd"), "new files go to R2");
+  await both.delete("old-0123abcd");
+  assert.equal(kv.m.has("c3d-file:old-0123abcd"), false);
+});
+
+test("worker: with the FILES bucket bound, uploads go to R2 and the 3D file library lists both", async () => {
+  const kv = fakeKV(), r2 = fakeR2();
+  await kvBlobStore(kv, "c3d-file:").set("old-0123abcd", new Uint8Array([0x50, 0x4b, 3, 4]), { metadata: { name: "old.3mf", type: "model/3mf", size: 4, added: 1, store: "c3d" } });
+  const env = workerEnv({ IMAGES: kv, FILES: r2 });
+  const up = await W.handleRequest(wreq("/api/files", { method: "POST", headers: { ...KEYH, "x-filename": "vase.3mf" }, body: new Uint8Array([0x50, 0x4b, 3, 4, 9]) }), env);
+  assert.equal(up.status, 201);
+  const { item } = await up.json();
+  assert.ok(r2.m.has(`c3d-file/${item.key}`), "the file is in R2");
+  assert.ok(![...kv.m.keys()].some((k) => k.includes(item.key)), "not in KV");
+  const list = await (await W.handleRequest(wreq("/api/files", { headers: KEYH }), env)).json();
+  assert.deepEqual(list.items.map((i) => i.name).sort(), ["old.3mf", "vase.3mf"]);
+  const dl = await W.handleRequest(wreq(`/api/files/${item.key}`, { headers: KEYH }), env);
+  assert.equal(dl.status, 200);
+  assert.equal((await dl.arrayBuffer()).byteLength, 5);
+  // without the bucket, the library stays in KV as before
+  const plain = await W.handleRequest(wreq("/api/files", { method: "POST", headers: { ...KEYH, "x-filename": "cup.3mf" }, body: new Uint8Array([0x50, 0x4b, 3, 4]) }), workerEnv({ IMAGES: kv }));
+  assert.equal(plain.status, 201);
+  assert.ok(kv.m.has(`c3d-file:${(await plain.json()).item.key}`));
 });

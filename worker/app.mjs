@@ -18,6 +18,7 @@ import { handleInsights } from "../lib/insights.mjs";
 import { handleListings, libraryReader } from "../lib/listings.mjs";
 import { handleImages } from "../lib/images.mjs";
 import { handleFiles } from "../lib/files.mjs";
+import { r2BlobStore, combinedStore } from "../lib/r2-store.mjs";
 import { handleMeshy } from "../lib/meshy.mjs";
 import { kvBlobStore } from "../lib/kv-store.mjs";
 import { handlePricing, scheduledPricing } from "../lib/pricing.mjs";
@@ -105,6 +106,11 @@ const promotions = jsonRoute(handlePromotions);
 const team = jsonRoute(handleTeam);
 const marketingKv = (env) => (env?.MARKETING && typeof env.MARKETING.get === "function" ? env.MARKETING : null);
 
+// Previews are small, so they stay in KV either way.
+const fileStore = (env) => env.FILES
+  ? combinedStore(r2BlobStore(env.FILES, "c3d-file/"), kvBlobStore(env.IMAGES, "c3d-file:"))
+  : kvBlobStore(env.IMAGES, "c3d-file:");
+
 export async function handleRequest(req, env) {
   const { pathname } = new URL(req.url);
   try {
@@ -130,15 +136,16 @@ export async function handleRequest(req, env) {
     }
     if (pathname === "/api/images" || pathname.startsWith("/api/images/"))
       return await handleImages(req, { blobs: imageStore(env), env: envReader(env) });
-    // Charleston 3D's 3D files live in the same KV namespace under their own prefixes, never in the image list.
+    // Charleston 3D's 3D files: in the FILES R2 bucket once it's bound (older ones stay readable in KV),
+    // otherwise in the IMAGES KV namespace under their own prefix. Never in the image list.
     if (pathname === "/api/files" || pathname.startsWith("/api/files/")) {
       imageStore(env); // same binding check and message as the image library
-      return await handleFiles(req, { blobs: kvBlobStore(env.IMAGES, "c3d-file:"), thumbs: kvBlobStore(env.IMAGES, "c3d-thumb:"), env: envReader(env) });
+      return await handleFiles(req, { blobs: fileStore(env), thumbs: kvBlobStore(env.IMAGES, "c3d-thumb:"), env: envReader(env) });
     }
     // The 3D maker: jobs under their own prefix; a model it keeps goes into the 3D file library above.
     if (pathname === "/api/meshy" || pathname.startsWith("/api/meshy/")) {
       imageStore(env);
-      return await handleMeshy(req, { jobs: kvBlobStore(env.IMAGES, "c3d-meshy:"), files: kvBlobStore(env.IMAGES, "c3d-file:"), env: envReader(env), fetch: (input, init) => fetch(input, init) });
+      return await handleMeshy(req, { jobs: kvBlobStore(env.IMAGES, "c3d-meshy:"), files: fileStore(env), env: envReader(env), fetch: (input, init) => fetch(input, init) });
     }
     if (pathname === "/api" || pathname.startsWith("/api/")) return json({ error: "Not found" }, 404);
   } catch (e) {
