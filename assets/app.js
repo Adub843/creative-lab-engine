@@ -350,6 +350,12 @@ async function teamPage() {
   return [header(BRANDS[currentStore()].name, "Team", "Your tasks and the agents', saved online so every device sees the same board, plus when each scheduled job runs."), await renderTeam()];
 }
 
+async function ideasPage() {
+  const { renderIdeas } = await import("./ideas.js");
+  const k = currentStore();
+  return [header(BRANDS[k].name, "Money ideas", "Low-effort, low-cost ways to earn more. Testing ideas come first; one with no sale after 30 days gets dropped."), renderIdeas(k)];
+}
+
 async function studioPage() {
   const { renderStudio } = await import("./studio.js");
   return [header("Elevated Designs", "Shirt designer", "Pick art from the library, place it on a real shirt photo, and download the print file or a mockup. No key needed to design."), await renderStudio()];
@@ -458,6 +464,7 @@ async function render() {
     promote: promotePage,
     share: sharePage,
     team: teamPage,
+    ideas: ideasPage,
     files: () => filesPage(header),
     designs: async () => (await import("./design-library.js")).designLibraryPage(header),
     maker3d: () => meshyPage(header),

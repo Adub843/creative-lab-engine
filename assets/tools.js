@@ -18,6 +18,8 @@ export const TOOLS = [
   { id: "trends", group: "research", store: "c3d", name: "Print trends", ico: "↗",
     sub: "What's selling in 3D prints: trending models, Etsy best sellers, rising searches",
     frame: "tools/print-trends/" },
+  { id: "ideas", group: "research", name: "Money ideas", ico: "$", page: "ideas",
+    sub: "Low-effort ways to earn more, each with its time, cost and next step" },
 
   // Make
   { id: "studio", group: "make", store: "ed", name: "Shirt designer", ico: "✎", page: "studio",
