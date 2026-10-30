@@ -468,7 +468,7 @@ async function main() {
       await noOverflow(`${r} 1280`);
     };
     await page.click('.seg-btn[data-store="c3d"]');
-    for (const r of ["home", "products", "insights", "share", "map", "trends", "nameplate", "hypechain", "maker"]) await visit(r);
+    for (const r of ["home", "products", "insights", "share", "map", "trends", "makerstudio", "nameplate", "hypechain", "maker"]) await visit(r);
     assert.equal(await page.locator('a.nav[data-route="studio"]').count(), 0, "the shirt designer is Elevated Designs only");
     await page.click('.seg-btn[data-store="ed"]');
     for (const r of ["home", "studio", "library", "share"]) await visit(r);
@@ -839,7 +839,7 @@ async function main() {
   });
 
   await step("home pages: store links go to the Shopify sites, not Netlify", async () => {
-    const pages = ["home", "products", "insights", "marketing", "promote", "studio", "map", "share", "team", "trends", "nameplate", "hypechain", "maker", "files", "maker3d", "designs"];
+    const pages = ["home", "products", "insights", "marketing", "promote", "studio", "map", "share", "team", "trends", "makerstudio", "nameplate", "hypechain", "maker", "files", "maker3d", "designs"];
     const hashes = new Set();
     for (const [k, site, app] of [["c3d", "https://charleston3d.com", "https://app.charleston3d.com"], ["ed", "https://elevatedshirts.com", "https://design.elevatedshirts.com"]]) {
       await page.click('a.nav[data-route="home"]');

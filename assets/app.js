@@ -239,6 +239,9 @@ function home() {
   const tasks = el("div", {}, el("p", { class: "muted" }, "Loading tasks…"));
   import("./team.js").then(({ homeTasks }) => homeTasks(k, !!consoleKey.get())).then((n) => tasks.replaceChildren(...[n].flat()))
     .catch(() => tasks.replaceChildren(el("a", { class: "btn ghost", href: `#team/${k}` }, "Open the Team board")));
+  const brief = el("div", {}, el("p", { class: "muted" }, "Loading the agents' report…"));
+  import("./team.js").then(({ homeBrief }) => homeBrief(!!consoleKey.get())).then((n) => brief.replaceChildren(...[n].flat()))
+    .catch(() => brief.replaceChildren(el("a", { class: "btn ghost", href: "#team" }, "Open the handoff board")));
   const imgs = el("div", {}, el("p", { class: "muted" }, "Loading images…"));
   if (k === "ed") recentImages().then((n) => imgs.replaceChildren(n)).catch(() => imgs.replaceChildren(el("p", { class: "muted" }, "Couldn't load images.")));
   const primary = k === "ed" ? el("a", { class: "btn primary", href: "#products/ed/list" }, "List a design")
@@ -249,6 +252,7 @@ function home() {
     el("div", { class: "grid-2" },
       el("section", { class: "panel" }, el("div", { class: "panel-head" }, el("h2", {}, "Needs you"), el("a", { class: "btn ghost", href: `#map/${k}` }, "Service map")), alertsList(attn)),
       el("section", { class: "panel" }, el("div", { class: "panel-head" }, el("h2", {}, "Your tasks")), tasks)),
+    el("section", { class: "panel" }, el("div", { class: "panel-head" }, el("h2", {}, "Agents' report")), brief),
     k === "ed" ? el("section", { class: "panel" },
       el("div", { class: "panel-head" }, el("h2", {}, "Latest designs"), el("a", { class: "btn ghost", href: "#designs/ed" }, "Open library")), imgs) : null,
   ];

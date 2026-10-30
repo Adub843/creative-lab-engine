@@ -7,6 +7,8 @@ compatibility_date = "2026-10-01"
 # lib/shopify.mjs checks the console key with node:crypto (createHash, timingSafeEqual).
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
+# Keep variables added in the Cloudflare dashboard (IndexNow and Bing keys) when deploying.
+keep_vars = true
 
 # Copies index.html and assets/ into dist/ before `wrangler dev` and `wrangler deploy`.
 [build]

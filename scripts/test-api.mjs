@@ -805,6 +805,120 @@ test("images: content must match the declared type, and only image types are tak
   assert.equal(ctx.blobs.m.size, 0);
 });
 
+const { handleMember, clearMemberCache } = await import("../lib/members.mjs");
+// A fake store for store sign-in: the two discovery files, the Customer Account API and the Admin API.
+function fakeMemberShop({ tags = ["Pro", "designs:benz1"], goodToken = "shcat_GOOD", scopeDenied = false, noDiscovery = false } = {}) {
+  const calls = [];
+  const res = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  const fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), auth: init.headers?.authorization });
+    if (noDiscovery && String(url).includes("/.well-known/")) return new Response("Forbidden", { status: 403 });
+    if (url === "https://account.elevatedshirts.com/customer/api/2026-10/graphql")
+      return init.headers.authorization === goodToken ? res({ data: { customer: { id: "gid://shopify/Customer/78", firstName: "Lee" } } }) : res({ errors: [{ message: "Unauthorized" }] }, 401);
+    if (url === "https://elevatedshirts.com/.well-known/openid-configuration")
+      return res({ authorization_endpoint: "https://shopify.com/authentication/123/oauth/authorize", token_endpoint: "https://shopify.com/authentication/123/oauth/token", end_session_endpoint: "https://shopify.com/authentication/123/logout" });
+    if (url === "https://elevatedshirts.com/.well-known/customer-account-api") return res({ graphql_api: "https://shopify.com/123/account/customer/api/2025-10/graphql" });
+    if (url === "https://shopify.com/123/account/customer/api/2025-10/graphql")
+      return init.headers.authorization === goodToken ? res({ data: { customer: { id: "gid://shopify/Customer/77", firstName: "Dana" } } }) : res({ errors: [{ message: "Unauthorized" }] }, 401);
+    if (String(url).includes("/admin/api/")) {
+      const { query, variables } = JSON.parse(init.body);
+      checkGraphql(query, variables);
+      if (scopeDenied) return res({ errors: [{ message: "Access denied for tags field. Required access: `read_customers` access scope.", extensions: { code: "ACCESS_DENIED" } }] });
+      return res({ data: { customer: { tags } } });
+    }
+    return res({}, 404);
+  };
+  return { fetch, calls };
+}
+
+test("store sign-in: config, token check, tag-unlocked images with signed links, CORS preflight", async () => {
+  clearMemberCache();
+  const blobs = fakeBlobs();
+  const ictx = { blobs, env: envOf() };
+  const post = (h) => handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", ...KEYH, ...h }, body: PNG }), ictx);
+  await post({ "x-filename": "pub.png", "x-public": "1" });
+  await post({ "x-filename": "pro.png", "x-access": "PRO" });
+  await post({ "x-filename": "benz.png", "x-access": "designs:benz1, other" });
+  await post({ "x-filename": "all.png", "x-access": "members" });
+  await post({ "x-filename": "vip.png", "x-access": "vip" });
+  await post({ "x-filename": "secret.png" });
+  const shop = fakeMemberShop();
+  const env = envOf({ ED_CUSTOMER_CLIENT_ID: "client-abc" });
+  const ctx = { blobs, env, fetch: shop.fetch };
+  const app = { origin: "https://design.elevatedshirts.com" };
+
+  const cfg = await handleMember(imgReq("/api/member/config", { headers: app }), ctx);
+  assert.equal(cfg.status, 200);
+  assert.deepEqual(await cfg.json(), { clientId: "client-abc", authorize: "https://shopify.com/authentication/123/oauth/authorize", token: "https://shopify.com/authentication/123/oauth/token", logout: "https://shopify.com/authentication/123/logout" });
+  assert.equal(cfg.headers.get("access-control-allow-origin"), "https://design.elevatedshirts.com");
+
+  const pre = await handleMember(imgReq("/api/member", { method: "OPTIONS", headers: app }), ctx);
+  assert.equal(pre.status, 204);
+  assert.equal(pre.headers.get("access-control-allow-headers"), "authorization");
+
+  const me = await handleMember(imgReq("/api/member", { headers: { ...app, authorization: "Bearer shcat_GOOD" } }), ctx);
+  assert.equal(me.status, 200);
+  const body = await me.json();
+  assert.equal(body.customer.firstName, "Dana");
+  assert.deepEqual(body.tags, ["pro", "designs:benz1"]);
+  assert.deepEqual(body.items.map((i) => i.name).sort(), ["all.png", "benz.png", "pro.png"], "only images the tags unlock, never public or untagged private ones");
+  assert.equal(body.customer.id, undefined, "the customer's id isn't sent back");
+  for (const i of body.items) {
+    assert.match(i.url, /^https:\/\/console\.example\/api\/images\/[^?]+\?exp=\d+&sig=/);
+    const file = await handleImages(new Request(i.url), ictx);
+    assert.equal(file.status, 200, "the signed link opens the file");
+  }
+  assert.equal(shop.calls.find((c) => c.url.includes("/account/customer/api/")).auth, "shcat_GOOD", "the token goes to Shopify as-is");
+
+  const again = shop.calls.length;
+  assert.equal((await handleMember(imgReq("/api/member", { headers: { authorization: "Bearer shcat_GOOD" } }), ctx)).status, 200);
+  assert.equal(shop.calls.length, again, "a checked token is remembered for a few minutes");
+
+  const bad = await handleMember(imgReq("/api/member", { headers: { ...app, authorization: "Bearer shcat_EXPIRED" } }), ctx);
+  assert.equal(bad.status, 401);
+  assert.equal((await bad.json()).code, "signed_out");
+  assert.equal(bad.headers.get("access-control-allow-origin"), "https://design.elevatedshirts.com", "errors still reach the app");
+  assert.equal((await handleMember(imgReq("/api/member"), ctx)).status, 401, "no token");
+  assert.equal((await handleMember(imgReq("/api/member", { method: "POST", headers: { authorization: "Bearer shcat_GOOD" } }), ctx)).status, 405);
+  const evil = await handleMember(imgReq("/api/member", { method: "OPTIONS", headers: { origin: "https://evil.example" } }), ctx);
+  assert.equal(evil.headers.get("access-control-allow-origin"), null, "other sites get no CORS");
+});
+
+test("store sign-in: the built-in addresses are used when the store refuses its discovery files", async () => {
+  clearMemberCache();
+  const blobs = fakeBlobs();
+  const ctx = { blobs, env: envOf(), fetch: fakeMemberShop({ noDiscovery: true }).fetch };
+  const cfg = await handleMember(imgReq("/api/member/config"), ctx);
+  assert.equal(cfg.status, 200);
+  assert.deepEqual(await cfg.json(), { clientId: "1cd847fd-6a88-46bb-af04-d486241fc519",
+    authorize: "https://account.elevatedshirts.com/authentication/oauth/authorize", token: "https://account.elevatedshirts.com/authentication/oauth/token", logout: "https://account.elevatedshirts.com/authentication/logout" });
+  const me = await handleMember(imgReq("/api/member", { headers: { authorization: "Bearer shcat_GOOD" } }), ctx);
+  assert.equal(me.status, 200);
+  assert.equal((await me.json()).customer.firstName, "Lee");
+  assert.equal((await handleMember(imgReq("/api/member", { headers: { authorization: "Bearer shcat_FAKE" } }), ctx)).status, 401, "a fake token is turned away, not a store error");
+});
+
+test("store sign-in: not switched on, missing scope, and access field edits", async () => {
+  clearMemberCache();
+  const blobs = fakeBlobs();
+  const dflt = await handleMember(imgReq("/api/member/config"), { blobs, env: envOf(), fetch: fakeMemberShop().fetch });
+  assert.equal((await dflt.json()).clientId, "1cd847fd-6a88-46bb-af04-d486241fc519", "the ED storefront's public client ID is built in");
+  const off = await handleMember(imgReq("/api/member/config"), { blobs, env: envOf({ ED_CUSTOMER_CLIENT_ID: " " }), fetch: fakeMemberShop().fetch });
+  assert.equal(off.status, 503);
+  assert.match((await off.json()).error, /ED_CUSTOMER_CLIENT_ID/);
+  const denied = await handleMember(imgReq("/api/member", { headers: { authorization: "Bearer shcat_GOOD" } }), { blobs, env: envOf(), fetch: fakeMemberShop({ scopeDenied: true }).fetch });
+  assert.equal(denied.status, 502);
+  assert.match((await denied.json()).error, /read_customers/);
+
+  const ictx = { blobs, env: envOf() };
+  const up = await (await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", ...KEYH, "x-access": " VIP , designs:Benz1 ,," }, body: PNG }), ictx)).json();
+  assert.equal(up.item.access, "vip, designs:benz1");
+  const patch = (body) => handleImages(imgReq(`/api/images/${up.item.key}`, { method: "PATCH", headers: { "content-type": "application/json", ...KEYH }, body: JSON.stringify(body) }), ictx);
+  assert.equal((await (await patch({ access: Array.from({ length: 40 }, (_, n) => `tag-number-${n}`).join(",") })).json()).item.access.length <= 120, true, "long lists keep whole tags only");
+  assert.equal((await patch({ access: "" })).status, 200);
+  assert.equal(blobs.m.get(`image:${up.item.key}`).metadata.access, undefined, "an empty access clears it");
+});
+
 test("images: an SVG with script is never rendered on the console's origin", async () => {
   const ctx = { blobs: fakeBlobs(), env: envOf() };
   const up = await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/svg+xml", ...KEYH }, body: EVIL_SVG }), ctx);
@@ -1875,6 +1989,27 @@ test("marketing: a healthy site scores well, uses its own IndexNow key, and only
   assert.equal(a.sitemapCount, 6, "other hosts in the sitemap are ignored");
   assert.ok(!site.hits.includes("/collections/all"), "collections/all is not used as the sample collection");
   assert.ok(!site.hits.includes("/collections/frontpage"), "the hidden home page collection is not used either");
+});
+
+test("marketing: Shopify's own /llms.txt agent file doesn't count; the /pages/llms fact sheet does", async () => {
+  const UCP = `# Charleston3D\n\nAgent instructions. Discover the profile at /.well-known/ucp and use the MCP endpoint.\n${"- Respect Retry-After.\n".repeat(20)}`;
+  const wrap = (pagesLlms) => {
+    const site = fakeSite();
+    return async (url, init) => {
+      const u = new URL(String(url));
+      if (u.pathname === "/llms.txt") return new Response(UCP, { status: 200, headers: { "content-type": "text/plain" } });
+      if (u.pathname === "/pages/llms") return new Response(pagesLlms ?? "Not found", { status: pagesLlms ? 200 : 404, headers: { "content-type": "text/plain" } });
+      return site.fetch(url, init);
+    };
+  };
+  const without = await MK.auditSite(wrap(null), { store: "c3d", site: "https://charleston3d.com", key: MKENV.C3D_INDEXNOW_KEY, clock: () => NOW });
+  const c = without.checks.find((x) => x.id === "llms");
+  assert.equal(c.level, "fail");
+  assert.match(c.title, /Shopify's shopping-agent file/);
+  const withPage = await MK.auditSite(wrap(LLMS), { store: "c3d", site: "https://charleston3d.com", key: MKENV.C3D_INDEXNOW_KEY, clock: () => NOW });
+  const ok = withPage.checks.find((x) => x.id === "llms");
+  assert.equal(ok.level, "pass");
+  assert.match(ok.detail ?? ok.url ?? JSON.stringify(ok), /pages\/llms/);
 });
 
 test("marketing: a domain that redirects to another host is flagged and the live sitemap is still read", async () => {
@@ -3412,4 +3547,65 @@ test("worker: with the FILES bucket bound, uploads go to R2 and the 3D file libr
   const plain = await W.handleRequest(wreq("/api/files", { method: "POST", headers: { ...KEYH, "x-filename": "cup.3mf" }, body: new Uint8Array([0x50, 0x4b, 3, 4]) }), workerEnv({ IMAGES: kv }));
   assert.equal(plain.status, 201);
   assert.ok(kv.m.has(`c3d-file:${(await plain.json()).item.key}`));
+});
+
+// ---------- handoff board ----------
+const HO = await import("../lib/handoffs.mjs");
+const hoReq = (method, body, query = {}, headers = { "content-type": "application/json", "x-console-key": "open-sesame-test-key-0001" }) =>
+  ({ method, query: new URLSearchParams(query), header: (k) => headers[k.toLowerCase()] ?? null, text: async () => JSON.stringify(body ?? {}) });
+const hoClock = (iso) => () => new Date(iso);
+
+test("handoffs: key and KV required; a run writes one note and its lane reads it back with heads-ups", async () => {
+  const kv = fakeKV();
+  assert.equal((await HO.handleHandoffs(hoReq("GET", null, {}, {}), { env: envOf(), kv })).status, 401);
+  assert.equal((await HO.handleHandoffs(hoReq("GET"), { env: envOf(), kv: null })).status, 503);
+  const at = hoClock("2026-10-30T14:00:00Z");
+  const w = await HO.handleHandoffs(hoReq("POST", { lane: "marketing", task: "Ad budget guard", store: "c3d", did: "Checked the one live ad.", changed: "", next: "ED ad starts Nov 2 if Aaron OKs it.",
+    headsUp: [{ to: "ops", text: "ED ad is waiting for Aaron's OK." }] }), { env: envOf(), kv }, at);
+  assert.equal(w.status, 201);
+  assert.deepEqual(w.body.handoff.headsUpTo, ["ops"]);
+  assert.equal(w.body.handoff.status, "ok");
+  await HO.handleHandoffs(hoReq("POST", { lane: "ed", task: "Price watch", did: "No mismatches." }), { env: envOf(), kv }, hoClock("2026-10-30T15:00:00Z"));
+  const ops = await HO.handleHandoffs(hoReq("GET", null, { lane: "ops" }), { env: envOf(), kv }, hoClock("2026-10-30T16:00:00Z"));
+  assert.deepEqual(ops.body.handoffs.map((h) => h.task), ["Ad budget guard"], "ops sees the heads-up sent to it, not ed's note");
+  const all = await HO.handleHandoffs(hoReq("GET"), { env: envOf(), kv }, hoClock("2026-10-30T16:00:00Z"));
+  assert.deepEqual(all.body.handoffs.map((h) => h.lane), ["ed", "marketing"], "newest first");
+  assert.deepEqual(all.body.stale, ["ops", "c3d"]);
+  const since = await HO.handleHandoffs(hoReq("GET", null, { since: "2026-10-30T14:30:00Z" }), { env: envOf(), kv }, hoClock("2026-10-30T16:00:00Z"));
+  assert.equal(since.body.handoffs.length, 1);
+});
+
+test("handoffs: bad lanes, statuses, emails, phone numbers and keys are refused", async () => {
+  const kv = fakeKV();
+  const base = { lane: "ops", task: "Brief", did: "Sent it." };
+  for (const body of [{ ...base, lane: "aaron" }, { ...base, status: "great" }, { ...base, did: "" }, { ...base, store: "both-stores" },
+    { ...base, did: "Customer jane@example.com asked" }, { ...base, next: "Call 843-555-0100" }, { ...base, changed: "used shpat_abcdef123456" },
+    { ...base, headsUp: [{ to: "nobody", text: "hi" }] }, { ...base, task: "x".repeat(81) }]) {
+    assert.equal((await HO.handleHandoffs(hoReq("POST", body), { env: envOf(), kv })).status, 400, JSON.stringify(body));
+  }
+  assert.equal(kv.m.size, 0);
+  assert.equal((await HO.handleHandoffs(hoReq("GET", null, { lane: "nobody" }), { env: envOf(), kv })).status, 400);
+});
+
+test("handoffs: notes over 30 days old drop off, the manager brief is saved, and Aaron can remove a note", async () => {
+  const kv = fakeKV();
+  await HO.handleHandoffs(hoReq("POST", { lane: "c3d", task: "Triage", did: "Two new requests." }), { env: envOf(), kv }, hoClock("2026-09-01T10:00:00Z"));
+  const fresh = await HO.handleHandoffs(hoReq("POST", { lane: "c3d", task: "Triage", did: "One new request." }), { env: envOf(), kv }, hoClock("2026-10-30T10:00:00Z"));
+  const r = await HO.handleHandoffs(hoReq("GET"), { env: envOf(), kv }, hoClock("2026-10-30T11:00:00Z"));
+  assert.deepEqual(r.body.handoffs.map((h) => h.did), ["One new request."]);
+  const b = await HO.handleHandoffs(hoReq("POST", { brief: { needsYou: ["OK the ED ad for Nov 2-8"], fixed: [], watching: ["C3D ad CPC $0.41"] } }), { env: envOf(), kv }, hoClock("2026-10-30T11:30:00Z"));
+  assert.equal(b.status, 201);
+  assert.equal((await HO.handleHandoffs(hoReq("POST", { brief: { needsYou: "nope" } }), { env: envOf(), kv })).status, 400);
+  const again = await HO.handleHandoffs(hoReq("GET"), { env: envOf(), kv }, hoClock("2026-10-30T12:00:00Z"));
+  assert.deepEqual(again.body.brief.needsYou, ["OK the ED ad for Nov 2-8"]);
+  assert.equal((await HO.handleHandoffs(hoReq("DELETE", { id: fresh.body.handoff.id }), { env: envOf(), kv })).status, 200);
+  assert.equal((await HO.handleHandoffs(hoReq("DELETE", { id: fresh.body.handoff.id }), { env: envOf(), kv })).status, 404);
+});
+
+test("worker: /api/handoffs uses the MARKETING KV", async () => {
+  const kv = fakeKV(), env = workerEnv({ MARKETING: kv });
+  const r = await W.handleRequest(wreq("/api/handoffs", { method: "POST", headers: { "content-type": "application/json", ...KEYH }, body: JSON.stringify({ lane: "claude", task: "Setup upgrade", did: "Added the handoff board." }) }), env);
+  assert.equal(r.status, 201);
+  assert.ok(kv.m.has("handoffs"));
+  assert.equal((await W.handleRequest(wreq("/api/handoffs"), env)).status, 401);
 });
