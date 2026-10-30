@@ -157,6 +157,9 @@ export async function handleRequest(req, env) {
     console.error("console api error", pathname, e?.name);
     return json({ error: "Something went wrong on the server." }, 500);
   }
+  // The engine has no pages of its own: with CONSOLE_PAGE set, anything that isn't /api/ or a tool
+  // goes to the Creative Lab Studios console instead.
+  if (env?.CONSOLE_PAGE && !pathname.startsWith("/tools/")) return Response.redirect(String(env.CONSOLE_PAGE), 302);
   // Everything else is one of the app's files.
   if (!env?.ASSETS) return new Response("Not found", { status: 404, headers: SITE_HEADERS });
   const res = await env.ASSETS.fetch(req);

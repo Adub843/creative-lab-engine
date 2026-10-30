@@ -1538,8 +1538,10 @@ test("build: dist/ holds only index.html, assets/ and tools/, and wrangler.toml 
   assert.match(toml, /^run_worker_first = true$/m, "API routes and security headers go through the Worker");
   assert.match(toml, /compatibility_flags = \["nodejs_compat"\]/);
   assert.match(toml, /\[\[kv_namespaces\]\]\s+binding = "IMAGES"/);
-  assert.ok(!/\[vars\]|shpat_|CONSOLE_KEY\s*=|_TOKEN\s*=|_SECRET\s*=/.test(toml), "no vars, no secrets in wrangler.toml");
-  assert.deepEqual([...toml.matchAll(/bucket_name\s*=\s*"([^"]+)"/g)].map((m) => m[1]), ["c3d-files"], "one R2 bucket: Charleston 3D's print files");
+  assert.ok(!/shpat_|CONSOLE_KEY\s*=|_TOKEN\s*=|_SECRET\s*=/.test(toml), "no secrets in wrangler.toml");
+  const vars = toml.split(/\n\[vars\]\n/)[1]?.split(/\n\[/)[0] ?? "";
+  assert.deepEqual(vars.split("\n").filter((l) => l.trim() && !l.startsWith("#")).map((l) => l.split("=")[0].trim()), toml.includes("[vars]") ? ["CONSOLE_PAGE"] : [], "the only plain variable is the console's address");
+  assert.deepEqual([...toml.matchAll(/bucket_name\s*=\s*"([^"]+)"/g)].map((m) => m[1]), ["c3d-files", "creative-lab-engine"], "two R2 buckets: Charleston 3D's print files and the console's action answers");
   // Nothing in this project runs on Netlify: no config, functions, packages, code or docs for it.
   for (const gone of ["netlify.toml", "netlify", "lib/netlify.mjs"]) assert.ok(!fs.existsSync(path.join(root, gone)), `${gone} is gone`);
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
@@ -1550,10 +1552,10 @@ test("build: dist/ holds only index.html, assets/ and tools/, and wrangler.toml 
   for (const f of hosting) assert.ok(!/netlify/i.test(fs.readFileSync(path.join(root, f), "utf8")), `${f} mentions Netlify`);
 });
 
-test("worker: the entry module exports only the fetch and scheduled handlers (workerd refuses anything else)", async () => {
+test("worker: the entry module exports only the fetch, scheduled and queue handlers (workerd refuses anything else)", async () => {
   const entry = await import("../worker/index.mjs");
   assert.deepEqual(Object.keys(entry), ["default"]);
-  assert.deepEqual(Object.keys(entry.default), ["fetch", "scheduled"]);
+  assert.deepEqual(Object.keys(entry.default), ["fetch", "scheduled", "queue"]);
   const res = await entry.default.fetch(wreq("/api/nope"), workerEnv());
   assert.equal(res.status, 404);
 });
@@ -2665,7 +2667,9 @@ test("wrangler.toml: MARKETING and PRICING KV bindings, the daily audit cron, th
   const toml = fs.readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   assert.match(toml, /\[\[kv_namespaces\]\]\s*\nbinding = "MARKETING"/);
   assert.match(toml, /\[\[kv_namespaces\]\]\s*\nbinding = "PRICING"/);
-  assert.match(toml, /\[triggers\]\s*\ncrons = \["0 11 \* \* \*", "30 11 \* \* \*", "\*\/15 \* \* \* \*", "45 \* \* \* \*"\]/);
+  // Off until the switch-over from the old business-console Worker; the line to turn back on is kept beside it.
+  assert.match(toml, /\[triggers\][\s\S]*# crons = \["0 11 \* \* \*", "30 11 \* \* \*", "\*\/15 \* \* \* \*", "45 \* \* \* \*"\]\ncrons = \[\]/);
+  assert.match(toml, /\[\[queues\.consumers\]\]\s*\nqueue = "creative-lab-actions"\s*\nmax_batch_size = 1\s*\nmax_batch_timeout = 0/);
   const W2 = await import("../worker/app.mjs");
   assert.equal(W2.AUDIT_CRON, "0 11 * * *");
   assert.equal(W2.AUTOFIX_CRON, "30 11 * * *");
@@ -3526,4 +3530,82 @@ test("worker: with the FILES bucket bound, uploads go to R2 and the 3D file libr
   const plain = await W.handleRequest(wreq("/api/files", { method: "POST", headers: { ...KEYH, "x-filename": "cup.3mf" }, body: new Uint8Array([0x50, 0x4b, 3, 4]) }), workerEnv({ IMAGES: kv }));
   assert.equal(plain.status, 201);
   assert.ok(kv.m.has(`c3d-file:${(await plain.json()).item.key}`));
+});
+
+// The Creative Lab Studios console's actions arrive on a queue and their answers go to the RESULTS bucket (worker/queue.mjs).
+function fakeResults() {
+  const m = new Map();
+  return { m,
+    async put(key, data, { httpMetadata, customMetadata } = {}) {
+      for (const v of Object.values(customMetadata ?? {})) assert.equal(typeof v, "string", "R2 custom metadata values are strings");
+      m.set(key, { bytes: data instanceof ArrayBuffer ? new Uint8Array(data.slice(0)) : ArrayBuffer.isView(data) ? new Uint8Array(data) : new TextEncoder().encode(String(data)), httpMetadata: { ...httpMetadata }, customMetadata: { ...customMetadata }, uploaded: new Date() });
+    },
+    async get(key) { const o = m.get(key); return o ? { key, httpMetadata: o.httpMetadata, customMetadata: o.customMetadata, arrayBuffer: async () => o.bytes.buffer.slice(0) } : null; },
+    async delete(keys) { for (const k of [].concat(keys)) m.delete(k); },
+    async list({ prefix = "" } = {}) { return { objects: [...m.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key, uploaded: m.get(key).uploaded })), truncated: false }; },
+  };
+}
+
+test("queue: a console action runs like the old API route, signed with the engine's key", async () => {
+  const Q = await import("../worker/queue.mjs");
+  const RESULTS = fakeResults();
+  const env = workerEnv({ RESULTS });
+  const text = (id) => new TextDecoder().decode(RESULTS.m.get(`results/${id}`).bytes);
+  // A library upload: the console puts the bytes in uploads/ first, then sends the action.
+  await RESULTS.put("uploads/up-0000001", PNG.buffer.slice(PNG.byteOffset, PNG.byteOffset + PNG.byteLength), { httpMetadata: { contentType: "image/png" } });
+  const up = await Q.runAction({ id: "act-0000001", method: "POST", path: "/api/images", bodyRef: "uploads/up-0000001", filename: "palm.png", tags: "palmetto" }, env);
+  assert.equal(up.status, 201);
+  assert.equal(RESULTS.m.has("uploads/up-0000001"), false, "the upload is removed once used");
+  assert.equal(RESULTS.m.get("results/act-0000001").customMetadata.status, "201");
+  // Listing needs the key; the engine adds it, so the console never holds it.
+  const ls = await Q.runAction({ id: "act-0000002", method: "GET", path: "/api/images" }, env);
+  assert.equal(ls.status, 200);
+  assert.ok(JSON.parse(text("act-0000002")).items.some((i) => i.name === "palm.png"));
+  // Without a key on the engine, nothing that needs one runs.
+  const nokey = await Q.runAction({ id: "act-0000003", method: "GET", path: "/api/images" }, workerEnv({ RESULTS, CONSOLE_KEY: undefined }));
+  assert.equal(nokey.status >= 400, true);
+});
+
+test("queue: bad actions are refused with a plain reason and nothing outside /api/ runs", async () => {
+  const Q = await import("../worker/queue.mjs");
+  const RESULTS = fakeResults();
+  const env = workerEnv({ RESULTS });
+  for (const [msg, why] of [
+    [{ id: "act-0000010", path: "/" }, /Only \/api\//],
+    [{ id: "act-0000011", method: "TRACE", path: "/api/images" }, /Unknown method/],
+    [{ id: "act-0000012", method: "POST", path: "/api/images", bodyRef: "results/act-0000010" }, /uploads\//],
+    [{ id: "act-0000013", method: "POST", path: "/api/images", bodyRef: "uploads/missing-001" }, /wasn't found/],
+  ]) {
+    const r = await Q.runAction(msg, env);
+    assert.equal(r.status, 400);
+    assert.match(JSON.parse(new TextDecoder().decode(RESULTS.m.get(`results/${msg.id}`).bytes)).error, why);
+  }
+  assert.deepEqual(await Q.runAction({ id: "../../etc", path: "/api/images" }, env), { id: null, status: 400 }, "a bad id saves nothing");
+  // handleQueue acks every message, even a failing one, so nothing loops.
+  let acked = 0;
+  await Q.handleQueue({ messages: [{ body: { id: "act-0000020", path: "/api/nope" }, ack: () => acked++ }] }, env);
+  assert.equal(acked, 1);
+  assert.equal(RESULTS.m.get("results/act-0000020").customMetadata.status, "404");
+});
+
+test("queue: answers and uploads older than a day are pruned", async () => {
+  const Q = await import("../worker/queue.mjs");
+  const RESULTS = fakeResults();
+  await RESULTS.put("results/old-0000001", new ArrayBuffer(1));
+  await RESULTS.put("uploads/old-0000002", new ArrayBuffer(1));
+  await RESULTS.put("results/new-0000003", new ArrayBuffer(1));
+  for (const k of ["results/old-0000001", "uploads/old-0000002"]) RESULTS.m.get(k).uploaded = new Date(Date.now() - 2 * 864e5);
+  assert.equal(await Q.pruneResults({ RESULTS }), 2);
+  assert.deepEqual([...RESULTS.m.keys()], ["results/new-0000003"]);
+});
+
+test("engine: with CONSOLE_PAGE set, pages go to the Creative Lab console and the API and tools still work", async () => {
+  const W = await import("../worker/app.mjs");
+  const page = "https://claude.ai/artifact/U8rNeWMPq7NfF7f88AEuPK";
+  const env = workerEnv({ CONSOLE_PAGE: page });
+  const home = await W.handleRequest(wreq("/"), env);
+  assert.equal(home.status, 302);
+  assert.equal(home.headers.get("location"), page);
+  assert.equal((await W.handleRequest(wreq("/api/images?public=1"), env)).status, 200, "the shirt apps still read the library");
+  assert.notEqual((await W.handleRequest(wreq("/tools/nameplate-maker/"), env)).status, 302);
 });

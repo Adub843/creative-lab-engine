@@ -1,4 +1,6 @@
-# Business Console
+# Creative Lab engine (formerly Business Console)
+
+**2026-10-30:** this is now the background engine behind the Creative Lab Studios console (https://claude.ai/artifact/U8rNeWMPq7NfF7f88AEuPK). It has no pages of its own; the console runs every action below through the `creative-lab-actions` queue (see `worker/queue.mjs`). The rest of this README describes each function as it was built in the Business Console.
 
 One place to run Charleston 3D and Elevated Designs: dashboard, brand pages, a map of every connected service, product publishing and insights for both Shopify stores, and a design studio with an image library and shirt designer.
 

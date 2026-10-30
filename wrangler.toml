@@ -1,7 +1,9 @@
-# Business Console on Cloudflare Workers (free plan): one Worker serves the app's files and the /api/* routes.
+# Creative Lab engine on Cloudflare Workers (free plan): the background engine behind the Creative Lab Studios
+# console (https://claude.ai/artifact/U8rNeWMPq7NfF7f88AEuPK). It has no pages of its own: the console sends its
+# actions through the ACTIONS queue (worker/queue.mjs), and the shirt apps keep reading /api/images?public=1.
 # Secrets (Shopify tokens, CONSOLE_KEY, ...) are never written here: set them with `npx wrangler secret put NAME`.
 # See the README, "Put the console online (Cloudflare)".
-name = "business-console"
+name = "creative-lab-engine"
 main = "worker/index.mjs"
 compatibility_date = "2026-10-01"
 # lib/shopify.mjs checks the console key with node:crypto (createHash, timingSafeEqual).
@@ -26,6 +28,8 @@ run_worker_first = true
 # deploys keep using it. `wrangler dev` keeps a separate local copy on your computer.
 [[kv_namespaces]]
 binding = "IMAGES"
+# The same namespace the old business console used, shared with the Design Studio (epix3d.com). Never delete it.
+id = "a4c25d0fee6e45448ada053a44b19bcc"
 
 
 # Charleston 3D's print files (lib/r2-store.mjs). R2 has room for the whole print library; KV holds
@@ -38,11 +42,29 @@ bucket_name = "c3d-files"
 # Where the shirt price sync got to (lib/pricing.mjs). Created on the first deploy like IMAGES.
 [[kv_namespaces]]
 binding = "PRICING"
+id = "279045cf3fe54a76a6a0549b2cc6a901"
 
 # Each store's daily marketing scores (lib/marketing.mjs), kept for 120 days. Created by the first
 # deploy like IMAGES.
 [[kv_namespaces]]
 binding = "MARKETING"
+id = "d4076444457f4565a57fb1cdb6071c7b"
+
+# The console's actions in, their answers out (worker/queue.mjs). Created once with
+#   npx wrangler queues create creative-lab-actions
+#   npx wrangler r2 bucket create creative-lab-engine
+[[r2_buckets]]
+binding = "RESULTS"
+bucket_name = "creative-lab-engine"
+
+[[queues.consumers]]
+queue = "creative-lab-actions"
+max_batch_size = 1
+max_batch_timeout = 0
+max_retries = 0
+
+[vars]
+CONSOLE_PAGE = "https://claude.ai/artifact/U8rNeWMPq7NfF7f88AEuPK"
 
 # 11:00 UTC daily (early morning in Charleston): checks both public sites for the Marketing page.
 # 11:30 UTC daily: applies the safe SEO fixes (titles, descriptions, alt text) to both stores.
@@ -50,4 +72,7 @@ binding = "MARKETING"
 # sheet changed or the last one is over a day old.
 # Hourly at :45: the image library follows the Kittl library (lib/kittl-sync.mjs).
 [triggers]
-crons = ["0 11 * * *", "30 11 * * *", "*/15 * * * *", "45 * * * *"]
+# OFF until the switch-over: the old business-console Worker still runs these, and the free plan allows 5 crons
+# per account. At the switch-over the old Worker's crons are removed and this line becomes:
+# crons = ["0 11 * * *", "30 11 * * *", "*/15 * * * *", "45 * * * *"]
+crons = []
