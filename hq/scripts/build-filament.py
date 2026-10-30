@@ -182,7 +182,8 @@ def main():
 
     ws = wb.create_sheet("Polymaker PLA")
     sheet(ws, ["Line", "Color", "Swatch", "Hex", "Second hex", "TD", "SKU"], [32, 40, 10, 10, 11, 6, 10])
-    for r in colors:
+    order = lambda r: (lines_first.index(r["line"]) if r["line"] in lines_first else len(lines_first), r["line"])
+    for r in sorted(colors, key=order):
         if r["brand"] == "Polymaker" and r["type"] in ("PLA", "PLA+"):
             ws.append([r["line"], r["color"], "", r["hex"], r["hex2"], r["td"], r["sku"]])
             swatch(ws.cell(ws.max_row, 3), r["hex"])
