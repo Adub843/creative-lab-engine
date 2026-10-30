@@ -16,7 +16,7 @@ export const IDEAS = [
     pitch: "A flat Rainbow Row ornament with the family name and 2026. Sells in November and December.",
     time: "2 to 3 hrs a week, Nov to Dec", cost: "Filament only", first: "2 to 3 weeks",
     uses: "Nameplate maker text engine, mockups",
-    next: "Aaron picks style A, B or C from the samples; Steve makes the print file and listing. Last order about Dec 12." },
+    next: "Style A chosen. Print files and listing draft ready; add the price from the price sheet and list it. Last order about Dec 12." },
   { id: "IDEA-002", store: "c3d", status: "new", name: "Sell CAD files as downloads",
     pitch: "List the best tool and part designs on Printables, Cults3D and Etsy. No printing, no shipping.",
     time: "1 hr per file, then none", cost: "$0 to $5", first: "1 to 4 weeks",
