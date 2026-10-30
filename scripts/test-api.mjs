@@ -271,6 +271,19 @@ test("Dev Dashboard app: wrong secret is a clear 502 without leaking it; half-se
   assert.match(half.body.error, /ED_CLIENT_ID and ED_CLIENT_SECRET/);
 });
 
+test("Dev Dashboard app: Shopify's own refusal reason is shown, never the secret", async () => {
+  clearTokenCache();
+  const fetch = async (url) => String(url).endsWith("/admin/oauth/access_token")
+    ? new Response(JSON.stringify({ error: "invalid_client", error_description: "Client authentication failed <b>wrong-secret-xyz</b>" }), { status: 400 })
+    : new Response("{}", { status: 500 });
+  const res = await handleProducts(keyed({ store: "ed" }), { env: envOf({ ED_ADMIN_TOKEN: undefined, ED_CLIENT_ID: "dev-client-id", ED_CLIENT_SECRET: "other-secret" }), fetch });
+  assert.equal(res.status, 502);
+  assert.equal(res.body.code, "shopify_auth");
+  assert.match(res.body.error, /HTTP 400: invalid_client: Client authentication failed/);
+  assert.ok(!res.body.error.includes("<"));
+  assert.ok(!JSON.stringify(res.body).includes("other-secret"));
+});
+
 test("userErrors are propagated as 422 with Shopify's messages", async () => {
   const sh = fakeShopify({ publishErrors: [{ field: ["id"], message: "Product can't be published: missing price" }] });
   const res = await handleProducts(post({ store: "c3d", id: PID, live: true }), { env: envOf(), fetch: sh.fetch });
