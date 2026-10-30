@@ -5,7 +5,7 @@
 // ACTIONS queue, and its answer is one object in the RESULTS bucket:
 //
 //   1. the console writes a large body (an upload) to RESULTS as  uploads/<id>  when it has one;
-//   2. it pushes  { id, method, path, query?, body?, bodyRef?, contentType?, filename?, tags? }  to the queue;
+//   2. it pushes  { id, method, path, query?, body?, bodyRef? | bodyParts?, contentType?, filename?, tags? }  to the queue;
 //   3. this consumer wakes at once (max_batch_timeout 0), runs the request through the same
 //      handleRequest as the old /api/* routes, signed with the engine's own CONSOLE_KEY, and writes
 //      results/<id>  (the answer's bytes, with status and content type in its custom metadata);
@@ -20,6 +20,17 @@ export const UPLOAD_PREFIX = "uploads/";
 const ID = /^[A-Za-z0-9_-]{8,64}$/;
 const METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 const DAY = 24 * 60 * 60 * 1000;
+
+// The upload objects an action names: bodyRef (one object) or bodyParts (several, joined in order).
+function uploadRefs(msg) {
+  const refs = msg?.bodyParts != null ? msg.bodyParts : msg?.bodyRef != null ? [msg.bodyRef] : [];
+  if (!Array.isArray(refs) || refs.length > 200) throw new Error("bodyParts must be a list of up to 200 uploads.");
+  return refs.map((r) => {
+    const ref = String(r);
+    if (!ref.startsWith(UPLOAD_PREFIX) || ref.includes("..")) throw new Error("bodyRef must point into uploads/.");
+    return ref;
+  });
+}
 
 // Turns one queue message into a Request for handleRequest, or throws with a plain reason.
 export async function actionRequest(msg, env) {
@@ -37,13 +48,22 @@ export async function actionRequest(msg, env) {
   if (msg.filename) headers.set("x-filename", String(msg.filename));
   if (msg.tags) headers.set("x-tags", String(msg.tags));
   let body;
-  if (msg.bodyRef) {
-    const ref = String(msg.bodyRef);
-    if (!ref.startsWith(UPLOAD_PREFIX) || ref.includes("..")) throw new Error("bodyRef must point into uploads/.");
-    const obj = await env.RESULTS.get(ref);
-    if (!obj) throw new Error("The upload for this action wasn't found.");
-    body = await obj.arrayBuffer();
-    headers.set("content-type", msg.contentType ?? obj.httpMetadata?.contentType ?? "application/octet-stream");
+  const refs = uploadRefs(msg);
+  if (refs.length) {
+    // A big upload arrives in parts (the connector caps each call near 1 MB); they're joined in order.
+    const parts = [];
+    let type;
+    for (const ref of refs) {
+      const obj = await env.RESULTS.get(ref);
+      if (!obj) throw new Error("The upload for this action wasn't found.");
+      type ??= obj.httpMetadata?.contentType;
+      parts.push(new Uint8Array(await obj.arrayBuffer()));
+    }
+    const all = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+    let at = 0;
+    for (const p of parts) { all.set(p, at); at += p.length; }
+    body = all.buffer;
+    headers.set("content-type", msg.contentType ?? type ?? "application/octet-stream");
   } else if (msg.body !== undefined && msg.body !== null && method !== "GET") {
     body = typeof msg.body === "string" ? msg.body : JSON.stringify(msg.body);
     headers.set("content-type", msg.contentType ?? "application/json");
@@ -71,7 +91,9 @@ export async function runAction(msg, env, handler = handleRequest) {
       httpMetadata: { contentType },
       customMetadata: { status: String(status), path: String(msg.path ?? ""), at: new Date().toISOString() },
     });
-    if (msg.bodyRef) await env.RESULTS.delete(String(msg.bodyRef)).catch(() => null);
+    let refs = [];
+    try { refs = uploadRefs(msg); } catch { /* nothing valid to remove */ }
+    if (refs.length) await env.RESULTS.delete(refs).catch(() => null);
   }
   return { id, status };
 }

@@ -3571,6 +3571,13 @@ test("queue: a console action runs like the old API route, signed with the engin
   assert.equal(up.status, 201);
   assert.equal(RESULTS.m.has("uploads/up-0000001"), false, "the upload is removed once used");
   assert.equal(RESULTS.m.get("results/act-0000001").customMetadata.status, "201");
+  // A big upload comes in parts, joined in order, and every part is removed afterwards.
+  const half = Math.floor(PNG.byteLength / 2);
+  await RESULTS.put("uploads/up-0000002.p0", PNG.slice(0, half), { httpMetadata: { contentType: "image/png" } });
+  await RESULTS.put("uploads/up-0000002.p1", PNG.slice(half));
+  const big = await Q.runAction({ id: "act-0000004", method: "POST", path: "/api/images", bodyParts: ["uploads/up-0000002.p0", "uploads/up-0000002.p1"], filename: "palm-2.png" }, env);
+  assert.equal(big.status, 201);
+  assert.equal([...RESULTS.m.keys()].some((k) => k.startsWith("uploads/up-0000002")), false);
   // Listing needs the key; the engine adds it, so the console never holds it.
   const ls = await Q.runAction({ id: "act-0000002", method: "GET", path: "/api/images" }, env);
   assert.equal(ls.status, 200);
@@ -3589,6 +3596,8 @@ test("queue: bad actions are refused with a plain reason and nothing outside /ap
     [{ id: "act-0000011", method: "TRACE", path: "/api/images" }, /Unknown method/],
     [{ id: "act-0000012", method: "POST", path: "/api/images", bodyRef: "results/act-0000010" }, /uploads\//],
     [{ id: "act-0000013", method: "POST", path: "/api/images", bodyRef: "uploads/missing-001" }, /wasn't found/],
+    [{ id: "act-0000014", method: "POST", path: "/api/images", bodyParts: ["uploads/a", "../x"] }, /uploads\//],
+    [{ id: "act-0000015", method: "POST", path: "/api/images", bodyParts: "uploads/a" }, /list of up to 200/],
   ]) {
     const r = await Q.runAction(msg, env);
     assert.equal(r.status, 400);
