@@ -1,0 +1,362 @@
+SKU,Product,Color,HEX,TD
+CA04001,Panchroma Matte PLA,Matte Sky Blue,#1AC5FC,1.3
+CA04002,Panchroma Matte PLA,Matte Lotus Pink,#DD76C0,2
+CA04006,Panchroma Matte PLA,Matte Arctic Teal,#61BCC3,0.6
+CA04007,Panchroma Matte PLA,Matte Army Beige,#DBBAA5,0.7
+CA04008,Panchroma Matte PLA,Matte Army Blue,#2E4462,0.1
+CA04009,Panchroma Matte PLA,Matte Army Brown,#795A4D,0.1
+CA04010,Panchroma Matte PLA,Matte Army Dark Green,#5F6244,0.1
+CA04011,Panchroma Matte PLA,Matte Army Light Green,#AB8C02,0.8
+CA04012,Panchroma Matte PLA,Matte Army Purple,#36364A,0.2
+CA04013,Panchroma Matte PLA,Matte Army Red,#BF312E,0.3
+CA04014,Panchroma Matte PLA,Matte Ash Grey,#485155,0.1
+CA04015,Panchroma Matte PLA,Matte Charcoal Black,#2F2E30,0.1
+CA04016,Panchroma Matte PLA,Matte Cotton White,#F4EFEB,4.1
+CA04017,Panchroma Matte PLA,Matte Earth Brown,#7C594A,0.2
+CA04018,Panchroma Matte PLA,Matte Electric Indigo,#6858A9,0.3
+CA04019,Panchroma Matte PLA,Matte Forest Green,#60AD70,0.3
+CA04020,Panchroma Matte PLA,Matte Fossil Grey,#8A8C94,0.4
+CA04021,Panchroma Matte PLA,Matte Lava Red,#ED2F2E,1.9
+CA04022,Panchroma Matte PLA,Matte Lavender Purple,#9572BF,0.6
+CA04023,Panchroma Matte PLA,Matte Lime Green,#D7D602,2.4
+CA04024,Panchroma Matte PLA,Matte Muted Blue,#5F778E,0.5
+CA04025,Panchroma Matte PLA,Matte Muted Green,#777E71,0.5
+CA04026,Panchroma Matte PLA,Matte Muted Purple,#7C5C78,0.6
+CA04027,Panchroma Matte PLA,Matte Muted Red,#D84B2E,1.4
+CA04028,Panchroma Matte PLA,Matte Muted White,#BBADA4,0.7
+CA04029,Panchroma Matte PLA,Matte Pastel Banana,#F7D475,3.6
+CA04030,Panchroma Matte PLA,Matte Pastel Candy,#F0D6D9,2.9
+CA04031,Panchroma Matte PLA,Matte Pastel Ice,#A4D0DF,1.8
+CA04032,Panchroma Matte PLA,Matte Pastel Mint,#D2DEBB,2.9
+CA04033,Panchroma Matte PLA,Matte Pastel Peach,#F6BF8B,3.3
+CA04034,Panchroma Matte PLA,Matte Pastel Peanut,#BF9573,0.7
+CA04035,Panchroma Matte PLA,Matte Pastel Watermelon,#EE474B,2.4
+CA04036,Panchroma Matte PLA,Matte Pastel Periwinkle,#ADB4E6,1.5
+CA04037,Panchroma Matte PLA,Matte Sakura Pink,#EAADBD,2.3
+CA04038,Panchroma Matte PLA,Matte Sapphire Blue,#0163A6,0.5
+CA04039,Panchroma Matte PLA,Matte Savannah Yellow,#F3C432,3.5
+CA04040,Panchroma Matte PLA,Matte Sunrise Orange,#F88B17,2.9
+CA04041,Panchroma Matte PLA,Matte Wood Brown,#AB7449,0.2
+CA19001,Panchroma PLA,White,#EBF7FF,3.2
+CA19002,Panchroma PLA,Grey,#8C9099,0.4
+CA19003,Panchroma PLA,Steel Grey,#616469,0.4
+CA19004,Panchroma PLA,Red,#E72F1D,1.9
+CA19005,Panchroma PLA,Blue,#003776,0.3
+CA19006,Panchroma PLA,Black,#080A0D,0.1
+CA19007,Panchroma PLA,Green,#06924D,0.4
+CA19008,Panchroma PLA,Orange,#F67405,3.3
+CA19009,Panchroma PLA,Pink,#F1A1AF,1.8
+CA19010,Panchroma PLA,Purple,#6C47B2,0.1
+CA19011,Panchroma PLA,Yellow,#FFE800,4.3
+CA19012,Panchroma PLA,Wine Red,#D60212,1
+CA19013,Panchroma PLA,Jungle Green,#4E742D,0.1
+CA19014,Panchroma PLA,Olive Green,#948902,0.1
+CA19015,Panchroma PLA,Beige,#C2AB72,0.5
+CA19016,Panchroma PLA,Aqua Blue,#5EBDDB,1.5
+CA19017,Panchroma PLA,Stone Blue,#487BA2,0.3
+CA19018,Panchroma PLA,Brown,#55331A,0.1
+CA19019,Panchroma PLA,Lemon Yellow,#EED230,3.3
+CA19020,Panchroma PLA,Polymaker Teal,#4CC0C7,0.6
+CA19021,Panchroma PLA,Cream,#EED1A8,1.5
+CA19022,Panchroma PLA,Lime Green,#D5D701,2.3
+CA19023,Panchroma PLA,Magenta,#F24574,1.4
+CA19024,Panchroma PLA,Azure Blue,#0066D9,1.5
+CA19025,Panchroma PLA,Tan,#A79E82,0.7
+CA19026,Panchroma PLA,Dark Olive Drab,#575B54,0.1
+CA19027,Panchroma PLA,Cold White,#D9DFE5,0.3
+CA19028,Panchroma PLA,Dark Grey,#485259,0.2
+CA03001,Panchroma Silk PLA,Silk Black,#363538,0.1
+CA03002,Panchroma Silk PLA,Silk Blue,#4999C9,1.3
+CA03003,Panchroma Silk PLA,Silk Brass,#968162,0.8
+CA03004,Panchroma Silk PLA,Silk Bronze,#AF6B4C,0.7
+CA03005,Panchroma Silk PLA,Silk Chrome,#85898B,0.3
+CA03006,Panchroma Silk PLA,Silk Gold,#C49449,2.2
+CA03007,Panchroma Silk PLA,Silk Green,#55B687,1
+CA03008,Panchroma Silk PLA,Silk Light Blue,#4CC1CB,1.9
+CA03009,Panchroma Silk PLA,Silk Lime,#C4CF4C,2.9
+CA03010,Panchroma Silk PLA,Silk Magenta,#AA538E,2.1
+CA03011,Panchroma Silk PLA,Silk Orange,#EB6232,3
+CA03012,Panchroma Silk PLA,Silk Peridot Green,#7F865B,0.1
+CA03013,Panchroma Silk PLA,Silk Quartz Pink,#DBBBBB,3.5
+CA03014,Panchroma Silk PLA,Silk Purple,#786BB0,1.2
+CA03015,Panchroma Silk PLA,Silk Red,#C1443F,1.3
+CA03016,Panchroma Silk PLA,Silk Rose,#CF6076,2.5
+CA03017,Panchroma Silk PLA,Silk Rose Gold,#CBB0B1,2.2
+CA03018,Panchroma Silk PLA,Silk Silver,#BCC2C8,2.4
+CA03019,Panchroma Silk PLA,Silk Teal,#66C2B6,1.8
+CA03020,Panchroma Silk PLA,Silk White,#DFE4E4,4.2
+CA03021,Panchroma Silk PLA,Silk Yellow,#EEC810,3.6
+CA03022,Panchroma Dual Silk PLA,Dual Silk Aubergine (Lime-Magenta),"#C4CF4C, #AA538E",
+CA03023,Panchroma Dual Silk PLA,Dual Silk Banquet (Gold-Magenta),"#C49449, #AA538E",
+CA03024,Panchroma Dual Silk PLA,Dual Silk Beluga (Silver-Blue),"#BCC2C8, #4999C9",
+CA03025,Panchroma Dual Silk PLA,Dual Silk Caribbean Sea (Blue-Green),"#4999C9, #55B687",
+CA03026,Panchroma Dual Silk PLA,Dual Silk Chameleon (Yellow-Blue),"#EEC810, #4999C9",
+CA03027,Panchroma Dual Silk PLA,Dual Silk Crown (Gold-Silver),"#C49449, #BCC2C8",
+CA03028,Panchroma Dual Silk PLA,Dual Silk Jadeite (Green-Chrome),"#55B687, #85898B",
+CA03029,Panchroma Dual Silk PLA,Dual Silk Sovereign (Gold-Purple),"#C49449, #786BB0",
+CA03030,Panchroma Dual Silk PLA,Dual Silk Sunset (Gold-Red),"#C49449, #CF6076",
+CA03031,Panchroma Silk PLA,Silk Dark Blue,#23599A,0.6
+CA03032,Panchroma Silk PLA,Silk Gunmetal Grey,#676B6A,0.5
+CA03033,Panchroma Silk PLA,Silk Periwinkle,#768EC7,1.3
+CA03034,Panchroma Gradient Silk PLA,Gradient Silk Rainbow,,
+CA03035,Panchroma Gradient Silk PLA,Gradient Silk Fire,,
+CA03036,Panchroma Gradient Silk PLA,Gradient Silk Water,,
+CA03037,Panchroma Gradient Silk PLA,Gradient Silk Air,,
+CA03038,Panchroma Gradient Silk PLA,Gradient Silk Earth,,
+CA05001,Panchroma Gradient Satin PLA,Gradient Satin Rainbow,,
+CA05002,Panchroma Satin PLA,Satin Blue,#0162A6,0.3
+CA05003,Panchroma Satin PLA,Satin Green,#5EAB71,0.5
+CA05004,Panchroma Satin PLA,Satin Grey,#797E89,0.1
+CA05005,Panchroma Satin PLA,Satin Orange,#FE9217,3.3
+CA05006,Panchroma Satin PLA,Satin Polymaker Teal,#61BBC1,0.2
+CA05007,Panchroma Satin PLA,Satin Purple,#9272C1,0.9
+CA05008,Panchroma Satin PLA,Satin Red,#DA1521,2.2
+CA05009,Panchroma Satin PLA,Satin White,#F5F0EC,3.8
+CA05010,Panchroma Satin PLA,Satin Yellow,#F4C131,3.9
+CA05011,Panchroma Satin PLA,Satin Black,#302E30,0.1
+CA02001,Panchroma Translucent PLA,Translucent Cyan,#08ABFB,8
+CA02002,Panchroma Translucent PLA,Translucent Magenta,#D93B90,7.8
+CA02003,Panchroma Translucent PLA,Translucent Yellow,#F9ED3D,14
+CA02004,Panchroma Translucent PLA,Translucent Grey,#9199A4,11.5
+CA02037,Panchroma Translucent PLA,Translucent Natural,#E8E6D0,21
+CA09001,Panchroma Gradient Translucent PLA,Gradient Translucent Rainbow,,
+CA02005,Panchroma Neon PLA,Neon Pink,#FF3670,3.8
+CA02006,Panchroma Neon PLA,Neon Green,#00F263,4.9
+CA02007,Panchroma Neon PLA,Neon Yellow,#E5DB2E,7.6
+CA02008,Panchroma Neon PLA,Neon Orange,#FF7800,7
+CA02009,Panchroma Neon PLA,Neon Magenta,#F21185,3.1
+CA02010,Panchroma Neon PLA,Neon Red,#FE2D42,3.5
+CA02011,Panchroma Metallic PLA,Metallic Gold,#DA9F1D,2.9
+CA02012,Panchroma Metallic PLA,Metallic Silver,#7A838E,0.6
+CA02013,Panchroma Metallic PLA,Metallic Bronze,#926043,0.8
+CA02036,Panchroma Metallic PLA,Metallic Blue,#2C3449,0.1
+CA02041,Panchroma Metallic PLA,Metallic Green,#434D43,0.4
+CA02014,Panchroma Celestial PLA,Celestial Blue,#6ADCF7,6.3
+CA02015,Panchroma Celestial PLA,Celestial Green,#6FE2D2,10.2
+CA02016,Panchroma Celestial PLA,Celestial Purple,#9678C8,5.5
+CA02044,Panchroma Celestial PLA,Celestial White,#DCDAD0,9.3
+CA02045,Panchroma Celestial PLA,Celestial Light Yellow,#D7CE89,7.9
+CA02046,Panchroma Celestial PLA,Celestial Light Pink,#C3ADB8,11.2
+CA02047,Panchroma Celestial PLA,Celestial Yellow,#F4C76A,7
+CA02017,Panchroma Starlight PLA,Starlight Mars,#962E31,2.1
+CA02018,Panchroma Starlight PLA,Starlight Mercury,#33322D,7.6
+CA02019,Panchroma Starlight PLA,Starlight Meteor,#2F3117,3.9
+CA02020,Panchroma Starlight PLA,Starlight Nebula,#462F32,3.6
+CA02021,Panchroma Starlight PLA,Starlight Neptune,#113148,2.7
+CA02022,Panchroma Starlight PLA,Starlight Twilight,#1E3445,3.1
+CA02038,Panchroma Starlight PLA,Starlight Aurora,#314530,4.7
+CA02039,Panchroma Starlight PLA,Starlight Comet,#1F312A,2.6
+CA02040,Panchroma Starlight PLA,Starlight Jupiter,#774718,4.7
+CA02042,Panchroma Starlight PLA,Starlight Midnight,#475A64,0.7
+CA02043,Panchroma Starlight PLA,Starlight Pulsar,#5C7BC1,5.1
+CA02023,Panchroma UV Shift PLA,UV Shift Natural/Orange,#F1DBBF,23.6
+CA02024,Panchroma Galaxy PLA,Galaxy Black,#161617,0.1
+CA02025,Panchroma Galaxy PLA,Galaxy Dark Blue,#18192D,0.4
+CA02026,Panchroma Galaxy PLA,Galaxy Dark Green,#13484D,0.4
+CA02027,Panchroma Galaxy PLA,Galaxy Dark Red,#451E14,0.2
+CA02028,Panchroma Galaxy PLA,Galaxy Dark Grey,#4E5658,0.4
+CA02029,Panchroma Glow PLA,Glow Blue,#F3EADB,22.5
+CA02030,Panchroma Glow PLA,Glow Green,#F2EADB,23.7
+CA02031,Panchroma Luminous PLA,Luminous Blue,#5FA8C2,10.5
+CA02032,Panchroma Luminous PLA,Luminous Green,#BFEB8C,12.7
+CA02033,Panchroma Luminous PLA,Luminous Orange,#FEBE5F,11.7
+CA02034,Panchroma Luminous PLA,Luminous Pink,#FE9176,11.8
+CA02035,Panchroma Luminous PLA,Luminous Yellow,#EEDC48,12.4
+CA09003,Panchroma Gradient Luminous PLA,Gradient Luminous Rainbow,,
+CA04003,Panchroma Marble PLA,Marble Sandstone,#C1BE97,1.7
+CA04004,Panchroma Marble PLA,Marble Slate Grey,#94B9C2,0.7
+CA04005,Panchroma Marble PLA,Marble White,#D7D4DA,1.9
+CA04060,Panchroma Marble PLA,Marble Limestone,#BCBEBE,0.6
+CA04061,Panchroma Marble PLA,Marble Brick,#CD7456,0.8
+CA04042,Panchroma Dual Matte PLA,Camouflage (Dark Green-Brown),"#5F6244, #795A4D",
+CA04043,Panchroma Dual Matte PLA,Dual Matte Chameleon (Teal-Yellow),"#61BCC3, #F3C432",
+CA04044,Panchroma Dual Matte PLA,Dual Matte Flamingo (Pink-Red),"#EAADBD, #ED2F2E",
+CA04045,Panchroma Dual Matte PLA,Dual Matte Foggy Orange (Grey-Orange),"#8A8C94, #F88B17",
+CA04046,Panchroma Dual Matte PLA,Dual Matte Foggy Purple (Grey-Purple),"#8A8C94, #9572BF",
+CA04047,Panchroma Dual Matte PLA,Dual Matte Glacier Blue (Ice-Blue),"#A4D0DF, #0163A6",
+CA04048,Panchroma Dual Matte PLA,Dual Matte Mixed Berries (Red-Dark Blue),"#BF312E, #2E4462",
+CA04049,Panchroma Dual Matte PLA,Dual Matte Shadow Black (White-Black),"#F4EFEB, #2F2E30",
+CA04050,Panchroma Dual Matte PLA,Dual Matte Shadow Orange (Orange-Black),"#F88B17, #2F2E30",
+CA04051,Panchroma Dual Matte PLA,Dual Matte Shadow Red (Black-Red),"#2F2E30, #ED2F2E",
+CA04052,Panchroma Dual Matte PLA,Dual Matte Sunrise (Red-Yellow),"#ED2F2E, #F3C432",
+CA04053,Panchroma Dual Matte PLA,Dual Gradient Matte Wood,,
+CA04054,Panchroma Gradient Matte PLA,Gradient Matte Fall,,
+CA04055,Panchroma Gradient Matte PLA,Gradient Matte Pastel Rainbow,,
+CA04056,Panchroma Gradient Matte PLA,Gradient Matte Spring,,
+CA04057,Panchroma Gradient Matte PLA,Gradient Matte Summer,,
+CA04058,Panchroma Gradient Matte PLA,Gradient Matte Winter,,
+CA04059,Panchroma Gradient Matte PLA,Gradient Matte Cappuccino,,
+CA09002,Panchroma Dual Special PLA,Dual Yin-Yang,"#020203, #CFCCD6",
+PA07001,PolyLite PLA Pro,Black,#161619,
+PA07002,PolyLite PLA Pro,White,#EBECED,
+PA07003,PolyLite PLA Pro,Grey,#8D8E93,
+PA07004,PolyLite PLA Pro,Red,#ED2F20,
+PA07005,PolyLite PLA Pro,Blue,#013276,
+PA07006,PolyLite PLA Pro,Army Green,#665A30,
+PA07007,PolyLite PLA Pro,Silver,#8A8D95,
+PA07008,PolyLite PLA Pro,Green,#31A45F,
+PA07009,PolyLite PLA Pro,Yellow,#F0AB01,
+PA07010,PolyLite PLA Pro,Orange,#FE8E1B,
+PA07011,PolyLite PLA Pro,Purple,#6547A5,
+PA07012,PolyLite PLA Pro,Polymaker Teal,#5FC7CF,
+PA07026,PolyLite PLA Pro,Pink,#EE92AA,
+PA07027,PolyLite PLA Pro,Army Beige,#C28D5E,
+PA07028,PolyLite PLA Pro,Light Blue,#A8D4E8,
+PA07029,PolyLite PLA Pro,Light Green,#C0DDA3,
+PA07030,PolyLite PLA Pro,Light Yellow,#F4DA78,
+PA07031,PolyLite PLA Pro,Dark Purple,#2C1C30,
+PA07033,PolyLite PLA Pro,Brown,#634232,
+PA07034,PolyLite PLA Pro,Magenta,#EF2F64,
+PA07035,PolyLite PLA Pro,Light Red,#DC605A,
+PA07037,PolyLite PLA Pro,Gold,#A66301,
+PA07038,PolyLite PLA Pro,Bronze,#AE6840,
+PA07039,PolyLite PLA Pro,Metallic Blue,#2D3449,
+PA07042,PolyLite PLA Pro,Blue-Green,#022B33,
+PA07047,PolyLite PLA Pro,Metallic Red,#8D352C,
+PA07052,PolyLite PLA Pro,Metallic Magenta,#743063,
+PA07053,PolyLite PLA Pro,Cold White,#D6D5DC,
+PA07056,PolyLite PLA Pro,Dark Grey,#545859,
+PA07057,PolyLite PLA Pro,Metallic Chrome,#505A5D,
+PA07058,PolyLite PLA Pro,Metallic Black,#0C0E0C,
+PA13001,Polymaker PLA Pro,White,#E2DEDB,
+PA13002,Polymaker PLA Pro,Black,#0C0E0C,
+PA13003,Polymaker PLA Pro,Grey,#959FA1,
+PA13004,Polymaker PLA Pro,Blue,#003287,
+PA13005,Polymaker PLA Pro,Red,#E20010,
+PA13006,Polymaker PLA Pro,Yellow,#F4C032,
+PA13007,Polymaker PLA Pro,Orange,#F97429,
+PA13008,Polymaker PLA Pro,Purple,#6C5BB1,
+PA13009,Polymaker PLA Pro,Polymaker Teal,#50DAE4,
+PA13010,Polymaker PLA Pro,Green,#2D9E59,
+PA06001,PolyMax PLA,Black,#161619,
+PA06002,PolyMax PLA,White,#EBECED,
+PA06003,PolyMax PLA,Grey,#8D8E93,
+PA06004,PolyMax PLA,Red,#ED2F20,
+PA06005,PolyMax PLA,Blue,#013178,
+PA06006,PolyMax PLA,Green,#31A45F,
+PA06007,PolyMax PLA,Yellow,#F0AB01,
+PA06008,PolyMax PLA,Orange,#FE8E1B,
+PA06009,PolyMax PLA,Purple,#6647A3,
+PA06010,PolyMax PLA,Polymaker Teal,#4ABAC2,
+PA06029,PolyMax PLA,Pink,#F02F63,
+PA06030,PolyMax PLA,FDE Beige,#90755D,
+PA12001,PolySonic PLA,White,#E2DEDB,
+PA12002,PolySonic PLA,Black,#0C0E0C,
+PA12003,PolySonic PLA,Grey,#73767D,
+PA12004,PolySonic PLA,Blue,#00307E,
+PA12005,PolySonic PLA,Red,#E62216,
+PA12006,PolySonic PLA,Yellow,#F4C032,
+PA12007,PolySonic PLA,Orange,#F97429,
+PA12008,PolySonic PLA,Purple,#6C5BB1,
+PA12009,PolySonic PLA,Polymaker Teal,#50DAE4,
+PA12010,PolySonic PLA,Green,#2D9E59,
+PA17001,Polymaker HT-PLA,Black,#070707,
+PA17002,Polymaker HT-PLA,White,#F3F3F1,
+PA17003,Polymaker HT-PLA,Grey,#6C7477,
+PA17004,Polymaker HT-PLA,Blue,#0F5EA0,
+PA17005,Polymaker HT-PLA,Red,#AC0200,
+PA17006,Polymaker HT-PLA,Green,#05AF47,
+PA17007,Polymaker HT-PLA,Teal,#5FCCB7,
+PA17008,Polymaker HT-PLA,Yellow,#F0C940,
+PA17009,Polymaker HT-PLA,Orange,#DC6E38,
+PA17010,Polymaker HT-PLA,Brown,#4D2D1C,
+PA17011,Polymaker HT-PLA,Gradient Rainbow,,
+PA17012,Polymaker HT-PLA,Gradient Tropical,,
+PA17013,Polymaker HT-PLA,Gradient Ice,,
+PA17014,Polymaker HT-PLA,Gradient Fire,,
+PA18001,Polymaker HT-PLA-GF,Black,#18191B,
+PA18002,Polymaker HT-PLA-GF,White,#EFF0EB,
+PA18003,Polymaker HT-PLA-GF,Grey,#91999F,
+PA18004,Polymaker HT-PLA-GF,Blue,#084989,
+PA18005,Polymaker HT-PLA-GF,Army Green,#61583C,
+PA18006,Polymaker HT-PLA-GF,Power Tool Yellow,#F6B649,
+PA18007,Polymaker HT-PLA-GF,Power Tool Red,#CA4140,
+PA18008,Polymaker HT-PLA-GF,Power Tool Green,#CECF45,
+PA18009,Polymaker HT-PLA-GF,Power Tool Teal,#215966,
+PA08005,Polymaker Wood PLA,Wood,#A8754B,
+PA10001,PolyLite PLA-CF,Black,#302F31,
+PA05001,PolyTerra PLA+,Satin Yellow,#F4C131,3.9
+PA05002,PolyTerra PLA+,Satin Orange,#FE9217,3.3
+PA05003,PolyTerra PLA+,Satin Purple,#9272C1,0.9
+PA05004,PolyTerra PLA+,Satin Polymaker Teal,#61BBC1,0.2
+PA05005,PolyTerra PLA+,Satin Black,#030305,0.1
+PA04034,Matte PLA for Production,White,#E6DDDB,4.1
+PA04046,Matte PLA for Production,Black,#1C1C1C,
+PA11003,Draft PLA,Black,#16161A,
+PB01001,PolyLite PETG,Black,#161618,
+PB01002,PolyLite PETG,White,#EEEBEA,
+PB01003,PolyLite PETG,Grey,#8C8D93,
+PB01004,PolyLite PETG,Red,#D92B1C,
+PB01005,PolyLite PETG,Green,#007A44,
+PB01006,PolyLite PETG,Yellow,#EEA800,
+PB01007,PolyLite PETG,Blue,#013178,
+PB01008,PolyLite PETG,Purple,#6347A5,
+PB01009,PolyLite PETG,Orange,#F37715,
+PB01010,PolyLite PETG,Polymaker Teal,#0091A5,
+PB01011,PolyLite PETG,Clear,#DBD5D6,
+PB01012,PolyLite PETG,Silver,#5F5E5F,
+PB01013,PolyLite PETG,Gold,#A85D00,
+PB01031,PolyLite PETG,Translucent Red,#BE0017,
+PB01032,PolyLite PETG,Translucent Blue,#01062F,
+PB01033,PolyLite PETG,Translucent Green,#005F2F,
+PB01034,PolyLite PETG,Dark Blue,#151C2F,
+PB01035,PolyLite PETG,Dark Green,#2C342D,
+PB01039,PolyLite PETG,Magenta,#C1015B,
+PB01040,PolyLite PETG,Pink,#EE94A5,
+PB01041,PolyLite PETG,Lime,#D8DB00,
+PB01042,PolyLite PETG,Electric Blue,#0076C1,
+PB01056,PolyLite PETG,Dark Grey,#6C6D71,
+PB01057,PolyLite PETG,Dark Purple,#2E1A47,
+PB02001,PolyMax PETG,Black,#181718,
+PB02002,PolyMax PETG,White,#EFECEB,
+PB03001,PolyMax PETG-ESD,Black,#312F2F,
+CA14001,Panchroma CoPE,Black,#080A0D,0.3
+CA14002,Panchroma CoPE,White,#EBF7FF,3
+CA14003,Panchroma CoPE,Grey,#8C9099,0.2
+CA14004,Panchroma CoPE,Blue,#003776,0.4
+CA14005,Panchroma CoPE,Red,#E72F1D,2.7
+CA14006,Panchroma CoPE,Yellow,#FFE800,3.5
+CA14007,Panchroma CoPE,Orange,#F67405,4.6
+CA14008,Panchroma CoPE,Green,#06924D,1.3
+CA14009,Panchroma CoPE,Purple,#6C47B2,0.9
+CA14010,Panchroma CoPE,Polymaker Teal,#4CC0C7,1.1
+CA14011,Panchroma CoPE,Steel Grey,#616469,0.6
+CA14012,Panchroma CoPE,Brown,#55331A,0.1
+CA14013,Panchroma CoPE,Aqua Blue,#5EBDDB,2.3
+CA14015,Panchroma CoPE,Beige,#C2AB72,1.5
+CA14016,Panchroma CoPE,Cold White,#D9DFE5,1.5
+CA14017,Panchroma CoPE,Cream,#EED1A8,2.8
+CA14018,Panchroma CoPE,Dark Grey,#485259,0.1
+CA14019,Panchroma CoPE,Jungle Green,#4E742D,0.3
+CA14020,Panchroma CoPE,Lemon Yellow,#EED230,4.6
+CA14021,Panchroma CoPE,Lime Green,#D5D701,3
+CA14022,Panchroma CoPE,Magenta,#F24574,3.5
+CA14023,Panchroma CoPE,Olive Drab Green,#575B54,0.5
+CA14024,Panchroma CoPE,Olive Green,#948902,0.2
+CA14025,Panchroma CoPE,Pink,#F1A1AF,2.9
+CA14026,Panchroma CoPE,Stone Blue,#487BA2,0.5
+CA14027,Panchroma CoPE,Tan,#A79E82,0.1
+CA14028,Panchroma CoPE,Wine Red,#D60212,2.2
+FF02001,Fiberon ASA-CF08,Black,#000000,
+FF02003,Fiberon ASA-CF08,Navy Blue,#30548E,
+FF02004,Fiberon ASA-CF08,Light Grey,#ADC4D6,
+FF02005,Fiberon ASA-CF08,Dark Grey,#4D5E70,
+FF02006,Fiberon ASA-CF08,Desert Sand,#CEB69C,
+FF02007,Fiberon ASA-CF08,Dark Red,#855261,
+FB04001,Fiberon PETG-rCF08,Black,#302E2F,
+FB03001,Fiberon PETG-ESD,Black,#161618,
+FG02001,Fiberon PA6-GF25,Grey,#75787B,
+FG03001,Fiberon PA6-CF20,Black,#312F2F,
+FG04001,Fiberon PA12-CF10,Black,#302F2F,
+FG07001,Fiberon PA612-CF15,Black,#302E2F,
+FG08001,Fiberon PA612-ESD,Black,#161618,
+FL01001,Fiberon PET-CF17,Black,#302E2F,
+FL02001,Fiberon PET-GF15,Black,#000000,
+FL02003,Fiberon PET-GF15,White,#FFFFFF,
+FL02004,Fiberon PET-GF15,Light Grey,#A9ABAF,
+FL02005,Fiberon PET-GF15,Dark Grey,#0F191F,
+FL02006,Fiberon PET-GF15,Blue,#6E9EFF,
+FL02007,Fiberon PET-GF15,Red,#CC0033,
+FM01001,Fiberon PPS-CF10,Black,#302E2F,
+FM02001,Fiberon PPS-GF20,Grey,#75787B,
+PC01001,PolyLite PC,Transparent,#DAD5D4,

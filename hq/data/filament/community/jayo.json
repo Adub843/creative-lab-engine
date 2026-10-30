@@ -1,0 +1,233 @@
+{
+    "manufacturer": "JAYO",
+    "filaments": [
+        {
+            "name": "{color_name}",
+            "material": "PLA+",
+            "density": 1.24,
+            "weights": [
+                {
+                    "weight": 1100.0,
+                    "spool_weight": 120.0,
+                    "spool_type": "cardboard"
+                }
+            ],
+            "diameters": [
+                1.75
+            ],
+            "extruder_temp": 210,
+            "bed_temp": 60,
+            "colors": [
+                {
+                    "name": "Black",
+                    "hex": "000000"
+                },
+                {
+                    "name": "Green",
+                    "hex": "49FF6E"
+                },
+                {
+                    "name": "Red",
+                    "hex": "F24045"
+                },
+                {
+                    "name": "Yellow",
+                    "hex": "E4AB00"
+                },
+				{
+                    "name": "Pure Yellow",
+                    "hex": "F2D00D"
+                },
+                {
+                    "name": "Grey-Blue",
+                    "hex": "5683FD"
+                },
+                {
+                    "name": "Orange",
+                    "hex": "FC9036"
+                },
+                {
+                    "name": "Blue",
+                    "hex": "1241CD"
+                },
+                {
+                    "name": "Grass Green",
+                    "hex": "2DADA2"
+                },
+                {
+                    "name": "Wood",
+                    "hex": "CAAB89"
+                },
+                {
+                    "name": "White Transparent",
+                    "hex": "FFFFFF"
+                },
+                {
+                    "name": "Gold Silk",
+                    "hex": "FFF63F"
+                },
+                {
+                    "name": "Blue Silk",
+                    "hex": "49CCFF"
+                }
+            ]
+        },
+        {
+            "name": "{color_name}",
+            "material": "PLA",
+            "density": 1.24,
+            "weights": [
+                {
+                    "weight": 1100.0,
+                    "spool_weight": 120.0
+                }
+            ],
+            "diameters": [
+                1.75
+            ],
+            "extruder_temp": 210,
+            "bed_temp": 60,
+            "colors": [
+                {
+                    "name": "Olive green",
+                    "hex": "6A845B"
+                },
+                {
+                    "name": "Matte Pink",
+                    "hex": "F9C9D1"
+                },
+                {
+                    "name": "Matte Purple",
+                    "hex": "B272C9"
+                },
+                {
+                    "name": "Matte Black",
+                    "hex": "000000"
+                },
+                {
+                    "name": "Matte White",
+                    "hex": "FFFFFF"
+                }
+            ]
+        },
+        {
+            "name": "{color_name}",
+            "material": "PETG",
+            "density": 1.25,
+            "weights": [
+                {
+                    "weight": 1100.0,
+                    "spool_weight": 120.0
+                }
+            ],
+            "diameters": [
+                1.75
+            ],
+            "extruder_temp": 250,
+            "bed_temp": 80,
+            "colors": [
+                {
+                    "name": "White",
+                    "hex": "FFFFFF"
+                },
+                {
+                    "name": "Black",
+                    "hex": "000000"
+                },
+                {
+                    "name": "Gray",
+                    "hex": "656565"
+                },
+                {
+                    "name": "Orange",
+                    "hex": "F2552A"
+                },
+                {
+                    "name": "Red",
+                    "hex": "F55C3D"
+                },
+                {
+                    "name": "Mint Green",
+                    "hex": "7FFFD4"
+                }
+            ]
+        },
+        {
+            "name": "Silk {color_name}",
+            "material": "TPU",
+            "density": 1.24,
+            "weights": [
+                {
+                    "weight": 1100.0,
+                    "spool_weight": 120.0,
+                    "spool_type": "cardboard"
+                }
+            ],
+            "diameters": [
+                1.75
+            ],
+            "extruder_temp": 220,
+            "bed_temp": 0,
+            "finish": "glossy",
+            "colors": [
+                {
+                    "name": "Cream White",
+                    "hex": "F7F1D1"
+                },
+                {
+                    "name": "Black",
+                    "hex": "000000"
+                },
+                {
+                    "name": "Light Blue",
+                    "hex": "92CECC"
+                },
+                {
+                    "name": "Dark Blue",
+                    "hex": "1D2353"
+                },
+                {
+                    "name": "Burgundy",
+                    "hex": "3F2028"
+                }
+            ]
+        },
+        {
+            "name": "{color_name}",
+            "material": "PLA",
+            "density": 1.24,
+            "weights": [
+                {
+                    "weight": 1100.0,
+                    "spool_weight": 120.0,
+                    "spool_type": "cardboard"
+                }
+            ],
+            "diameters": [
+                1.75
+            ],
+            "extruder_temp": 210,
+            "bed_temp": 60,
+            "glow": true,
+            "colors": [
+                {
+                    "name": "White (Glow Green)",
+                    "hex": "000000"
+                },
+                {
+                    "name": "White (Glow Blue)",
+                    "hex": "000000"
+                },
+                {
+                    "name": "Yellow (Glow Yellow)",
+                    "hex": "FFFF00"
+                },
+                {
+                    "name": "Red (Glow Orange)",
+                    "hex": "FF0000"
+                }
+            ]
+        }
+    ]
+}
+
