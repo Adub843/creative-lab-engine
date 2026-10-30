@@ -27,6 +27,7 @@ import { handlePricing, scheduledPricing } from "../lib/pricing.mjs";
 import { handleMarketing, runScheduledAudits, runScheduledFixes } from "../lib/marketing.mjs";
 import { handlePromotions } from "../lib/promotions.mjs";
 import { handleTeam } from "../lib/team.mjs";
+import { handlePicture } from "../lib/picture.mjs";
 import { runScheduledSnapshots } from "../lib/tracker.mjs";
 import { syncKittlLibrary, STATE_KEY as KITTL_STATE_KEY } from "../lib/kittl-sync.mjs";
 
@@ -129,6 +130,11 @@ export async function handleRequest(req, env) {
       return await listings(req, env, { readImage });
     }
     if (pathname === "/api/pricing") return await pricing(req, env, { kv: env?.PRICING ?? null });
+    // A Shopify product picture for the console (it can't load pictures from other sites itself).
+    if (pathname === "/api/picture") {
+      const url = new URL(req.url);
+      return await handlePicture({ method: req.method, query: url.searchParams, header: (k) => req.headers.get(k) }, { env: envReader(env), fetch: (input, init) => fetch(input, init) });
+    }
     // The last Kittl library sync (counts only), so a check doesn't need the console key.
     if (pathname === "/api/library-sync" && req.method === "GET") {
       const last = env?.IMAGES ? await env.IMAGES.get(KITTL_STATE_KEY, "json") : null;
