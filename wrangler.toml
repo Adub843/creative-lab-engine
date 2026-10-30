@@ -10,11 +10,6 @@ workers_dev = true
 # Keep variables added in the Cloudflare dashboard (IndexNow and Bing keys) when deploying.
 keep_vars = true
 
-# Public settings (not secrets). ED_CUSTOMER_CLIENT_ID: the Elevated Designs Headless channel's Customer
-# Account API client ID, used for store sign-in in the shirt app (lib/members.mjs).
-[vars]
-ED_CUSTOMER_CLIENT_ID = "1cd847fd-6a88-46bb-af04-d486241fc519"
-
 # Copies index.html and assets/ into dist/ before `wrangler dev` and `wrangler deploy`.
 [build]
 command = "node scripts/build.mjs"
