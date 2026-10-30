@@ -3,3 +3,6 @@ node_modules/
 .wrangler/
 .dev.vars*
 .env*
+
+# The 3MF loader's run log (scripts/import-3mf.mjs --log)
+.import-3mf.log

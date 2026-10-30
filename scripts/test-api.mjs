@@ -730,6 +730,68 @@ test("images: list and writes need the key; private files need the key or a sign
   assert.equal(blobs.m.size, 0);
 });
 
+const { handleFiles } = await import("../lib/files.mjs");
+// The Charleston 3D file library: its own prefixes in the same KV namespace, never in the image list.
+function fileCtx(kv = fakeKV(), env = envOf()) {
+  return { kv, ctx: { blobs: kvBlobStore(kv, "c3d-file:"), thumbs: kvBlobStore(kv, "c3d-thumb:"), env } };
+}
+const binStl = (tris) => { const b = new Uint8Array(84 + 50 * tris); new DataView(b.buffer).setUint32(80, tris, true); return b; };
+const upFile = (ctx, name, body, headers = KEYH) =>
+  handleFiles(imgReq("/api/files", { method: "POST", headers: { "x-filename": name, "content-type": "application/octet-stream", ...headers }, body }), ctx);
+
+test("files: Charleston 3D library takes STL, 3MF, OBJ, STEP and photos, checked by content", async () => {
+  const { kv, ctx } = fileCtx();
+  assert.equal((await handleFiles(imgReq("/api/files"), ctx)).status, 401, "list needs the key");
+  assert.equal((await upFile(ctx, "a.stl", binStl(2), {})).status, 401, "upload needs the key");
+  const ok = [["bracket.stl", binStl(3)], ["ascii.stl", new TextEncoder().encode("solid part\nfacet normal 0 0 1\nendsolid")],
+    ["plate.3mf", new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3])], ["cube.obj", new TextEncoder().encode("# cube\no Cube\nv 0 0 0\nv 1 0 0\nf 1 2 1\n")],
+    ["part.STEP", new TextEncoder().encode("ISO-10303-21;\nHEADER;")], ["photo.png", PNG]];
+  for (const [name, body] of ok) assert.equal((await upFile(ctx, name, body)).status, 201, name);
+  for (const [name, body] of [["fake.stl", new Uint8Array(90)], ["fake.3mf", PNG], ["notes.txt", new TextEncoder().encode("hi")], ["fake.step", PNG], ["x.png", binStl(1)]])
+    assert.equal((await upFile(ctx, name, body)).status, 415, `${name} refused`);
+  const { items } = await (await handleFiles(imgReq("/api/files", { headers: KEYH }), ctx)).json();
+  assert.equal(items.length, ok.length);
+  assert.deepEqual(new Set(items.map((i) => i.type)), new Set(["model/stl", "model/3mf", "model/obj", "model/step", "image/png"]));
+  assert.ok(items.every((i) => i.store === "c3d" && /^\/api\/files\/[a-z0-9]+-[0-9a-f]{8}\?exp=\d+&sig=/.test(i.url)));
+  assert.ok([...kv.m.keys()].every((k) => k.startsWith("c3d-file:")), "nothing lands in the image library's keys");
+  assert.equal((await kvBlobStore(kv).list()).blobs.length, 0, "the Elevated Designs image list doesn't see them");
+});
+
+test("files: downloads need the key or a signed link; models download, previews and renames work; delete removes both", async () => {
+  const { kv, ctx } = fileCtx();
+  const { item } = await (await upFile(ctx, "Pineapple Ornament.stl", binStl(4))).json();
+  assert.equal((await handleFiles(imgReq(`/api/files/${item.key}`), ctx)).status, 404, "hidden from strangers");
+  const file = await handleFiles(imgReq(item.url), ctx);
+  assert.equal(file.status, 200);
+  assert.equal(file.headers.get("content-type"), "application/octet-stream");
+  assert.equal(file.headers.get("content-disposition"), 'attachment; filename="Pineapple Ornament.stl"');
+  assert.equal((await handleFiles(imgReq(item.url.replace(/sig=.*/, "sig=" + "A".repeat(43))), ctx)).status, 404, "a wrong signature is refused");
+  const put = (body, headers = KEYH) => handleFiles(imgReq(`/api/files/${item.key}/thumb`, { method: "PUT", headers, body }), ctx);
+  assert.equal((await put(PNG, {})).status, 401);
+  assert.equal((await put(binStl(1))).status, 415, "a preview must be a PNG");
+  assert.equal((await put(new Uint8Array(301 * 1024).fill(0x89))).status, 413);
+  const withThumb = (await (await put(PNG)).json()).item;
+  assert.match(withThumb.thumbUrl, new RegExp(`^/api/files/${item.key}/thumb\\?exp=`));
+  const thumb = await handleFiles(imgReq(withThumb.thumbUrl), ctx);
+  assert.equal(thumb.status, 200);
+  assert.equal(thumb.headers.get("content-type"), "image/png");
+  // One signature per hour covers the whole library, so listing it costs one HMAC (the free plan's 10 ms limit).
+  assert.equal(new URL(withThumb.thumbUrl, "https://x").search, new URL(item.url, "https://x").search, "one link signature for every file");
+  const old = item.url.replace(/exp=\d+/, `exp=${Date.now() - 1000}`);
+  assert.equal((await handleFiles(imgReq(old), ctx)).status, 404, "an expired link is refused");
+  const otherKey = { ...ctx, env: envOf({ CONSOLE_KEY: "a-different-console-key-1234" }) };
+  assert.equal((await handleFiles(imgReq(item.url), otherKey)).status, 404, "a link signed with another key is refused");
+  const renamed = await handleFiles(imgReq(`/api/files/${item.key}`, { method: "PATCH", headers: { ...KEYH, "content-type": "application/json" }, body: JSON.stringify({ name: "Pineapple v2.obj", tags: "ornament, fruit" }) }), ctx);
+  const r = (await renamed.json()).item;
+  assert.equal(r.name, "Pineapple v2.stl", "the extension always stays the file's own");
+  assert.equal(r.tags, "ornament, fruit");
+  assert.equal(r.thumb, true, "renaming keeps the preview");
+  assert.equal((await handleFiles(imgReq(`/api/files/${item.key}`, { method: "DELETE", headers: KEYH }), ctx)).status, 200);
+  assert.equal(kv.m.size, 0, "the file and its preview are gone");
+  for (const bad of ["/api/files/../image:x", "/api/files/abc", `/api/files/${item.key}/other`, `/api/files/${item.key}/thumb/x`])
+    assert.equal((await handleFiles(imgReq(bad, { headers: KEYH }), ctx)).status, 404, bad);
+});
+
 test("images: content must match the declared type, and only image types are taken", async () => {
   const ctx = { blobs: fakeBlobs(), env: envOf() };
   const html = new TextEncoder().encode("<html><script>alert(1)</script></html>");
@@ -919,6 +981,48 @@ test("customizable: bad input, both fields, key, 404 and userErrors", async () =
   const rej = await handleProducts(post({ store: "c3d", id: PID, customizable: true }), { env: envOf(), fetch: fakeShopify({ tagErrors: [{ field: ["tags"], message: "Tags is too long" }] }).fetch });
   assert.equal(rej.status, 422);
   assert.match(rej.body.error, /customizable tag: Tags is too long/);
+});
+
+// ---------- shirt builder (Elevated Designs only) ----------
+test("list: ED products say whether they're in the shirt builder; C3D products don't carry it", async () => {
+  const node = (id, tags) => ({ id: `gid://shopify/Product/${id}`, handle: `p${id}`, title: `P${id}`, status: "ACTIVE", productType: "", tags, updatedAt: "2026-10-20T10:00:00Z", totalInventory: 0, tracksInventory: false, featuredMedia: null, priceRangeV2: null, publishedOnPublication: true });
+  const sh = fakeShopify({ override: { ConsoleProducts: (v, data) => data({ products: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [node(1, ["Builder-Blank", "tee"]), node(2, ["builder-blanks"])] } }) } });
+  const ed = await handleProducts(keyed({ store: "ed" }), { env: envOf(), fetch: sh.fetch });
+  assert.deepEqual(ed.body.products.map((p) => p.builder), [true, false]);
+  const c3d = await handleProducts(keyed({ store: "c3d" }), { env: envOf(), fetch: sh.fetch });
+  assert.ok(c3d.body.products.every((p) => !("builder" in p)));
+});
+
+test("shirt builder off: removes every spelling of builder-blank and nothing else", async () => {
+  const sh = fakeShopify({ product: { tags: ["builder-blank", "Builder-Blank", "tee"] } });
+  const res = await handleProducts(post({ store: "ed", id: PID, builder: false }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.builder, false);
+  assert.equal(res.body.product.builder, false);
+  assert.deepEqual(sh.calls.find((c) => c.op === "ConsoleTagsRemove").variables, { id: PID, tags: ["builder-blank", "Builder-Blank"] });
+  assert.ok(!sh.calls.some((c) => c.op === "ConsoleTagsAdd" || c.op === "ConsolePublish" || c.op === "ConsoleUnpublish" || c.op === "ConsoleActivate"), "only the tag changes; the product stays on the site");
+});
+
+test("shirt builder on: adds builder-blank once", async () => {
+  const sh = fakeShopify({ product: { tags: ["tee"] } });
+  const res = await handleProducts(post({ store: "ed", id: PID, builder: true }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.builder, true);
+  assert.deepEqual(sh.calls.find((c) => c.op === "ConsoleTagsAdd").variables, { id: PID, tags: ["builder-blank"] });
+  const again = fakeShopify({ product: { tags: ["builder-blank"] } });
+  await handleProducts(post({ store: "ed", id: PID, builder: true }), { env: envOf(), fetch: again.fetch });
+  assert.ok(!again.calls.some((c) => /Tags(Add|Remove)/.test(c.op ?? "")));
+});
+
+test("shirt builder is refused for Charleston 3D before any Shopify call; one switch per request", async () => {
+  const sh = fakeShopify();
+  const res = await handleProducts(post({ store: "c3d", id: PID, builder: false }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 400);
+  assert.equal(res.body.code, "wrong_store");
+  for (const body of [{ store: "ed", id: PID, builder: "no" }, { store: "ed", id: PID, builder: true, live: true }, { store: "ed", id: PID, builder: true, customizable: true }])
+    assert.equal((await handleProducts(post(body), { env: envOf(), fetch: sh.fetch })).status, 400, JSON.stringify(body));
+  assert.equal((await handleProducts(post({ store: "ed", id: PID, builder: true }, { "content-type": "application/json" }), { env: envOf(), fetch: sh.fetch })).status, 401);
+  assert.equal(sh.calls.length, 0);
 });
 
 // ---------- make-active worked, publish didn't ----------
@@ -1331,17 +1435,17 @@ async function withFetch(fn, impl) {
   try { return await fn(); } finally { globalThis.fetch = original; }
 }
 
-test("build: dist/ holds only index.html and assets/, and wrangler.toml serves just that", async () => {
+test("build: dist/ holds only index.html, assets/ and tools/, and wrangler.toml serves just that", async () => {
   const fs = await import("node:fs");
   const path = await import("node:path");
   const os = await import("node:os");
   const { execFileSync } = await import("node:child_process");
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bc-build-"));
-  for (const f of ["index.html", "assets", "lib", "scripts", "worker", "data", "package.json", "README.md", "wrangler.toml"])
+  for (const f of ["index.html", "assets", "tools", "lib", "scripts", "worker", "data", "package.json", "README.md", "wrangler.toml"])
     fs.cpSync(path.join(root, f), path.join(tmp, f), { recursive: true });
   execFileSync(process.execPath, [path.join(tmp, "scripts", "build.mjs")], { cwd: tmp, stdio: "ignore" });
-  assert.deepEqual(fs.readdirSync(path.join(tmp, "dist")).sort(), ["assets", "index.html"]);
+  assert.deepEqual(fs.readdirSync(path.join(tmp, "dist")).sort(), ["assets", "index.html", "tools"]);
   fs.rmSync(tmp, { recursive: true, force: true });
   const toml = fs.readFileSync(path.join(root, "wrangler.toml"), "utf8");
   assert.match(toml, /^main = "worker\/index\.mjs"$/m);
@@ -1350,14 +1454,15 @@ test("build: dist/ holds only index.html and assets/, and wrangler.toml serves j
   assert.match(toml, /^run_worker_first = true$/m, "API routes and security headers go through the Worker");
   assert.match(toml, /compatibility_flags = \["nodejs_compat"\]/);
   assert.match(toml, /\[\[kv_namespaces\]\]\s+binding = "IMAGES"/);
-  assert.ok(!/r2_buckets|\[vars\]|shpat_|CONSOLE_KEY\s*=|_TOKEN\s*=|_SECRET\s*=/.test(toml), "no R2, no vars, no secrets in wrangler.toml");
+  assert.ok(!/\[vars\]|shpat_|CONSOLE_KEY\s*=|_TOKEN\s*=|_SECRET\s*=/.test(toml), "no vars, no secrets in wrangler.toml");
+  assert.deepEqual([...toml.matchAll(/bucket_name\s*=\s*"([^"]+)"/g)].map((m) => m[1]), ["c3d-files"], "one R2 bucket: Charleston 3D's print files");
   // Nothing in this project runs on Netlify: no config, functions, packages, code or docs for it.
   for (const gone of ["netlify.toml", "netlify", "lib/netlify.mjs"]) assert.ok(!fs.existsSync(path.join(root, gone)), `${gone} is gone`);
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   assert.ok(!Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).some((d) => /netlify/i.test(d)), "no Netlify packages");
   assert.ok(!/netlify/i.test(fs.readFileSync(path.join(root, "package-lock.json"), "utf8")), "none in the lockfile either");
   const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
-  const hosting = ["wrangler.toml", "package.json", "README.md", "index.html", ...["worker", "lib", ".github"].flatMap((d) => walk(path.join(root, d)).map((f) => path.relative(root, f)))];
+  const hosting = ["wrangler.toml", "package.json", "README.md", "index.html", ...["worker", "lib", ".github", "tools"].flatMap((d) => walk(path.join(root, d)).map((f) => path.relative(root, f)))];
   for (const f of hosting) assert.ok(!/netlify/i.test(fs.readFileSync(path.join(root, f), "utf8")), `${f} mentions Netlify`);
 });
 
@@ -1480,6 +1585,18 @@ test("worker: without the IMAGES binding the library says it isn't set up (and t
   const res = await W.handleRequest(wreq("/api/images", { headers: KEYH }), env);
   assert.equal(res.status, 503);
   assert.equal((await res.json()).code, "storage_not_set_up");
+});
+
+test("worker: the Charleston 3D file library is routed to its own keys in the IMAGES namespace", async () => {
+  const kv = fakeKV(), env = workerEnv({ IMAGES: kv });
+  assert.equal((await W.handleRequest(wreq("/api/files"), env)).status, 401);
+  const stl = new Uint8Array(84 + 50); new DataView(stl.buffer).setUint32(80, 1, true);
+  const up = await W.handleRequest(wreq("/api/files", { method: "POST", headers: { "x-filename": "hook.stl", ...KEYH }, body: stl }), env);
+  assert.equal(up.status, 201);
+  assert.deepEqual([...kv.m.keys()].map((k) => k.split(":")[0]), ["c3d-file"]);
+  const imgs = await W.handleRequest(wreq("/api/images", { headers: KEYH }), env);
+  assert.deepEqual((await imgs.json()).items, [], "the Elevated Designs image list stays separate");
+  assert.equal((await W.handleRequest(wreq("/api/files", { headers: KEYH }), workerEnv({ IMAGES: undefined }))).status, 503);
 });
 
 test("worker: uploads are capped at 20 MB (KV takes 25 MiB), even when streamed without a length", async () => {
@@ -3044,4 +3161,285 @@ test("tracker: competitors, compare, suggestions, who links here and snapshot ac
   const nokey = await MK.handleMarketing(post({ store: "c3d", action: "compare" }, { "content-type": "application/json" }), ctx);
   assert.equal(nokey.status, 401, "actions need the console key");
   delete mkFetch.bing;
+});
+
+// ---------- 3D maker (lib/meshy.mjs) ----------
+const { handleMeshy, cost: meshyCost } = await import("../lib/meshy.mjs");
+const MESHY_KEY = "msy_TEST_SECRET_1234";
+// A small stand-in for api.meshy.ai and assets.meshy.ai that records every call.
+function fakeMeshy({ balance = 500, status = "SUCCEEDED", fail } = {}) {
+  const calls = [], tasks = new Map();
+  let n = 0;
+  const stl = binStl(2), threemf = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 9, 9, 9]);
+  const fetch = async (url, init = {}) => {
+    const u = new URL(url), method = init.method ?? "GET";
+    const body = init.body ? JSON.parse(init.body) : null;
+    calls.push({ url: u.href, method, body, auth: init.headers?.authorization });
+    const res = (b, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { "content-type": "application/json" } });
+    if (u.hostname === "assets.meshy.ai") return new Response(u.pathname.endsWith(".stl") ? stl : u.pathname.endsWith(".3mf") ? threemf : PNG);
+    if (fail) return res({ message: "nope" }, fail);
+    if (u.pathname === "/openapi/v1/balance") return res({ balance });
+    const m = u.pathname.match(/^\/openapi\/(v1\/image-to-3d|v1\/multi-image-to-3d|v2\/text-to-3d)(?:\/(.+))?$/);
+    if (!m) return res({ message: "not found" }, 404);
+    if (method === "POST") { const id = `0193bfc5-0000-7000-8000-${String(++n).padStart(12, "0")}`; tasks.set(id, body); return res({ result: id }); }
+    if (!tasks.has(m[2])) return res({ message: "Task not found" }, 404);
+    return res({ id: m[2], status, progress: status === "SUCCEEDED" ? 100 : 40, consumed_credits: 30, expires_at: 1900000000000,
+      thumbnail_url: `https://assets.meshy.ai/x/${m[2]}/preview.png?Expires=1&Signature=s`,
+      model_urls: status === "SUCCEEDED" ? Object.fromEntries(["glb", "stl", "3mf", "obj"].map((f) => [f, `https://assets.meshy.ai/x/${m[2]}/model.${f}?Expires=1&Signature=s`])) : {},
+      ...(status === "FAILED" ? { task_error: { message: "Image too dark" } } : {}) });
+  };
+  return { fetch, calls, tasks };
+}
+function meshyCtx(opts = {}, env = envOf({ MESHY_API_KEY: MESHY_KEY })) {
+  const kv = fakeKV(), fake = fakeMeshy(opts);
+  return { kv, fake, ctx: { jobs: kvBlobStore(kv, "c3d-meshy:"), files: kvBlobStore(kv, "c3d-file:"), env, fetch: fake.fetch } };
+}
+const mreq = (path, { method = "GET", body, headers = KEYH } = {}) =>
+  new Request(`https://console.example${path}`, { method, headers: { ...headers, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
+const DATA_PNG = "data:image/png;base64," + Buffer.from(PNG).toString("base64");
+
+test("meshy: needs the console key, and says how to add the Meshy key when it's missing", async () => {
+  const { ctx, fake } = meshyCtx();
+  assert.equal((await handleMeshy(mreq("/api/meshy", { headers: {} }), ctx)).status, 401);
+  assert.equal(fake.calls.length, 0, "nothing reaches Meshy without the console key");
+  const none = meshyCtx({}, envOf({ MESHY_API_KEY: undefined }));
+  const st = await (await handleMeshy(mreq("/api/meshy"), none.ctx)).json();
+  assert.deepEqual([st.configured, st.balance, st.jobs], [false, null, []]);
+  const start = await handleMeshy(mreq("/api/meshy/jobs", { method: "POST", body: { mode: "words", prompt: "a pineapple ornament" } }), none.ctx);
+  assert.equal(start.status, 503);
+  assert.match((await start.json()).error, /wrangler secret put MESHY_API_KEY/);
+  const ok = await (await handleMeshy(mreq("/api/meshy"), ctx)).json();
+  assert.deepEqual([ok.configured, ok.balance], [true, 500]);
+  assert.equal(fake.calls[0].auth, `Bearer ${MESHY_KEY}`);
+  assert.ok(!JSON.stringify(ok).includes(MESHY_KEY), "the Meshy key never goes to the browser");
+});
+
+test("meshy: photos and words start the right Meshy jobs, ready for printing, with the cost shown", async () => {
+  const { ctx, fake, kv } = meshyCtx();
+  const one = await handleMeshy(mreq("/api/meshy/jobs", { method: "POST", body: { mode: "photos", images: [DATA_PNG], name: "Pineapple / ornament", color: true } }), ctx);
+  assert.equal(one.status, 201);
+  const j1 = (await one.json()).job;
+  assert.deepEqual([j1.kind, j1.name, j1.color, j1.cost, j1.status], ["photo", "Pineapple ornament", true, 30, "PENDING"]);
+  let call = fake.calls.at(-1);
+  assert.equal(call.url, "https://api.meshy.ai/openapi/v1/image-to-3d");
+  assert.deepEqual([call.body.image_url, call.body.should_texture, call.body.target_formats], [DATA_PNG, true, ["glb", "stl", "3mf", "obj"]]);
+  const many = await (await handleMeshy(mreq("/api/meshy/jobs", { method: "POST", body: { mode: "photos", images: [DATA_PNG, DATA_PNG, DATA_PNG], detail: "high" } }), ctx)).json();
+  call = fake.calls.at(-1);
+  assert.equal(call.url, "https://api.meshy.ai/openapi/v1/multi-image-to-3d");
+  assert.deepEqual([call.body.image_urls.length, call.body.should_texture, call.body.geometry_resolution, many.job.cost], [3, false, "2k", 25]);
+  const words = await (await handleMeshy(mreq("/api/meshy/jobs", { method: "POST", body: { mode: "words", prompt: "  palmetto tree desk ornament  ", name: "Palmetto" } }), ctx)).json();
+  call = fake.calls.at(-1);
+  assert.equal(call.url, "https://api.meshy.ai/openapi/v2/text-to-3d");
+  assert.deepEqual([call.body.mode, call.body.prompt, words.job.cost], ["preview", "palmetto tree desk ornament", 20]);
+  const list = await (await handleMeshy(mreq("/api/meshy"), ctx)).json();
+  assert.equal(list.jobs.length, 3);
+  assert.ok([...kv.m.keys()].every((k) => k.startsWith("c3d-meshy:")));
+  for (const [body, why] of [[{ mode: "photos", images: [] }, "no photo"], [{ mode: "photos", images: Array(5).fill(DATA_PNG) }, "five photos"],
+    [{ mode: "photos", images: ["https://evil.example/x.png"] }, "a link, not a photo"], [{ mode: "photos", images: ["data:text/html;base64,PGh0bWw+"] }, "not an image"],
+    [{ mode: "words", prompt: "x" }, "too short"], [{ mode: "words", prompt: "y".repeat(801) }, "too long"], [{ mode: "video" }, "unknown mode"]])
+    assert.equal((await handleMeshy(mreq("/api/meshy/jobs", { method: "POST", body }), ctx)).status, 400, why);
+  assert.equal(fake.tasks.size, 3, "refused requests spend nothing");
+  assert.deepEqual([meshyCost({ mode: "words" }), meshyCost({ mode: "photos", color: false }), meshyCost({ mode: "color" })], [20, 20, 10]);
+});
+
+test("meshy: progress, downloads only from Meshy's file host, add color, save to the 3D file library", async () => {
+  const { ctx, fake, kv } = meshyCtx();
+  const { job } = await (await handleMeshy(mreq("/api/meshy/jobs", { method: "POST", body: { mode: "words", prompt: "a lighthouse keychain", name: "Lighthouse" } }), ctx)).json();
+  const live = (await (await handleMeshy(mreq(`/api/meshy/jobs/${job.id}`), ctx)).json()).job;
+  assert.deepEqual([live.status, live.progress, live.formats, live.picture], ["SUCCEEDED", 100, ["glb", "stl", "3mf", "obj"], true]);
+  assert.ok(!JSON.stringify(live).includes("Signature"), "Meshy's signed links stay on the server");
+  const stl = await handleMeshy(mreq(`/api/meshy/jobs/${job.id}/file/stl`), ctx);
+  assert.equal(stl.status, 200);
+  assert.equal(stl.headers.get("content-disposition"), 'attachment; filename="Lighthouse.stl"');
+  assert.equal((await stl.arrayBuffer()).byteLength, 84 + 100);
+  const pic = await handleMeshy(mreq(`/api/meshy/jobs/${job.id}/file/picture`), ctx);
+  assert.equal(pic.headers.get("content-type"), "image/png");
+  assert.equal((await handleMeshy(mreq(`/api/meshy/jobs/${job.id}/file/obj`), ctx)).headers.get("content-disposition"), 'attachment; filename="Lighthouse.obj"');
+  assert.equal((await handleMeshy(mreq(`/api/meshy/jobs/${job.id}/file/fbx`), ctx)).status, 404);
+  const colored = await handleMeshy(mreq(`/api/meshy/jobs/${job.id}/color`, { method: "POST" }), ctx);
+  assert.equal(colored.status, 201);
+  const cj = (await colored.json()).job;
+  assert.deepEqual([cj.name, cj.color, cj.cost, cj.from], ["Lighthouse (color)", true, 10, job.id]);
+  assert.deepEqual([fake.calls.at(-1).body.mode, fake.calls.at(-1).body.preview_task_id], ["refine", job.id]);
+  const saved = await handleMeshy(mreq(`/api/meshy/jobs/${job.id}/save`, { method: "POST", body: { format: "3mf" } }), ctx);
+  assert.equal(saved.status, 201);
+  const item = (await saved.json()).item;
+  assert.deepEqual([item.name, item.type, item.store, item.tags], ["Lighthouse.3mf", "model/3mf", "c3d", "made with Meshy"]);
+  assert.equal([...kv.m.keys()].filter((k) => k.startsWith("c3d-file:")).length, 1, "the model is in the 3D file library");
+  const after = (await (await handleMeshy(mreq("/api/meshy"), ctx)).json()).jobs.find((j) => j.id === job.id);
+  assert.equal(after.saved, item.key, "the job remembers it was saved");
+  assert.equal((await handleMeshy(mreq(`/api/meshy/jobs/${job.id}/save`, { method: "POST", body: { format: "glb" } }), ctx)).status, 400);
+  // a file link pointing anywhere but Meshy is refused
+  const evil = meshyCtx();
+  const e = (await (await handleMeshy(mreq("/api/meshy/jobs", { method: "POST", body: { mode: "words", prompt: "a boat" } }), evil.ctx)).json()).job;
+  const inner = evil.ctx.fetch;
+  evil.ctx.fetch = async (url, init) => { const r = await inner(url, init); if (!String(url).includes(e.id)) return r; const b = await r.json(); b.model_urls.stl = "https://evil.example/model.stl"; return new Response(JSON.stringify(b)); };
+  assert.equal((await handleMeshy(mreq(`/api/meshy/jobs/${e.id}/file/stl`), evil.ctx)).status, 502);
+  assert.ok(!evil.fake.calls.some((c) => c.url.startsWith("https://evil.example")), "nothing is fetched from it");
+  // take a job off the list; unknown and malformed ids are 404
+  assert.equal((await handleMeshy(mreq(`/api/meshy/jobs/${cj.id}`, { method: "DELETE" }), ctx)).status, 200);
+  for (const bad of [`/api/meshy/jobs/${cj.id}`, "/api/meshy/jobs/../c3d-file:x", "/api/meshy/other", `/api/meshy/jobs/${job.id}/file/stl/x`])
+    assert.equal((await handleMeshy(mreq(bad), ctx)).status, 404, bad);
+});
+
+test("meshy: unfinished and failed jobs, and Meshy's errors in plain words", async () => {
+  const busy = meshyCtx({ status: "IN_PROGRESS" });
+  const { job } = await (await handleMeshy(mreq("/api/meshy/jobs", { method: "POST", body: { mode: "words", prompt: "a crab" } }), busy.ctx)).json();
+  assert.equal((await (await handleMeshy(mreq(`/api/meshy/jobs/${job.id}`), busy.ctx)).json()).job.progress, 40);
+  assert.equal((await handleMeshy(mreq(`/api/meshy/jobs/${job.id}/save`, { method: "POST", body: {} }), busy.ctx)).status, 409);
+  assert.equal((await handleMeshy(mreq(`/api/meshy/jobs/${job.id}/color`, { method: "POST" }), busy.ctx)).status, 409);
+  assert.equal((await handleMeshy(mreq(`/api/meshy/jobs/${job.id}/file/stl`), busy.ctx)).status, 404);
+  const failed = meshyCtx({ status: "FAILED" });
+  const f = (await (await handleMeshy(mreq("/api/meshy/jobs", { method: "POST", body: { mode: "photos", images: [DATA_PNG] } }), failed.ctx)).json()).job;
+  assert.equal((await (await handleMeshy(mreq(`/api/meshy/jobs/${f.id}`), failed.ctx)).json()).job.error, "Image too dark");
+  for (const [code, re] of [[402, /Not enough Meshy credits/], [401, /didn't accept the key/], [429, /busy/], [400, /Meshy said: nope/], [500, /Meshy had a problem/]]) {
+    const { ctx } = meshyCtx({ fail: code });
+    const r = await handleMeshy(mreq("/api/meshy/jobs", { method: "POST", body: { mode: "words", prompt: "a crab" } }), ctx);
+    assert.match((await r.json()).error, re, String(code));
+    assert.equal((await (await handleMeshy(mreq("/api/meshy"), ctx)).json()).balance, null, "the balance just shows as unknown");
+  }
+});
+
+test("worker: the 3D maker is routed with its own keys in the IMAGES namespace", async () => {
+  const kv = fakeKV(), env = workerEnv({ IMAGES: kv });
+  assert.equal((await W.handleRequest(wreq("/api/meshy"), env)).status, 401);
+  const r = await W.handleRequest(wreq("/api/meshy", { headers: KEYH }), env);
+  assert.deepEqual(await r.json(), { configured: false, balance: null, jobs: [] });
+  assert.equal((await W.handleRequest(wreq("/api/meshy", { headers: KEYH }), workerEnv({ IMAGES: undefined }))).status, 503);
+});
+
+// ---------- team board ----------
+const { handleTeam, ownersFor, MAX_TASKS } = await import("../lib/team.mjs");
+const teamReq = (method, body, headers = { "content-type": "application/json", "x-console-key": "open-sesame-test-key-0001" }) =>
+  ({ method, query: new URLSearchParams(), header: (k) => headers[k.toLowerCase()] ?? null, text: async () => JSON.stringify(body) });
+
+test("team: the board needs the key and the KV; each store has its own board and roster", async () => {
+  const kv = fakeKV();
+  assert.equal((await handleTeam(get({ store: "ed" }), { env: envOf(), kv })).status, 401);
+  assert.equal((await handleTeam(keyed({ store: "ed" }), { env: envOf(), kv: null })).status, 503);
+  assert.equal((await handleTeam(keyed({ store: "both" }), { env: envOf(), kv })).status, 400);
+  const add = await handleTeam(teamReq("POST", { store: "ed", text: "  Check the   shirt app  ", owner: "ed" }), { env: envOf(), kv });
+  assert.equal(add.status, 201, JSON.stringify(add.body));
+  assert.equal(add.body.added[0].text, "Check the shirt app");
+  const ed = await handleTeam(keyed({ store: "ed" }), { env: envOf(), kv });
+  assert.deepEqual(ed.body.tasks.map((t) => [t.text, t.owner, t.done]), [["Check the shirt app", "ed", false]]);
+  assert.ok(ed.body.roster.some((m) => m.id === "ed") && !ed.body.roster.some((m) => m.id === "c3d"), "ED roster has no Charleston 3D agent");
+  assert.ok(ed.body.consoleJobs.length >= 4);
+  const c3d = await handleTeam(keyed({ store: "c3d" }), { env: envOf(), kv });
+  assert.deepEqual(c3d.body.tasks, [], "the brands never share a board");
+  assert.ok(!c3d.body.roster.some((m) => m.id === "ed"));
+  assert.deepEqual([...kv.m.keys()].sort(), ["team:ed"]);
+});
+
+test("team: an agent of the other store can't be given a task; bad text is refused", async () => {
+  const kv = fakeKV();
+  assert.deepEqual(ownersFor("c3d"), ["aaron", "ops", "c3d", "marketing", "builder", "admin"]);
+  for (const body of [{ store: "c3d", text: "x", owner: "ed" }, { store: "c3d", text: "   " }, { store: "c3d", text: "x".repeat(201) }, { store: "c3d", text: 5 }, { store: "c3d", tasks: [] }])
+    assert.equal((await handleTeam(teamReq("POST", body), { env: envOf(), kv })).status, 400, JSON.stringify(body));
+  assert.equal(kv.m.size, 0);
+});
+
+test("team: done, reassign, rename and remove; unknown id is 404", async () => {
+  const kv = fakeKV();
+  const { body: { added: [t] } } = await handleTeam(teamReq("POST", { store: "c3d", text: "Print the sign" }), { env: envOf(), kv });
+  assert.equal(t.owner, "aaron");
+  let r = await handleTeam(teamReq("PATCH", { store: "c3d", id: t.id, done: true }), { env: envOf(), kv });
+  assert.equal(r.body.task.done, true); assert.ok(r.body.task.doneAt);
+  r = await handleTeam(teamReq("PATCH", { store: "c3d", id: t.id, done: false, owner: "c3d", text: "Print the big sign" }), { env: envOf(), kv });
+  assert.deepEqual([r.body.task.done, r.body.task.owner, r.body.task.text, "doneAt" in r.body.task], [false, "c3d", "Print the big sign", false]);
+  assert.equal((await handleTeam(teamReq("PATCH", { store: "c3d", id: t.id }), { env: envOf(), kv })).status, 400);
+  assert.equal((await handleTeam(teamReq("PATCH", { store: "c3d", id: t.id, done: "yes" }), { env: envOf(), kv })).status, 400);
+  assert.equal((await handleTeam(teamReq("PATCH", { store: "ed", id: t.id, done: true }), { env: envOf(), kv })).status, 404, "a task belongs to one store");
+  assert.equal((await handleTeam(teamReq("DELETE", { store: "c3d", id: t.id }), { env: envOf(), kv })).status, 200);
+  assert.equal((await handleTeam(teamReq("DELETE", { store: "c3d", id: t.id }), { env: envOf(), kv })).status, 404);
+  assert.equal((await handleTeam(teamReq("PATCH", { store: "c3d", id: "x", done: true }, { "content-type": "application/json" }), { env: envOf(), kv })).status, 401);
+});
+
+test("team: importing the old device list, and a full board drops old done tasks but never open ones", async () => {
+  const kv = fakeKV();
+  const imp = await handleTeam(teamReq("POST", { store: "ed", tasks: [{ text: "Order blanks" }, { text: "Old thing", done: true }] }), { env: envOf(), kv });
+  assert.equal(imp.status, 201);
+  assert.deepEqual(imp.body.tasks.map((t) => [t.text, t.done]), [["Order blanks", false], ["Old thing", true]]);
+  const many = Array.from({ length: MAX_TASKS - 2 }, (_, i) => ({ id: `d${i}`, text: `done ${i}`, owner: "aaron", done: true, doneAt: `2026-01-${String((i % 28) + 1).padStart(2, "0")}T00:00:00Z` }));
+  await kv.put("team:ed", JSON.stringify({ tasks: [...imp.body.tasks, ...many] }));
+  const r = await handleTeam(teamReq("POST", { store: "ed", text: "New one" }), { env: envOf(), kv });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.tasks.length, MAX_TASKS);
+  assert.ok(r.body.tasks.some((t) => t.text === "Order blanks") && r.body.tasks.some((t) => t.text === "New one"));
+  const open = Array.from({ length: MAX_TASKS }, (_, i) => ({ id: `o${i}`, text: `open ${i}`, owner: "aaron", done: false }));
+  await kv.put("team:ed", JSON.stringify({ tasks: open }));
+  assert.equal((await handleTeam(teamReq("POST", { store: "ed", text: "One more" }), { env: envOf(), kv })).status, 409);
+});
+
+test("worker: /api/team uses the MARKETING KV", async () => {
+  const W = await import("../worker/app.mjs");
+  const kv = fakeKV();
+  const env = { CONSOLE_KEY: "open-sesame-test-key-0001", MARKETING: kv };
+  const r = await W.handleRequest(new Request("https://console.example/api/team", { method: "POST", headers: { "content-type": "application/json", "x-console-key": env.CONSOLE_KEY }, body: JSON.stringify({ store: "c3d", text: "Hi" }) }), env);
+  assert.equal(r.status, 201);
+  assert.ok(kv.m.has("team:c3d"));
+  assert.equal((await W.handleRequest(new Request("https://console.example/api/team?store=c3d"), env)).status, 401);
+});
+
+// ---------- 3D file library in R2 (lib/r2-store.mjs) ----------
+const { r2BlobStore, combinedStore } = await import("../lib/r2-store.mjs");
+// A small stand-in for an R2 bucket binding: put/get/delete/list with customMetadata and paging.
+function fakeR2({ pageSize = 1000 } = {}) {
+  const m = new Map();
+  return { m,
+    async put(key, data, { customMetadata } = {}) {
+      for (const v of Object.values(customMetadata ?? {})) assert.equal(typeof v, "string", "R2 custom metadata values are strings");
+      const bytes = data instanceof ArrayBuffer ? data.slice(0) : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+      m.set(key, { bytes, customMetadata: { ...customMetadata } });
+    },
+    async get(key) { const o = m.get(key); return o ? { key, customMetadata: o.customMetadata, arrayBuffer: async () => o.bytes.slice(0) } : null; },
+    async delete(key) { m.delete(key); },
+    async list({ prefix = "", cursor, include = [] } = {}) {
+      const names = [...m.keys()].filter((k) => k.startsWith(prefix)).sort();
+      const start = cursor ? Number(cursor) : 0;
+      const objects = names.slice(start, start + pageSize).map((key) => ({ key, ...(include.includes("customMetadata") ? { customMetadata: m.get(key).customMetadata } : {}) }));
+      const truncated = start + pageSize < names.length;
+      return { objects, truncated, ...(truncated ? { cursor: String(start + pageSize) } : {}) };
+    },
+  };
+}
+
+test("r2 store: files keep their details, list across pages, and older KV files still work", async () => {
+  const r2 = fakeR2({ pageSize: 2 }), kv = fakeKV();
+  const store = r2BlobStore(r2, "c3d-file/");
+  for (const n of [1, 2, 3]) await store.set(`k${n}-0123abcd`, new Uint8Array([0x50, 0x4b, 3, 4, n]), { metadata: { name: `part ${n}.3mf`, size: 5, added: n } });
+  const { blobs } = await store.list();
+  assert.deepEqual(blobs.map((b) => [b.key, b.metadata.name, b.metadata.added]), [["k1-0123abcd", "part 1.3mf", 1], ["k2-0123abcd", "part 2.3mf", 2], ["k3-0123abcd", "part 3.3mf", 3]]);
+  assert.deepEqual([...new Uint8Array((await store.getWithMetadata("k2-0123abcd")).data)], [0x50, 0x4b, 3, 4, 2]);
+  assert.equal(await store.getWithMetadata("nope-0123abcd"), null);
+  // a file saved to KV before the move
+  const old = kvBlobStore(kv, "c3d-file:");
+  await old.set("old-0123abcd", new Uint8Array([0x50, 0x4b, 3, 4]), { metadata: { name: "old.3mf" } });
+  const both = combinedStore(store, old);
+  assert.equal((await both.list()).blobs.length, 4);
+  assert.equal((await both.getWithMetadata("old-0123abcd")).metadata.name, "old.3mf");
+  await both.set("new-0123abcd", new Uint8Array([1]), { metadata: { name: "new.3mf" } });
+  assert.ok(r2.m.has("c3d-file/new-0123abcd") && !kv.m.has("c3d-file:new-0123abcd"), "new files go to R2");
+  await both.delete("old-0123abcd");
+  assert.equal(kv.m.has("c3d-file:old-0123abcd"), false);
+});
+
+test("worker: with the FILES bucket bound, uploads go to R2 and the 3D file library lists both", async () => {
+  const kv = fakeKV(), r2 = fakeR2();
+  await kvBlobStore(kv, "c3d-file:").set("old-0123abcd", new Uint8Array([0x50, 0x4b, 3, 4]), { metadata: { name: "old.3mf", type: "model/3mf", size: 4, added: 1, store: "c3d" } });
+  const env = workerEnv({ IMAGES: kv, FILES: r2 });
+  const up = await W.handleRequest(wreq("/api/files", { method: "POST", headers: { ...KEYH, "x-filename": "vase.3mf" }, body: new Uint8Array([0x50, 0x4b, 3, 4, 9]) }), env);
+  assert.equal(up.status, 201);
+  const { item } = await up.json();
+  assert.ok(r2.m.has(`c3d-file/${item.key}`), "the file is in R2");
+  assert.ok(![...kv.m.keys()].some((k) => k.includes(item.key)), "not in KV");
+  const list = await (await W.handleRequest(wreq("/api/files", { headers: KEYH }), env)).json();
+  assert.deepEqual(list.items.map((i) => i.name).sort(), ["old.3mf", "vase.3mf"]);
+  const dl = await W.handleRequest(wreq(`/api/files/${item.key}`, { headers: KEYH }), env);
+  assert.equal(dl.status, 200);
+  assert.equal((await dl.arrayBuffer()).byteLength, 5);
+  // without the bucket, the library stays in KV as before
+  const plain = await W.handleRequest(wreq("/api/files", { method: "POST", headers: { ...KEYH, "x-filename": "cup.3mf" }, body: new Uint8Array([0x50, 0x4b, 3, 4]) }), workerEnv({ IMAGES: kv }));
+  assert.equal(plain.status, 201);
+  assert.ok(kv.m.has(`c3d-file:${(await plain.json()).item.key}`));
 });

@@ -7,6 +7,7 @@
 import { el, store, toast } from "./app.js";
 import { askForKey, consoleKey } from "./api.js";
 import { confirmButton } from "./confirm.js";
+import { displayName, filterBar, isOtherBrand } from "./image-filters.js";
 
 const API = "/api/images";
 const BLANKS = "assets/blanks/";
@@ -60,6 +61,78 @@ function textSrc(l) {
   return v;
 }
 const isDark = (hex) => { const n = parseInt(hex.slice(1), 16); return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) < 140; };
+
+// ---------- image edits ----------
+// Each image layer can carry edits (l.fx): background removal, color adjustments, one-color, crop. They are
+// applied to the full-size image in a canvas, so the shirt preview and the 300 dpi print file show the same thing.
+const FX0 = { knock: "", tol: 18, bright: 0, contrast: 0, sat: 0, hue: 0, gray: false, invert: false, ink: "", crop: [0, 0, 0, 0] };
+const fxOf = (l) => ({ ...FX0, ...(l.fx ?? {}) });
+const fxKey = (l) => JSON.stringify(fxOf(l));
+const PLAIN = JSON.stringify(FX0);
+const hexRgb = (h) => { const n = parseInt(h.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
+// Runs the edits over the pixels (RGBA, in place).
+export function applyFx(px, w, h, fx) {
+  let bg = null;
+  if (fx.knock === "white") bg = [255, 255, 255];
+  else if (fx.knock === "black") bg = [0, 0, 0];
+  else if (fx.knock === "auto") {
+    // the most common corner color is the background
+    const at = (x, y) => { const i = (y * w + x) * 4; return [px[i], px[i + 1], px[i + 2]]; };
+    const c = [at(0, 0), at(w - 1, 0), at(0, h - 1), at(w - 1, h - 1)];
+    bg = c.map((a) => [a, c.filter((b) => Math.max(...b.map((v, k) => Math.abs(v - a[k]))) < 24).length]).sort((x, y) => y[1] - x[1])[0][0];
+  }
+  const t = fx.tol * 2.55, soft = Math.max(6, t * 0.5);
+  const C = fx.contrast * 2.55, cf = (259 * (C + 255)) / (255 * (259 - C));
+  const br = fx.bright * 2.55, sat = 1 + fx.sat / 100;
+  const a = (fx.hue * Math.PI) / 180, cos = Math.cos(a), sin = Math.sin(a);
+  const hm = [0.213 + cos * 0.787 - sin * 0.213, 0.715 - cos * 0.715 - sin * 0.715, 0.072 - cos * 0.072 + sin * 0.928,
+    0.213 - cos * 0.213 + sin * 0.143, 0.715 + cos * 0.285 + sin * 0.140, 0.072 - cos * 0.072 - sin * 0.283,
+    0.213 - cos * 0.213 - sin * 0.787, 0.715 - cos * 0.715 + sin * 0.715, 0.072 + cos * 0.928 + sin * 0.072];
+  const ink = fx.ink ? hexRgb(fx.ink) : null;
+  const adjust = fx.bright || fx.contrast || fx.sat || fx.hue || fx.gray || fx.invert;
+  for (let i = 0; i < px.length; i += 4) {
+    if (!px[i + 3]) continue;
+    let r = px[i], g = px[i + 1], b = px[i + 2];
+    if (bg) {
+      const d = Math.max(Math.abs(r - bg[0]), Math.abs(g - bg[1]), Math.abs(b - bg[2]));
+      if (d <= t) { px[i + 3] = 0; continue; }
+      if (d < t + soft) px[i + 3] = Math.round(px[i + 3] * ((d - t) / soft));
+    }
+    if (ink) { px[i] = ink[0]; px[i + 1] = ink[1]; px[i + 2] = ink[2]; continue; }
+    if (!adjust) continue;
+    if (fx.hue) { const R = r, G = g, B = b; r = R * hm[0] + G * hm[1] + B * hm[2]; g = R * hm[3] + G * hm[4] + B * hm[5]; b = R * hm[6] + G * hm[7] + B * hm[8]; }
+    if (fx.sat || fx.gray) { const L = 0.299 * r + 0.587 * g + 0.114 * b, k = fx.gray ? 0 : sat; r = L + (r - L) * k; g = L + (g - L) * k; b = L + (b - L) * k; }
+    if (fx.contrast) { r = cf * (r - 128) + 128; g = cf * (g - 128) + 128; b = cf * (b - 128) + 128; }
+    if (fx.bright) { r += br; g += br; b += br; }
+    if (fx.invert) { r = 255 - r; g = 255 - g; b = 255 - b; }
+    px[i] = r; px[i + 1] = g; px[i + 2] = b; // a Uint8ClampedArray rounds and clamps
+  }
+  return px;
+}
+// The edited picture for a layer, made once per set of edits and kept as a blob link.
+const fxCache = new Map(); // layer id -> { key, src, w, h }
+const fxWork = new Map(); // layer id -> key being made
+async function renderFx(l, src) {
+  const key = `${src}|${fxKey(l)}`;
+  const img = await loadImg(src);
+  const fx = fxOf(l), [cl, ct, cr, cb] = fx.crop;
+  const sx = Math.round(img.naturalWidth * cl / 100), sy = Math.round(img.naturalHeight * ct / 100);
+  const w = Math.max(1, Math.round(img.naturalWidth * (1 - (cl + cr) / 100))), h = Math.max(1, Math.round(img.naturalHeight * (1 - (ct + cb) / 100)));
+  const c = Object.assign(document.createElement("canvas"), { width: w, height: h });
+  const g = c.getContext("2d", { willReadFrequently: true });
+  g.drawImage(img, sx, sy, w, h, 0, 0, w, h);
+  if (JSON.stringify({ ...fx, crop: [0, 0, 0, 0] }) !== PLAIN) {
+    const data = g.getImageData(0, 0, w, h);
+    applyFx(data.data, w, h, fx);
+    g.putImageData(data, 0, 0);
+  }
+  const blob = await new Promise((ok) => c.toBlob(ok, "image/png"));
+  const old = fxCache.get(l.id);
+  if (old?.src) URL.revokeObjectURL(old.src);
+  const out = { key, src: URL.createObjectURL(blob), w, h };
+  fxCache.set(l.id, out);
+  return out;
+}
 
 // ---------- storage ----------
 const keyHeader = () => { const k = consoleKey.get(); return k ? { "x-console-key": k } : {}; };
@@ -125,7 +198,7 @@ export async function listImages() {
 // Private items carry a signed link from the API; public ones load from /api/images/:key without the key.
 export const imageUrl = (item) => item.local ? localUrls.get(item.key) : item.url ?? `${API}/${encodeURIComponent(item.key)}`;
 
-async function upload(file, tags, isPublic) {
+export async function upload(file, tags, isPublic) {
   try {
     const res = await fetch(API, {
       method: "POST",
@@ -146,7 +219,7 @@ async function upload(file, tags, isPublic) {
   return { saved: "local", item };
 }
 
-async function remove(item) {
+export async function remove(item) {
   if (item.local) {
     await tx("readwrite", (s) => s.delete(item.key));
     URL.revokeObjectURL(localUrls.get(item.key));
@@ -211,7 +284,7 @@ export async function renderStudio() {
     side: saved?.side === "back" ? "back" : "front",
     color: saved?.color ?? COLORS[0][1],
     sides: { front: saved?.sides?.front ?? [], back: saved?.sides?.back ?? [] },
-    sel: null, items: [], q: "", cat: "", tool: "library", shown: 120,
+    sel: null, items: [], tool: "library",
   };
   const layers = () => state.sides[state.side];
   // Undo and redo: every saved change to the layers is a step (up to 80).
@@ -254,16 +327,14 @@ export async function renderStudio() {
   const fileIn = el("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif,image/svg+xml", multiple: true, hidden: true });
   const tagsIn = el("input", { class: "field", type: "text", placeholder: "Tags for new uploads, e.g. halloween, logo" });
   const pubIn = el("input", { type: "checkbox", checked: true });
-  const search = el("input", { class: "field", type: "search", placeholder: "Search images by name or tag", "aria-label": "Search images" });
-  const cats = el("div", { class: "ed-cats", role: "group", "aria-label": "Category" });
+  const filters = filterBar({ onChange: () => drawLib(), id: "ed-lib" });
   const countLine = el("p", { class: "muted small" });
   const syncLine = el("p", { class: "muted small" });
   const lib = el("div", { class: "lib", role: "list" });
-  const more = el("button", { class: "btn ghost", type: "button", hidden: true, onclick: () => { state.shown += 120; drawLib(); } }, "Show more");
   const layersList = el("div", { class: "layers" });
 
   const panels = {
-    library: el("div", { class: "ed-pane stack" }, el("h2", {}, "Image library"), search, cats, countLine, lib, more, syncLine),
+    library: el("div", { class: "ed-pane stack" }, el("h2", {}, "Image library"), filters.el, countLine, lib, syncLine),
     upload: el("div", { class: "ed-pane stack" }, el("h2", {}, "Upload"),
       el("div", { class: "drop" }, "Drop images here or ", btn("choose files", () => fileIn.click(), "btn ghost")), fileIn, tagsIn,
       el("label", { class: "row small" }, pubIn, "Show in the shirt app library"),
@@ -284,33 +355,23 @@ export async function renderStudio() {
   };
 
   // ----- library -----
-  const hay = (i) => `${i.name ?? ""} ${i.tags ?? ""} ${i.category ?? ""}`.toLowerCase();
   const drawLib = () => {
-    const words = state.q.toLowerCase().split(/\s+/).filter(Boolean);
-    const all = state.items.filter((i) => !state.cat || i.category === state.cat);
-    const shown = all.filter((i) => words.every((w) => hay(i).includes(w)));
+    const shown = filters.apply(state.items);
     const localCount = state.items.filter((i) => i.local).length;
     countLine.replaceChildren(`${shown.length} of ${state.items.length} images` + (localCount ? `, ${localCount} only in this browser.` : "."),
       libraryScope === "public" ? el("span", {}, " These are the shirt app images. ", btn("Show private images too", () => unlock(), "linkbtn")) : null);
     const manage = libraryScope === "all";
-    lib.replaceChildren(...shown.slice(0, state.shown).map((i) => {
-      const add = el("button", { class: "tile", type: "button", draggable: "true", title: `${i.name}${i.tags ? ` · ${i.tags}` : ""}\nClick to add, or drag onto the shirt`, onclick: () => addLayer(i) },
-        el("img", { src: imageUrl(i), alt: i.name, loading: "lazy" }), el("span", { class: "nm" }, i.name));
+    lib.replaceChildren(...shown.map((i) => {
+      const add = el("button", { class: "tile", type: "button", draggable: "true", title: `${displayName(i)}\nClick to add, or drag onto the shirt`, onclick: () => addLayer(i) },
+        el("img", { src: imageUrl(i), alt: displayName(i), loading: "lazy" }), el("span", { class: "nm" }, displayName(i)));
       add.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/bc-image", i.key));
       add.addEventListener("contextmenu", (e) => { e.preventDefault(); del(i); });
       return el("div", { class: "lib-item", role: "listitem" }, add,
-        manage || i.local ? el("button", { class: "lib-del", type: "button", "aria-label": `Delete ${i.name}`, title: "Delete from the library", onclick: () => del(i) }, "×") : null);
+        manage || i.local ? el("button", { class: "lib-del", type: "button", "aria-label": `Delete ${displayName(i)}`, title: "Delete from the library", onclick: () => del(i) }, "×") : null);
     }));
-    more.hidden = shown.length <= state.shown;
     if (!shown.length) lib.append(el("p", { class: "muted small" }, state.items.length ? "No images match that search." : "No images yet. Upload some under Upload."));
   };
-  const drawCats = () => {
-    const list = [...new Set(state.items.map((i) => i.category).filter(Boolean))].sort();
-    cats.hidden = !list.length;
-    cats.replaceChildren(...["", ...list].map((c) => el("button", { class: "chip", type: "button", "aria-pressed": String(c === state.cat),
-      onclick: () => { state.cat = c; state.shown = 120; drawCats(); drawLib(); } }, c || "All")));
-  };
-  const refresh = async () => { state.items = await listImages(); drawCats(); drawLib(); };
+  const refresh = async () => { state.items = (await listImages()).filter((i) => !isOtherBrand(i)); filters.setItems(state.items); drawLib(); };
   async function del(i) {
     if (!i.local && !consoleKey.get() && !(await askForKey("Deleting library images needs the console key (the CONSOLE_KEY value set for this console)."))) return;
     if (!confirm(`Delete "${i.name}" from the library?`)) return;
@@ -352,7 +413,6 @@ export async function renderStudio() {
   drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
   drop.addEventListener("dragleave", () => drop.classList.remove("over"));
   drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); uploadFiles(e.dataTransfer.files); });
-  search.addEventListener("input", () => { state.q = search.value; state.shown = 120; drawLib(); });
 
   // ----- text pane -----
   const draft = { text: "", font: FONTS[0][0], weight: FONTS[0][1], color: isDark(state.color) ? "#ffffff" : "#111111" };
@@ -425,7 +485,25 @@ export async function renderStudio() {
 
   // ----- layers -----
   const findItem = (key) => state.items.find((i) => i.key === key);
-  const layerSrc = (l) => { if (l.kind === "text") return textSrc(l).src; const i = findItem(l.key); return i ? imageUrl(i) : l.src ?? null; };
+  const baseSrc = (l) => { const i = findItem(l.key); return i ? imageUrl(i) : l.src ?? null; };
+  // An edited image shows its edited picture once it's made; until then the original stands in.
+  const layerSrc = (l) => {
+    if (l.kind === "text") return textSrc(l).src;
+    const src = baseSrc(l);
+    if (!src || fxKey(l) === PLAIN) return src;
+    const key = `${src}|${fxKey(l)}`, hit = fxCache.get(l.id);
+    if (hit?.key === key) return hit.src;
+    if (fxWork.get(l.id) !== key) {
+      fxWork.set(l.id, key);
+      setTimeout(() => { if (fxWork.get(l.id) === key) renderFx(l, src).then(() => { if (fxWork.get(l.id) === key) { fxWork.delete(l.id); drawStage(true); } }).catch(() => { fxWork.delete(l.id); toast("Couldn't edit that image"); }); }, 90);
+    }
+    return hit?.src ?? src;
+  };
+  // Waits for every edited picture on this side (before an export).
+  const fxReady = () => Promise.all(layers().filter((l) => l.kind !== "text" && fxKey(l) !== PLAIN && baseSrc(l)).map(async (l) => {
+    const key = `${baseSrc(l)}|${fxKey(l)}`;
+    if (fxCache.get(l.id)?.key !== key) await renderFx(l, baseSrc(l));
+  }));
 
   function addLayer(item, x = 0.5, y = 0.35) {
     const img = new Image();
@@ -434,7 +512,7 @@ export async function renderStudio() {
       let h = w * ratio * (PW / PH);
       const fit = h > 0.9 ? 0.9 / h : 1;
       layers().push({ id: crypto.randomUUID(), key: item.key, src: item.local ? null : imageUrl(item), name: item.name, x, y: Math.max(y, (h * fit) / 2), w: w * fit, h: h * fit, rot: 0, op: 1, flip: false,
-        px: [img.naturalWidth, img.naturalHeight], vector: /svg/.test(item.type ?? "") || /\.svg$/i.test(item.name ?? "") });
+        px: [img.naturalWidth, img.naturalHeight], px0: [img.naturalWidth, img.naturalHeight], vector: /svg/.test(item.type ?? "") || /\.svg$/i.test(item.name ?? "") });
       state.sel = layers().at(-1).id;
       drawStage(); save();
       if (matchMedia("(max-width: 900px)").matches) stage.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -445,7 +523,7 @@ export async function renderStudio() {
   const selected = () => layers().find((l) => l.id === state.sel);
   const place = (node, l) => Object.assign(node.style, {
     left: `${(l.x - l.w / 2) * 100}%`, top: `${(l.y - l.h / 2) * 100}%`, width: `${l.w * 100}%`, height: `${l.h * 100}%`,
-    transform: `rotate(${l.rot}deg)${l.flip ? " scaleX(-1)" : ""}`, opacity: l.op,
+    transform: `rotate(${l.rot}deg)${l.flip ? " scaleX(-1)" : ""}${l.flipV ? " scaleY(-1)" : ""}`, opacity: l.op,
   });
 
   // live: redraw the shirt and layer list only, so a slider or text box being used isn't rebuilt under the pointer.
@@ -454,7 +532,7 @@ export async function renderStudio() {
     area.replaceChildren(...layers().map((l) => {
       const node = el("div", { class: `layer${l.id === state.sel ? " sel" : ""}`, "data-id": l.id, title: l.name },
         el("span", { class: "handle h-size", "data-h": "size" }), el("span", { class: "handle h-rot", "data-h": "rot" }));
-      place(node, { ...l, op: 1, flip: false });
+      place(node, { ...l, op: 1, flip: false, flipV: false });
       return node;
     }));
     layersList.replaceChildren(...[...layers()].reverse().map((l) =>
@@ -512,6 +590,53 @@ export async function renderStudio() {
     (s.outlineW ?? 0) > 0 ? el("div", { class: "swatches sm" }, INKS.map(([name, c]) => el("button", { type: "button", title: name, "aria-label": `Outline ${name}`, "aria-pressed": String(c === s.outline), style: `background:${c}`,
       onclick: () => editSel((l) => { l.outline = c; }) }))) : null,
     range("Letter spacing", -5, 40, s.spacing ?? 0, (l, v) => { l.spacing = v; fitText(l); }));
+  // ----- image edits (right) -----
+  const setFx = (l, patch) => { l.fx = { ...fxOf(l), ...patch }; };
+  // Crop changes the picture's shape: keep the width, fit the height, and track the pixels left for the print check.
+  const fitCrop = (l) => {
+    const [nw, nh] = l.px0 ?? l.px ?? [1, 1], [cl, ct, cr, cb] = fxOf(l).crop;
+    const w = nw * (1 - (cl + cr) / 100), h = nh * (1 - (ct + cb) / 100);
+    l.px = [Math.round(w), Math.round(h)];
+    l.h = l.w * (h / w) * (PW / PH);
+  };
+  const fxRange = (label, field, min, max, s, after) => {
+    const i = el("input", { type: "range", min, max, value: fxOf(s)[field], "aria-label": label, "data-fx": field });
+    const out = el("output", { class: "muted small" }, String(fxOf(s)[field]));
+    i.addEventListener("input", () => { out.textContent = i.value; editSel((l) => { setFx(l, { [field]: +i.value }); after?.(l); }, false, true); });
+    i.addEventListener("change", save);
+    return el("label", { class: "stack small fx-range", style: "gap:2px" }, el("span", { class: "row", style: "justify-content:space-between" }, label, out), i);
+  };
+  const fxToggle = (label, field, s) => el("button", { class: "btn", type: "button", "aria-pressed": String(!!fxOf(s)[field]), "data-fx": field,
+    onclick: () => editSel((l) => setFx(l, { [field]: !fxOf(l)[field] })) }, label);
+  function imageControls(s) {
+    const fx = fxOf(s);
+    const crop = (label, n) => {
+      const i = el("input", { type: "range", min: 0, max: 45, value: fx.crop[n], "aria-label": `Crop ${label}`, "data-crop": String(n) });
+      i.addEventListener("input", () => editSel((l) => { const c = [...fxOf(l).crop]; c[n] = +i.value; setFx(l, { crop: c }); fitCrop(l); }, false, true));
+      i.addEventListener("change", save);
+      return el("label", { class: "stack small", style: "gap:2px" }, label, i);
+    };
+    const knock = el("div", { class: "seg fx-seg", role: "radiogroup", "aria-label": "Remove background" },
+      [["", "Off"], ["white", "White"], ["black", "Black"], ["auto", "Auto"]].map(([v, l]) => el("button", { class: "seg-btn", type: "button", role: "radio", "aria-checked": String(fx.knock === v), "data-knock": v,
+        onclick: () => editSel((x) => setFx(x, { knock: v })) }, l)));
+    return el("details", { class: "fx", open: true, id: "fx-panel" },
+      el("summary", {}, "Edit image", fxKey(s) !== PLAIN ? el("span", { class: "dl-badge" }, "Edited") : null),
+      el("div", { class: "stack" },
+        el("span", { class: "eyebrow" }, "Remove background"), knock,
+        fx.knock ? fxRange("Tolerance", "tol", 1, 60, s) : null,
+        el("span", { class: "eyebrow" }, "Adjust"),
+        fxRange("Brightness", "bright", -100, 100, s), fxRange("Contrast", "contrast", -100, 100, s),
+        fxRange("Saturation", "sat", -100, 100, s), fxRange("Hue", "hue", -180, 180, s),
+        el("div", { class: "ed-grid2" }, fxToggle("Black & white", "gray", s), fxToggle("Invert colors", "invert", s)),
+        el("span", { class: "eyebrow" }, "One color (for single-ink prints)"),
+        el("div", { class: "swatches sm" }, el("button", { type: "button", class: "sw-none", title: "Original colors", "aria-label": "Original colors", "aria-pressed": String(!fx.ink), onclick: () => editSel((l) => setFx(l, { ink: "" })) }, "×"),
+          INKS.map(([name, c]) => el("button", { type: "button", title: name, "aria-label": `One color ${name}`, "aria-pressed": String(c === fx.ink), style: `background:${c}`,
+            onclick: () => editSel((l) => setFx(l, { ink: c })) }))),
+        el("span", { class: "eyebrow" }, "Crop"),
+        el("div", { class: "ed-grid2" }, crop("Left", 0), crop("Right", 2), crop("Top", 1), crop("Bottom", 3)),
+        fxKey(s) !== PLAIN ? btn("Undo all image edits", () => editSel((l) => { delete l.fx; fitCrop(l); }), "btn ghost") : null));
+  }
+
   function drawProps() {
     const s = selected();
     drawChecks();
@@ -519,7 +644,7 @@ export async function renderStudio() {
       el("h2", {}, s ? (s.kind === "text" ? "Selected text" : "Selected image") : "Design"),
       s ? el("div", { class: "stack" },
         checks,
-        s.kind === "text" ? textControls(s) : null,
+        s.kind === "text" ? textControls(s) : imageControls(s),
         range("Size", 5, 100, Math.round(s.w * 100), (l, v) => { const k = v / 100 / l.w; l.w *= k; l.h *= k; }),
         range("Rotation", -180, 180, Math.round(s.rot), (l, v) => { l.rot = v; }),
         range("Opacity", 10, 100, Math.round(s.op * 100), (l, v) => { l.op = v / 100; }),
@@ -529,7 +654,8 @@ export async function renderStudio() {
           btn("Top of print", () => editSel((l) => { l.y = l.h / 2; })), btn("Fit print width", () => editSel((l) => { const k = Math.min(1 / l.w, 1 / l.h); l.w *= k; l.h *= k; l.x = 0.5; l.y = Math.max(l.h / 2, Math.min(l.y, 1 - l.h / 2)); }))),
         el("span", { class: "eyebrow" }, "Arrange"),
         el("div", { class: "ed-grid2" },
-          btn("Flip", () => editSel((l) => { l.flip = !l.flip; })), btn("Duplicate", dup),
+          btn("Flip side to side", () => editSel((l) => { l.flip = !l.flip; })), btn("Flip upside down", () => editSel((l) => { l.flipV = !l.flipV; })),
+          btn("Duplicate", dup),
           btn("Bring forward", () => reorder(1)), btn("Send back", () => reorder(-1))),
         btn(s.kind === "text" ? "Remove text" : "Remove from shirt", delLayer, "btn danger"))
         : el("p", { class: "muted small" }, layers().length ? "Select something on the shirt to size, turn or move it." : "Pick an image from the Library or add words under Text. Drag it on the shirt to move it, the corner dot resizes and the top dot turns it."),
@@ -539,7 +665,7 @@ export async function renderStudio() {
       btn("Download mockup photo", exportMockup, "btn"),
       btn("Save to library for listing", saveToLibrary, "btn"),
       el("p", { class: "muted small" }, `Print file: ${PW * DPI} × ${PH * DPI} px transparent PNG, ${PW} × ${PH} in at ${DPI} dpi, ${state.side} side. Saved designs show under Elevated Designs, List a design.`),
-      layers().length ? confirmButton("Clear this side", "Click again to clear", () => { state.sides[state.side] = []; state.sel = null; drawStage(); save(); toast("Side cleared. Undo brings it back."); }) : null);
+      layers().length ? confirmButton("Clear this side", "Click again to clear", () => { state.sides[state.side] = []; state.sel = null; drawStage(); save(); toast("Side cleared. Undo brings it back."); }) : "");
   }
 
   // drag, resize and rotate with one pointer handler
@@ -608,6 +734,7 @@ export async function renderStudio() {
 
   // ----- export -----
   async function paintLayers(g, x0, y0, wpx, hpx) {
+    await fxReady();
     for (const l of layers()) {
       let img;
       if (l.kind === "text") {
@@ -627,7 +754,7 @@ export async function renderStudio() {
       g.globalAlpha = l.op;
       g.translate(x0 + l.x * wpx, y0 + l.y * hpx);
       g.rotate((l.rot * Math.PI) / 180);
-      if (l.flip) g.scale(-1, 1);
+      if (l.flip || l.flipV) g.scale(l.flip ? -1 : 1, l.flipV ? -1 : 1);
       g.drawImage(img, (-l.w * wpx) / 2, (-l.h * hpx) / 2, l.w * wpx, l.h * hpx);
       g.restore();
     }
@@ -691,6 +818,10 @@ export async function renderStudio() {
   drawTool();
   await refresh();
   await drawShirt();
+  // "Put on a shirt" from the Design library
+  let pending = null;
+  try { pending = sessionStorage.getItem("bc-add-to-shirt"); sessionStorage.removeItem("bc-add-to-shirt"); } catch { /* storage blocked */ }
+  if (pending && findItem(pending)) addLayer(findItem(pending));
   showSync();
   return page;
 }

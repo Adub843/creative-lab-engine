@@ -5,6 +5,7 @@ const { chromium } = require("playwright");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
 const fs = require("node:fs");
+const os = require("node:os");
 const assert = require("node:assert/strict");
 
 const ROOT = path.resolve(__dirname, "..");
@@ -27,14 +28,14 @@ const product = (store, n, o = {}) => {
     status: o.status ?? "ACTIVE", live: o.live ?? false, url: `${site}/products/${handle}`,
     adminUrl: `https://admin.shopify.com/store/${shop}/products/${store === "c3d" ? 100 + n : 200 + n}`,
     image: null, price: 24 + n, currency: "USD", inventory: o.inventory ?? null, updatedAt: "2026-10-20T10:00:00Z",
-    ...(store === "c3d" ? { customizable: o.customizable ?? false } : {}) };
+    ...(store === "c3d" ? { customizable: o.customizable ?? false } : { builder: o.builder ?? false }) };
 };
 const PRODUCTS = {
   c3d: [product("c3d", 1, { title: "Personalized Name Ornament", type: "Ornament", live: true, handle: "name-ornament", customizable: true }),
     product("c3d", 2, { title: "Rainbow Row Keychain", type: "Keychain", status: "DRAFT", inventory: 12 }),
     product("c3d", 3, { title: "Pineapple Desk Sign With A Very Long Name That Should Wrap Nicely On Phones", type: "Home" }),
     product("c3d", 4, { title: "Broken Publish Product", type: "Test" })],
-  ed: [product("ed", 1, { title: "Lowcountry Tee", type: "Shirt", live: true, handle: "lowcountry-tee" }),
+  ed: [product("ed", 1, { title: "Lowcountry Tee", type: "Shirt", live: true, handle: "lowcountry-tee", builder: true }),
     product("ed", 2, { title: "Pluff Mud Hoodie", type: "Hoodie" })],
 };
 
@@ -83,6 +84,7 @@ async function main() {
   await new Promise((r) => setTimeout(r, 800));
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  if (process.env.UI_TIMEOUT) page.setDefaultTimeout(Number(process.env.UI_TIMEOUT));
   const errors = [];
   // Responses the test provokes on purpose (401, 422, 502, 503) are logged by Chrome as resource errors; anything else counts.
   const expected = /Failed to load resource: the server responded with a status of (401|422|502|503)/;
@@ -119,6 +121,13 @@ async function main() {
       return json(201, { item });
     }
     if (req.method() === "DELETE") { images.delete(key); return json(200, { deleted: key }); }
+    if (req.method() === "PATCH" && images.has(key)) {
+      const patch = JSON.parse(req.postData() || "{}"), item = images.get(key);
+      if ("name" in patch) item.name = patch.name;
+      if ("category" in patch) { if (patch.category) item.category = patch.category; else delete item.category; }
+      if ("public" in patch) item.public = patch.public === true;
+      return json(200, { item });
+    }
     return json(405, { error: "Not supported" });
   });
   await page.route("**/api/products**", async (route) => {
@@ -145,6 +154,11 @@ async function main() {
       p.customizable = body.customizable;
       return json(200, { store: "c3d", id: p.id, customizable: p.customizable, product: { ...p } });
     }
+    if ("builder" in body) {
+      if (body.store !== "ed") return json(400, { error: "The shirt builder is an Elevated Designs setting.", code: "wrong_store" });
+      p.builder = body.builder;
+      return json(200, { store: "ed", id: p.id, builder: p.builder, product: { ...p } });
+    }
     if (p.title.startsWith("Half")) {
       Object.assign(p, { status: "ACTIVE", live: false });
       return json(422, { error: "It's now Active in Shopify, but it isn't on the Online Store yet: Online Store isn't available. Try the switch again, or publish it in Shopify.", code: "partly_published", details: { product: { ...p } } });
@@ -153,6 +167,32 @@ async function main() {
     const out = { ...p, live: body.live, status: body.live ? "ACTIVE" : p.status };
     Object.assign(p, out); // the store remembers it, like Shopify would
     return json(200, { store: body.store, id: p.id, live: body.live, url: p.url, product: out, indexNow: { sent: true } });
+  });
+  // Team task boards: one per store, kept in memory like the MARKETING KV.
+  const boards = { c3d: [], ed: [] };
+  const teamCalls = [];
+  const ROSTER_ALL = [["aaron", "Aaron", "You"], ["ops", "ops", "OpenClaw"], ["c3d", "c3d", "OpenClaw", "c3d"], ["ed", "ed", "OpenClaw", "ed"], ["marketing", "marketing", "OpenClaw"], ["builder", "builder", "Claude Code"], ["admin", "admin", "OpenClaw"]]
+    .map(([id, name, runs, store]) => ({ id, name, runs, store, role: `${name} role`, jobs: id === "aaron" ? [] : [`Daily: ${name} job`] }));
+  await page.route("**/api/team**", async (route) => {
+    const req = route.request();
+    const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    if (req.headers()["x-console-key"] !== KEY) return json(401, { error: "Wrong or missing console key.", code: "bad_key" });
+    const body = req.method() === "GET" ? { store: new URL(req.url()).searchParams.get("store") } : JSON.parse(req.postData());
+    teamCalls.push({ method: req.method(), body });
+    const tasks = boards[body.store];
+    const roster = ROSTER_ALL.filter((m) => !m.store || m.store === body.store);
+    if (req.method() === "GET") return json(200, { store: body.store, roster, consoleJobs: ["Every 15 min: prices"], tasks });
+    if (req.method() === "POST") {
+      const added = (body.tasks ?? [body]).map((t, i) => ({ id: `t${Date.now()}${i}${tasks.length}`, text: t.text, owner: t.owner ?? "aaron", done: !!t.done, createdAt: "2026-10-27T12:00:00Z", ...(t.done ? { doneAt: "2026-10-27T12:00:00Z" } : {}) }));
+      tasks.push(...added);
+      return json(201, { store: body.store, added, tasks });
+    }
+    const t = tasks.find((x) => x.id === body.id);
+    if (!t) return json(404, { error: "That task isn't on the board any more.", code: "not_found" });
+    if (req.method() === "DELETE") { tasks.splice(tasks.indexOf(t), 1); return json(200, { store: body.store, tasks }); }
+    for (const k of ["done", "owner", "text"]) if (k in body) t[k] = body[k];
+    if (body.done) t.doneAt = "2026-10-27T13:00:00Z";
+    return json(200, { store: body.store, task: t, tasks });
   });
   await page.route("**/api/insights**", async (route) => {
     const u = new URL(route.request().url());
@@ -423,20 +463,29 @@ async function main() {
   });
 
   await step("other pages still render and every nav link works", async () => {
-    for (const r of ["dashboard", "c3d", "ed", "products", "insights", "studio", "plates", "map"]) {
+    const visit = async (r) => {
       await page.click(`a.nav[data-route="${r}"]`);
       await page.waitForFunction((rt) => document.querySelector(`a.nav[data-route="${rt}"]`)?.getAttribute("aria-current") === "page", r);
       await page.waitForTimeout(100);
       await noOverflow(`${r} 1280`);
-    }
-    await page.click('a.nav[data-route="c3d"]');
-    assert.equal(await page.locator(".quick a", { hasText: "Insights" }).getAttribute("href"), "#insights/c3d");
-    await page.click(".quick a:has-text('Products')");
+    };
+    await page.click('.seg-btn[data-store="c3d"]');
+    for (const r of ["home", "products", "insights", "share", "map", "trends", "nameplate", "hypechain", "maker", "plates"]) await visit(r);
+    assert.equal(await page.locator('a.nav[data-route="studio"]').count(), 0, "the shirt designer is Elevated Designs only");
+    await page.click('.seg-btn[data-store="ed"]');
+    for (const r of ["home", "studio", "library", "share"]) await visit(r);
+    assert.equal(await page.locator('a.nav[data-route="nameplate"]').count(), 0, "the 3D makers are Charleston 3D only");
+    assert.equal(await page.locator('a.nav[data-route="plates"]').count(), 0, "the plate maker is Charleston 3D only");
+    await page.click('.seg-btn[data-store="c3d"]');
+    await page.click('a.nav[data-route="home"]');
+    assert.equal(await page.locator(".tool-row").count(), 0, "Home doesn't repeat the sidebar's tools");
+    assert.equal(await page.locator('a.nav[data-route="insights"]').getAttribute("href"), "#insights/c3d");
+    await page.click('a.nav[data-route="products"]');
     await page.waitForSelector('.prow:has-text("Rainbow Row")');
-    await page.click('a.nav[data-route="ed"]');
-    await page.click(".quick a:has-text('Products')");
+    await page.click('.seg-btn[data-store="ed"]');
     await page.waitForSelector('.prow:has-text("Lowcountry Tee")');
     assert.equal(await page.locator('.seg-btn[data-store="ed"]').getAttribute("aria-pressed"), "true");
+    assert.match(page.url(), /#products\/ed$/);
   });
 
   // ---------- QA: edge cases and every remaining button ----------
@@ -616,11 +665,12 @@ async function main() {
     images.set("k-pub-0123abcd", { key: "k-pub-0123abcd", name: "palm-tree.png", type: "image/png", size: 10, tags: "palm, zzq-only-tag", category: "Charleston", public: true, added: 2 });
     images.set("k-priv-0123abcd", { key: "k-priv-0123abcd", name: "secret.png", type: "image/png", size: 10, tags: "", public: false, added: 1 });
     await page.evaluate(() => { localStorage.removeItem("bc-console-key"); localStorage.removeItem("bc-design-2"); });
-    await page.click('a.nav[data-route="dashboard"]');
-    await page.click('a.nav[data-route="studio"]');
-    await page.waitForSelector('.lib .tile:has-text("palm-tree.png")');
+    await page.click('a.nav[data-route="home"]');
+    await page.click('.seg-btn[data-store="ed"]');
+    await page.goto(`${BASE}#studio/ed`);
+    await page.waitForSelector('.lib .tile:has-text("palm-tree")');
     assert.equal(await page.locator("dialog.keydlg[open]").count(), 0, "no key prompt just to design");
-    assert.equal(await page.locator('.lib .tile:has-text("secret.png")').count(), 0, "private images stay hidden without the key");
+    assert.equal(await page.locator('.lib .tile:has-text("secret")').count(), 0, "private images stay hidden without the key");
     assert.equal(imageCalls.filter((c) => c.method === "GET" && !c.key).at(-1).auth, null, "the list is read without the key");
     assert.match(await page.locator(".editor").textContent(), /1 of 1 images\. These are the shirt app images\./);
     assert.match(await page.locator(".editor").textContent(), /Kittl sync .*: 8 added, 0 removed\. Runs every hour\./);
@@ -635,7 +685,7 @@ async function main() {
     assert.match(await page.locator(".ed-stage .ed-base").getAttribute("src"), /blanks\/tee-front\.jpg$/);
     assert.match(await page.locator(".ed-stage .ed-shade").getAttribute("src"), /blanks\/tee-front-shade\.jpg$/);
     assert.equal(await page.locator(".ed-stage .ed-shade").evaluate((n) => getComputedStyle(n).mixBlendMode), "multiply");
-    await page.click('.lib .tile:has-text("palm-tree.png")');
+    await page.click('.lib .tile:has-text("palm-tree")');
     await page.waitForSelector(".ed-print .ed-pl");
     await page.waitForSelector(".print-area .layer.sel");
     assert.match(await page.locator(".ed-side").textContent(), /Selected image/);
@@ -672,10 +722,11 @@ async function main() {
     for (const k of [...images.keys()]) images.delete(k);
     images.set("k-pub-0123abcd", { key: "k-pub-0123abcd", name: "tiny.png", type: "image/png", size: 10, tags: "", public: true, added: 2 });
     await page.evaluate(() => { localStorage.removeItem("bc-console-key"); localStorage.removeItem("bc-design-2"); });
-    await page.click('a.nav[data-route="dashboard"]');
-    await page.click('a.nav[data-route="studio"]');
-    await page.waitForSelector('.lib .tile:has-text("tiny.png")');
-    await page.click('.lib .tile:has-text("tiny.png")');
+    await page.click('a.nav[data-route="home"]');
+    await page.click('.seg-btn[data-store="ed"]');
+    await page.goto(`${BASE}#studio/ed`);
+    await page.waitForSelector('.lib .tile:has-text("tiny")');
+    await page.click('.lib .tile:has-text("tiny")');
     await page.waitForSelector(".print-area .layer.sel");
     assert.match(await page.locator(".ed-checks").textContent(), /Print quality: low/, "a 1 px image warns it will print soft");
     // a slider keeps working through a whole drag (it isn't rebuilt under the pointer)
@@ -723,7 +774,7 @@ async function main() {
     assert.ok(saved && saved.public === false && saved.type === "image/png", "saved as a private PNG");
     await page.click('.ed-rail [data-tool="library"]');
     page.once("dialog", (d) => d.accept());
-    await page.locator('.lib-item:has-text("Holy-City-Tees.png") .lib-del').click({ force: true });
+    await page.locator('.lib-item:has-text("Holy-City-Tees") .lib-del').click({ force: true });
     await page.waitForSelector(".toast >> text=Image deleted");
     await page.evaluate(() => localStorage.removeItem("bc-design-2"));
     for (const k of [...images.keys()]) images.delete(k);
@@ -732,8 +783,9 @@ async function main() {
   await step("studio: uploading asks for the key, then upload, see private images, delete", async () => {
     for (const k of [...images.keys()]) images.delete(k);
     await page.evaluate(() => localStorage.removeItem("bc-console-key"));
-    await page.click('a.nav[data-route="dashboard"]');
-    await page.click('a.nav[data-route="studio"]');
+    await page.click('a.nav[data-route="home"]');
+    await page.click('.seg-btn[data-store="ed"]');
+    await page.goto(`${BASE}#studio/ed`);
     await page.waitForSelector(".editor");
     await page.click('.ed-rail [data-tool="upload"]');
     await page.fill('.editor input[placeholder^="Tags"]', "logo, test");
@@ -745,18 +797,19 @@ async function main() {
     await page.waitForSelector("dialog.keydlg[open] #key-in");
     await page.fill("#key-in", KEY);
     await page.click("#key-save");
-    await page.waitForSelector('.lib .tile:has-text("logo.png")');
+    await page.waitForSelector('.lib .tile:has-text("logo")');
     const up = imageCalls.filter((c) => c.method === "POST").at(-1);
     assert.equal(up.auth, KEY);
     const saved = [...images.values()][0];
     assert.equal(saved.tags, "logo, test");
     assert.equal(saved.public, true, "Show in the shirt app library is ticked by default");
     images.set("k-priv-0123abcd", { key: "k-priv-0123abcd", name: "secret.png", type: "image/png", size: 10, tags: "", public: false, added: 1 });
-    await page.click('a.nav[data-route="dashboard"]');
-    await page.click('a.nav[data-route="studio"]');
-    await page.waitForSelector('.lib .tile:has-text("secret.png")'); // with the key, private images show too
+    await page.click('a.nav[data-route="home"]');
+    await page.click('.seg-btn[data-store="ed"]');
+    await page.goto(`${BASE}#studio/ed`);
+    await page.waitForSelector('.lib .tile:has-text("secret")'); // with the key, private images show too
     page.once("dialog", (d) => d.accept());
-    await page.locator('.lib-item:has-text("secret.png") .lib-del').click({ force: true });
+    await page.locator('.lib-item:has-text("secret") .lib-del').click({ force: true });
     await page.waitForSelector(".toast >> text=Image deleted");
     assert.ok(!images.has("k-priv-0123abcd"));
     assert.equal(imageCalls.filter((c) => c.method === "DELETE").at(-1).auth, KEY);
@@ -767,21 +820,23 @@ async function main() {
     const old = { key: "k0-0123abcd", name: "old.png", type: "image/png", size: 10, tags: "", public: true, added: 1 };
     images.set(old.key, old);
     staleList = [old];
-    await page.click('a.nav[data-route="dashboard"]');
-    await page.click('a.nav[data-route="studio"]');
-    await page.waitForSelector('.lib .tile:has-text("old.png")');
+    await page.click('a.nav[data-route="home"]');
+    await page.click('.seg-btn[data-store="ed"]');
+    await page.goto(`${BASE}#studio/ed`);
+    await page.waitForSelector('.lib .tile:has-text("old")');
     await clearToasts();
     await page.click('.ed-rail [data-tool="upload"]');
     await page.setInputFiles('.editor input[type="file"]', { name: "late.png", mimeType: "image/png", buffer: PNG });
-    await page.waitForSelector('.lib .tile:has-text("late.png")'); // not in the (stale) list yet, shown anyway
+    await page.waitForSelector('.lib .tile:has-text("late")'); // not in the (stale) list yet, shown anyway
     assert.ok(!staleList.some((i) => i.name === "late.png"));
     page.once("dialog", (d) => d.accept());
-    await page.locator('.lib .tile:has-text("old.png")').click({ button: "right" });
+    await page.locator('.lib .tile:has-text("old")').click({ button: "right" });
     await page.waitForSelector(".toast >> text=Image deleted");
-    await page.click('a.nav[data-route="dashboard"]');
-    await page.click('a.nav[data-route="studio"]');
-    await page.waitForSelector('.lib .tile:has-text("late.png")');
-    assert.equal(await page.locator('.lib .tile:has-text("old.png")').count(), 0, "a deleted image stays gone though the list still has it");
+    await page.click('a.nav[data-route="home"]');
+    await page.click('.seg-btn[data-store="ed"]');
+    await page.goto(`${BASE}#studio/ed`);
+    await page.waitForSelector('.lib .tile:has-text("late")');
+    assert.equal(await page.locator('.lib .tile:has-text("old")').count(), 0, "a deleted image stays gone though the list still has it");
     staleList = null;
     for (const k of [...images.keys()]) images.delete(k);
   });
@@ -794,7 +849,7 @@ async function main() {
     await page.route("**/api/images/k-star-0123abcd", (r) => r.fulfill({ status: 200, contentType: "image/svg+xml", body: STAR }));
     images.set("k-star-0123abcd", { key: "k-star-0123abcd", name: "star.svg", type: "image/svg+xml", size: 10, tags: "", public: true, added: 3 });
     await page.evaluate(() => { localStorage.removeItem("bc-console-key"); localStorage.removeItem("bc-plate-1"); });
-    await page.click('a.nav[data-route="dashboard"]');
+    await page.goto(`${BASE}#home/c3d`);
     const callsFrom = imageCalls.length;
     await page.click('a.nav[data-route="plates"]');
     await page.waitForSelector(".pm-stage canvas.pm-gl");
@@ -881,7 +936,7 @@ async function main() {
   const cleanup = [];
   await step("plate maker: an STL saved to the library is private, listed only with the key, and goes on the plate", async () => {
     await page.evaluate((k) => { localStorage.setItem("bc-console-key", k); localStorage.removeItem("bc-plate-1"); }, KEY);
-    await page.click('a.nav[data-route="dashboard"]');
+    await page.goto(`${BASE}#home/c3d`);
     await page.click('a.nav[data-route="plates"]');
     await page.click('.ed-rail [data-tool="flower"]');
     await page.waitForSelector('.pm-models >> text=None yet.');
@@ -900,12 +955,12 @@ async function main() {
     await page.keyboard.press("Control+Shift+Z");
     await page.waitForFunction(() => document.querySelectorAll(".pm-overlay .layer").length === 1);
     // the shirt app's public list and the studio's image list never show it
-    await page.click('a.nav[data-route="studio"]');
+    await page.goto(`${BASE}#studio/ed`);
     await page.waitForSelector(".ed-stage .lib, .editor:not(.pm) .lib");
     await page.waitForFunction(() => /images/.test(document.querySelector(".editor:not(.pm)")?.textContent ?? ""));
     assert.equal(await page.locator('.editor:not(.pm) .lib .tile:has-text("my-rose.stl")').count(), 0);
     // deleting it from the library takes two clicks on its own button (no browser dialog)
-    await page.click('a.nav[data-route="plates"]');
+    await page.goto(`${BASE}#plates/c3d`);
     await page.click('.ed-rail [data-tool="flower"]');
     const del = page.locator('.pm-models .lib-item:has-text("my-rose.stl") .lib-del');
     await del.click({ force: true });
@@ -919,45 +974,34 @@ async function main() {
   for (const fn of cleanup.splice(0)) fn();
   await page.evaluate((k) => { if (k) localStorage.setItem("bc-console-key", k); else localStorage.removeItem("bc-console-key"); localStorage.removeItem("bc-plate-1"); }, keyBeforePlates);
 
-  await step("dashboard and brand pages: store links go to the Shopify sites, not Netlify", async () => {
-    for (const [route, site] of [["dashboard", null], ["c3d", "https://charleston3d.com"], ["ed", "https://elevatedshirts.com"]]) {
-      await page.click(`a.nav[data-route="${route}"]`);
-      await page.waitForFunction((r) => document.querySelector(`a.nav[data-route="${r}"]`)?.getAttribute("aria-current") === "page", route);
-      const hrefs = await page.locator("#view a[href]").evaluateAll((as) => as.map((a) => ({ t: a.textContent.trim(), h: a.getAttribute("href"), target: a.getAttribute("target") })));
-      for (const a of hrefs) {
-        if (/^(Website|View live site|Open live site)/.test(a.t)) assert.ok(!/netlify/.test(a.h), `${route}: ${a.t} -> ${a.h}`);
-        if (/netlify\.app/.test(a.h)) assert.ok(!/charleston3d-site|elevated-designs-site/.test(a.h), `stale store site link ${a.h}`);
-        if (/^https?:/.test(a.h)) assert.equal(a.target, "_blank", `${a.t} opens in a new tab`);
-      }
-      if (site) {
-        assert.equal(await page.locator(".quick a", { hasText: "Website" }).getAttribute("href"), site);
-        assert.equal(await page.locator("a", { hasText: "View live site" }).getAttribute("href"), site);
-      }
-    }
-    await page.click('a.nav[data-route="dashboard"]');
-    await page.waitForSelector("h1:has-text('Dashboard')");
-    const quick = await page.locator(".quick a").evaluateAll((as) => as.map((a) => a.getAttribute("href")));
-    assert.deepEqual(quick, ["https://charleston3d.com", "https://app.charleston3d.com", "#products/c3d", "#insights/c3d",
-      "https://elevatedshirts.com", "https://design.elevatedshirts.com", "#products/ed", "#insights/ed"]);
-    // nothing anywhere in the console points at Netlify any more
-    for (const route of ["dashboard", "c3d", "ed", "map"]) {
-      await page.click(`a.nav[data-route="${route}"]`);
-      await page.waitForFunction((r) => document.querySelector(`a.nav[data-route="${r}"]`)?.getAttribute("aria-current") === "page", route);
-      const bad = await page.locator("#view a[href]").evaluateAll((as) => as.map((a) => a.getAttribute("href")).filter((h) => /netlify/i.test(h)));
-      assert.deepEqual(bad, [], `${route} has no Netlify links`);
-    }
-    // every in-console link opens a real page
+  await step("home pages: store links go to the Shopify sites, not Netlify", async () => {
+    const pages = ["home", "products", "insights", "marketing", "promote", "studio", "map", "share", "team", "trends", "nameplate", "hypechain", "maker", "plates", "files", "maker3d", "designs"];
     const hashes = new Set();
-    for (const route of ["dashboard", "c3d", "ed", "map"]) {
-      await page.click(`a.nav[data-route="${route}"]`);
-      await page.waitForFunction((r) => document.querySelector(`a.nav[data-route="${r}"]`)?.getAttribute("aria-current") === "page", route);
-      (await page.locator("#view a[href^='#']").evaluateAll((as) => as.map((a) => a.getAttribute("href")))).forEach((h) => hashes.add(h));
+    for (const [k, site, app] of [["c3d", "https://charleston3d.com", "https://app.charleston3d.com"], ["ed", "https://elevatedshirts.com", "https://design.elevatedshirts.com"]]) {
+      await page.click('a.nav[data-route="home"]');
+      await page.click(`.seg-btn[data-store="${k}"]`);
+      for (const route of ["home", "map", "share"]) {
+        await page.click(`a.nav[data-route="${route}"]`);
+        await page.waitForFunction((r) => document.querySelector(`a.nav[data-route="${r}"]`)?.getAttribute("aria-current") === "page", route);
+        const hrefs = await page.locator("#view a[href], #store-links a[href], #navs a[href]").evaluateAll((as) => as.map((a) => ({ t: a.textContent.trim(), h: a.getAttribute("href"), target: a.getAttribute("target") })));
+        for (const a of hrefs) {
+          assert.ok(!/netlify/i.test(a.h), `${k}/${route}: ${a.t} -> ${a.h}`);
+          if (/^https?:/.test(a.h)) assert.equal(a.target, "_blank", `${a.t} opens in a new tab`);
+          if (a.h.startsWith("#")) hashes.add(a.h);
+        }
+      }
+      assert.equal(await page.locator("#store-links a", { hasText: "Live site" }).getAttribute("href"), site);
+      assert.equal(await page.locator("#store-links a", { hasText: "App" }).getAttribute("href"), app);
+      // a store's pages never link to the other store's pages
+      const other = k === "c3d" ? "ed" : "c3d";
+      assert.deepEqual([...hashes].filter((h) => h.split("/")[1] === other && !h.startsWith("#map")), [], `${k} links stay in ${k}`);
+      hashes.clear();
     }
-    const pages = { dashboard: "Dashboard", c3d: "Charleston 3D", ed: "Elevated Designs", products: "Products", insights: "Insights", marketing: "Marketing", promote: "Promotions", studio: "Design Studio", plates: "Plate maker", map: "Service Map" };
-    for (const h of hashes) {
-      const r = h.slice(1).split("/")[0];
-      assert.ok(pages[r], `${h} is a console page`);
+    for (const k of ["c3d", "ed"]) {
+      await page.click(`.seg-btn[data-store="${k}"]`);
+      (await page.locator("#navs a[href^='#']").evaluateAll((as) => as.map((a) => a.getAttribute("href")))).forEach((h) => hashes.add(h));
     }
+    for (const h of hashes) assert.ok(pages.includes(h.slice(1).split("/")[0]), `${h} is a console page`);
   });
 
   await step("dashboard: jump palette, service drawer and theme switch", async () => {
@@ -969,6 +1013,7 @@ async function main() {
     await page.waitForFunction(() => location.hash.startsWith("#insights"));
     assert.equal(await page.locator("#palette[open]").count(), 0);
     await page.click('a.nav[data-route="map"]');
+    await page.click('.seg-btn[data-store="c3d"]');
     await page.locator(".card", { hasText: "charleston3d.com" }).first().click();
     await page.waitForSelector("#drawer:not([hidden])");
     assert.equal(await page.evaluate(() => document.activeElement?.id), "d-close");
@@ -982,18 +1027,181 @@ async function main() {
     await page.click("#theme");
   });
 
+  await step("go to: the Design Studio and every site from every page, at 1280 and 390", async () => {
+    const want = ["https://epix3d.com", "https://charleston3d.com", "https://app.charleston3d.com", "https://elevatedshirts.com",
+      "https://design.elevatedshirts.com", "https://claude.ai/artifact/", "https://docs.google.com/spreadsheets/"];
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: width > 500 ? 900 : 844 });
+      for (const [k, r] of [["c3d", "home"], ["c3d", "products"], ["ed", "insights"], ["ed", "studio"]]) {
+        await page.goto(`${BASE}#${r}/${k}`);
+        await page.locator(".go-btn").click();
+        await page.waitForSelector("#go-menu:popover-open");
+        const links = await page.locator("#go-menu a").evaluateAll((as) => as.map((a) => [a.getAttribute("href"), a.target, a.rel]));
+        for (const w of want) assert.ok(links.some(([h]) => h.startsWith(w)), `${k}/${r} at ${width}: Go to is missing ${w}`);
+        for (const [h, t, rel] of links) { assert.ok(!/netlify/i.test(h)); assert.equal(t, "_blank"); assert.match(rel, /noopener/); }
+        const box = await page.locator("#go-menu").boundingBox();
+        assert.ok(box.x >= 0 && box.x + box.width <= width, `${k}/${r} at ${width}: Go to menu runs off the screen`);
+        if (r === "home" && SCREENS) await page.screenshot({ path: path.join(SCREENS, `go-to-${width}.png`) });
+        await page.keyboard.press("Escape");
+        assert.equal(await page.locator("#go-menu:popover-open").count(), 0);
+        await noOverflow(`go to ${k} ${r} ${width}`);
+      }
+      // the sidebar (the Menu on phones) links straight to the Design Studio
+      if (width < 500) await page.click("#more");
+      assert.equal(await page.locator('a.nav[data-route="design-studio"]').getAttribute("href"), "https://epix3d.com");
+      if (width < 500) await page.click("#more");
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+  });
+
   await step("mobile 390px: nav fits, every link is reachable and works", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
-    for (const r of ["dashboard", "c3d", "ed", "products", "insights", "studio", "plates", "map"]) {
-      const link = page.locator(`a.nav[data-route="${r}"]`);
-      await link.scrollIntoViewIfNeeded();
-      const box = await link.boundingBox();
-      assert.ok(box && box.width >= 32 && box.height >= 32, `${r} tap target ${JSON.stringify(box)}`);
-      await link.click();
-      await page.waitForFunction((rt) => document.querySelector(`a.nav[data-route="${rt}"]`)?.getAttribute("aria-current") === "page", r);
-      await page.waitForTimeout(150);
-      await noOverflow(`${r} 390`);
+    for (const [k, routes] of [["c3d", ["home", "products", "insights", "share", "map", "maker", "nameplate", "plates"]], ["ed", ["home", "studio", "library", "share"]]]) {
+      await page.goto(`${BASE}#home/${k}`);
+      for (const r of routes) {
+        await page.click("#more");
+        const link = page.locator(`a.nav[data-route="${r}"]`);
+        await link.scrollIntoViewIfNeeded();
+        const box = await link.boundingBox();
+        assert.ok(box && box.width >= 32 && box.height >= 32, `${r} tap target ${JSON.stringify(box)}`);
+        await link.click();
+        await page.waitForFunction((rt) => document.querySelector(`a.nav[data-route="${rt}"]`)?.getAttribute("aria-current") === "page", r);
+        assert.equal(await page.locator(`a.nav[data-route="${r}"]`).isVisible(), false, "the menu closes after a pick");
+        await page.waitForTimeout(150);
+        await noOverflow(`${k} ${r} 390`);
+      }
     }
+    await page.setViewportSize({ width: 1280, height: 900 });
+  });
+
+  // ---------- Charleston 3D: 3D file library ----------
+  const files = new Map(), fileCalls = [];
+  await page.route("**/api/files**", async (route) => {
+    const req = route.request(), url = new URL(req.url()), [, , , key, part] = url.pathname.split("/");
+    const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    fileCalls.push([req.method(), url.pathname]);
+    if (req.headers()["x-console-key"] !== KEY && !url.searchParams.get("sig")) return json(401, { error: "Wrong or missing console key.", code: "bad_key" });
+    if (req.method() === "GET" && !key) return json(200, { items: [...files.values()].reverse() });
+    if (req.method() === "GET" && part === "thumb") return route.fulfill({ status: 200, contentType: "image/png", body: files.get(key).png });
+    if (req.method() === "POST") {
+      const name = req.headers()["x-filename"];
+      if (!/\.(stl|3mf|obj|step|stp|png|jpe?g|webp)$/i.test(name)) return json(415, { error: "Send a 3D file or a photo." });
+      const k = `t${files.size}-0123abcd`;
+      const item = { key: k, name, type: /\.stl$/i.test(name) ? "model/stl" : /\.3mf$/i.test(name) ? "model/3mf" : "model/step", size: req.postDataBuffer().length, added: Date.now(), store: "c3d", url: `/api/files/${k}?exp=1&sig=x` };
+      files.set(k, item);
+      return json(201, { item });
+    }
+    if (req.method() === "PUT" && part === "thumb") {
+      const f = files.get(key); f.png = req.postDataBuffer(); f.thumb = true; f.thumbUrl = `/api/files/${key}/thumb?exp=1&sig=x`;
+      return json(200, { item: { ...f, png: undefined } });
+    }
+    if (req.method() === "DELETE") { files.delete(key); return json(200, { deleted: key }); }
+    return json(405, { error: "Not supported" });
+  });
+  // a 10 mm cube as a binary STL
+  const cubeStl = () => {
+    const P = [[0,0,0],[10,0,0],[10,10,0],[0,10,0],[0,0,10],[10,0,10],[10,10,10],[0,10,10]];
+    const F = [[0,2,1],[0,3,2],[4,5,6],[4,6,7],[0,1,5],[0,5,4],[1,2,6],[1,6,5],[2,3,7],[2,7,6],[3,0,4],[3,4,7]];
+    const b = Buffer.alloc(84 + 50 * F.length); b.writeUInt32LE(F.length, 80);
+    F.forEach((f, i) => f.forEach((v, j) => P[v].forEach((c, k) => b.writeFloatLE(c, 84 + i * 50 + 12 + j * 12 + k * 4))));
+    return b;
+  };
+  await step("3D file library: Charleston 3D only; upload makes a preview; search and two-click delete", async () => {
+    await page.click('a.nav[data-route="home"]');
+    await page.click('.seg-btn[data-store="ed"]');
+    assert.equal(await page.locator('a.nav[data-route="files"]').count(), 0, "no 3D file library on Elevated Designs");
+    await page.click('.seg-btn[data-store="c3d"]');
+    await page.click('a.nav[data-route="files"]');
+    await page.waitForSelector("text=No files yet");
+    await page.setInputFiles("#file-in", [{ name: "Pineapple Ornament.stl", mimeType: "model/stl", buffer: cubeStl() },
+      { name: "Bracket.step", mimeType: "application/octet-stream", buffer: Buffer.from("ISO-10303-21;\nHEADER;") }]);
+    await page.waitForSelector('.file-card:has-text("Bracket.step")');
+    await page.waitForSelector('.file-card:has-text("Pineapple Ornament.stl") .file-pic img');
+    assert.ok(fileCalls.some(([m, p]) => m === "PUT" && p.endsWith("/thumb")), "a preview was sent for the STL");
+    const png = [...files.values()].find((f) => f.name.endsWith(".stl")).png;
+    assert.ok(png && png.subarray(1, 4).toString() === "PNG" && png.length > 1000, "the preview is a real PNG");
+    assert.equal(await page.locator('.file-card:has-text("Bracket.step") .file-pic img').count(), 0, "STEP shows its type, not a picture");
+    assert.equal(await page.locator('.file-card:has-text("Bracket.step") a', { hasText: "Download" }).getAttribute("download"), "Bracket.step");
+    await page.fill('input[aria-label="Search files"]', "pineapple");
+    assert.equal(await page.locator(".file-card").count(), 1);
+    await page.fill('input[aria-label="Search files"]', "");
+    const del = page.locator('.file-card:has-text("Bracket.step") button', { hasText: "Delete" });
+    await del.click();
+    assert.equal(files.size, 2, "the first click only asks");
+    await page.locator('.file-card:has-text("Bracket.step") button', { hasText: "Delete it?" }).click();
+    await page.waitForFunction(() => document.querySelectorAll(".file-card").length === 1);
+    assert.equal(files.size, 1);
+    await noOverflow("files 1280");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await noOverflow("files 390");
+    await page.setViewportSize({ width: 1280, height: 900 });
+  });
+
+  // ---------- Charleston 3D: 3D maker (Meshy) ----------
+  const mJobs = [], mCalls = [];
+  const PNG1 = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+  await page.route("**/api/meshy**", async (route) => {
+    const req = route.request(), url = new URL(req.url()), [, , , section, id, action, fmt] = url.pathname.split("/");
+    const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    const body = req.postData() ? JSON.parse(req.postData()) : null;
+    mCalls.push([req.method(), url.pathname, body]);
+    if (req.headers()["x-console-key"] !== KEY) return json(401, { error: "Wrong or missing console key.", code: "bad_key" });
+    if (!section) return json(200, { configured: true, balance: 300, jobs: mJobs.map(({ polls, ...j }) => j) });
+    if (req.method() === "POST" && !id) {
+      const j = { id: `0193bfc5-0000-7000-8000-00000000000${mJobs.length + 1}`, kind: body.mode === "words" ? "words" : body.images.length > 1 ? "photos" : "photo",
+        name: body.name, color: !!body.color, detail: body.detail, created: Date.now(), cost: 20, status: "PENDING", progress: 0, formats: [], polls: 0 };
+      mJobs.unshift(j);
+      return json(201, { job: j });
+    }
+    const j = mJobs.find((x) => x.id === id);
+    if (!j) return json(404, { error: "That job isn't on the list." });
+    if (req.method() === "GET" && !action) {
+      if (++j.polls >= 1) Object.assign(j, { status: "SUCCEEDED", progress: 100, formats: ["glb", "stl", "3mf", "obj"], picture: true, expiresAt: Date.now() + 71 * 3600000 });
+      return json(200, { job: j });
+    }
+    if (action === "file") return route.fulfill({ status: 200, contentType: fmt === "picture" ? "image/png" : "application/octet-stream", body: fmt === "picture" ? PNG1 : cubeStl() });
+    if (action === "save") { j.saved = "m1-0123abcd"; files.set("m1-0123abcd", { key: "m1-0123abcd", name: `${j.name}.3mf`, type: "model/3mf", size: 9, added: Date.now(), store: "c3d", url: "/api/files/m1-0123abcd?exp=1&sig=x" }); return json(201, { item: files.get("m1-0123abcd") }); }
+    return json(405, { error: "Not supported" });
+  });
+  await step("3D maker: Charleston 3D only; photos in, two clicks to spend credits, model shows in 3D, save to the library", async () => {
+    await page.click('a.nav[data-route="home"]');
+    await page.click('.seg-btn[data-store="ed"]');
+    await page.waitForSelector('.seg-btn[data-store="ed"][aria-pressed="true"]');
+    await page.waitForSelector('a.nav[data-route="studio"]');
+    assert.equal(await page.locator('a.nav[data-route="maker3d"]').count(), 0, "no 3D maker on Elevated Designs");
+    await page.click('.seg-btn[data-store="c3d"]');
+    await page.click('a.nav[data-route="maker3d"]');
+    await page.waitForSelector("text=Nothing made yet");
+    await page.waitForSelector("text=300 Meshy credits left");
+    assert.ok(await page.locator(".m3d-go").isDisabled(), "nothing to make until a photo is added");
+    await page.setInputFiles("#m3d-photos", { name: "pineapple-ornament.png", mimeType: "image/png", buffer: PNG1 });
+    await page.waitForSelector(".m3d-thumb img");
+    assert.equal(await page.inputValue("#m3d-name"), "pineapple ornament", "the name comes from the photo");
+    await page.click('.m3d .seg-btn:has-text("With color")');
+    assert.match(await page.locator(".m3d-go").textContent(), /30 credits/);
+    await page.click('.m3d .seg-btn:has-text("Plain")');
+    await page.click(".m3d-go");
+    assert.match(await page.locator(".m3d-go").textContent(), /Click again to spend 20 credits/);
+    assert.equal(mCalls.filter(([m]) => m === "POST").length, 0, "the first click only asks");
+    await page.click(".m3d-go");
+    await page.waitForSelector('.m3d-row:has-text("pineapple ornament")');
+    const start = mCalls.find(([m]) => m === "POST")[2];
+    assert.deepEqual([start.mode, start.color, start.images.length], ["photos", false, 1]);
+    assert.match(start.images[0], /^data:image\/png;base64,/);
+    await page.waitForSelector('.m3d-row .m3d-st:has-text("Ready")', { timeout: 15000 });
+    await page.waitForSelector(".m3d-stage canvas", { timeout: 15000 });
+    assert.ok(await page.locator('.m3d-acts button:has-text("Download 3MF")').isVisible());
+    assert.ok(await page.locator('.m3d-acts button:has-text("Download OBJ")').isVisible(), "OBJ download too");
+    await page.click('.m3d-acts button:has-text("Save to 3D file library")');
+    await page.waitForSelector('.m3d-acts a:has-text("Open in 3D file library")');
+    assert.ok(mCalls.some(([m, p, b]) => m === "POST" && p.endsWith("/save") && b.format === "3mf"), "saved as a 3MF");
+    await page.click('.m3d .seg-btn:has-text("From words")');
+    assert.equal(await page.locator('.m3d .seg-btn:has-text("With color")').isVisible(), false, "words pick color after the shape");
+    await page.fill("#m3d-prompt", "a palmetto tree desk ornament");
+    assert.ok(!(await page.locator(".m3d-go").isDisabled()));
+    await noOverflow("3D maker 1280");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await noOverflow("3D maker 390");
     await page.setViewportSize({ width: 1280, height: 900 });
   });
 
@@ -1104,7 +1312,7 @@ async function main() {
     assert.match(await page.locator("#lib-count").textContent(), /3 of 3 designs/);
     assert.equal(await card("logo-vector").locator("button").count(), 0, "SVG has no list button");
     assert.match(await card("logo-vector").textContent(), /Export it as a PNG/);
-    assert.equal(await card("lowcountry").locator('button[data-act="list"]').getAttribute("aria-label"), "Add lowcountry_sunset-FINAL.png to Elevated Designs");
+    assert.equal(await card("lowcountry").locator('button[data-act="list"]').getAttribute("aria-label"), "Add lowcountry_sunset-FINAL to Elevated Designs");
     await page.fill("#lib-q", "palmetto");
     assert.equal(await page.locator(".lcard").count(), 1);
     await page.fill("#lib-q", "");
@@ -1469,14 +1677,16 @@ async function main() {
   });
 
   await step("list a design: Elevated Designs page links straight to it; Service Map shows the route", async () => {
-    await page.click('a.nav[data-route="ed"]');
-    await page.click(".quick a:has-text('List a design')");
+    await page.click('.seg-btn[data-store="ed"]');
+    await page.click('a.nav[data-route="home"]');
+    await page.click(".home-head a:has-text('List a design')");
     await page.waitForSelector('.lcard:has-text("palmetto")');
     assert.equal(await page.locator('.seg-btn[data-store="ed"]').getAttribute("aria-pressed"), "true");
     const top = await page.locator("#list-design").evaluate((e) => e.getBoundingClientRect().top);
     assert.ok(top < 900, `panel scrolled into view (${top})`);
-    await page.click('a.nav[data-route="c3d"]');
-    assert.equal(await page.locator(".quick a", { hasText: "List a design" }).count(), 0, "no listing link on Charleston 3D");
+    await page.click('.seg-btn[data-store="c3d"]');
+    await page.click('a.nav[data-route="home"]');
+    assert.equal(await page.locator("#view a", { hasText: "List a design" }).count(), 0, "no listing link on Charleston 3D");
     await page.click('a.nav[data-route="map"]');
     assert.match(await page.locator(".route.brand-ed").textContent(), /List in one click/);
     assert.match(await page.locator(".route.brand-c3d").textContent(), /set customizable/);
@@ -1903,6 +2113,242 @@ async function main() {
     assert.ok(box && box.x + box.width <= 390, `Delete is on screen (${JSON.stringify(box)})`);
     if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "promotions-390.png"), fullPage: true }); }
     await page.setViewportSize({ width: 1280, height: 900 });
+  });
+
+  await step("team: shared board per store, add for an agent, done, reassign, remove; old device list moves onto it", async () => {
+    await page.click('.seg-btn[data-store="c3d"]');
+    await page.evaluate(() => localStorage.setItem("bc-todo-c3d", JSON.stringify([{ t: "Check Insights", d: false }, { t: "Call the print shop", d: false }])));
+    await page.click('a.nav[data-route="team"]');
+    await page.waitForSelector(".tasks .task");
+    assert.deepEqual(await page.locator(".tasks .task-t").evaluateAll((n) => n.map((x) => x.firstChild.textContent)), ["Call the print shop"], "only typed tasks move, not the starter ones");
+    assert.equal(await page.evaluate(() => localStorage.getItem("bc-todo-c3d")), null);
+    assert.equal(await page.locator('#task-owner option[value="ed"]').count(), 0, "no Elevated Designs agent on the Charleston 3D board");
+    await page.fill("#task-new", "Reprint the sign");
+    await page.selectOption("#task-owner", "c3d");
+    await page.click("#task-add");
+    await page.waitForFunction(() => document.querySelectorAll(".tasks .task").length === 2);
+    assert.deepEqual(teamCalls.at(-1).body, { store: "c3d", text: "Reprint the sign", owner: "c3d" });
+    const task = (t) => page.locator(".tasks .task", { hasText: t });
+    await task("Call the print shop").locator("input[type=checkbox]").check();
+    await page.waitForFunction(() => document.querySelectorAll(".tasks .task").length === 1);
+    assert.equal(boards.c3d.find((t) => t.text === "Call the print shop").done, true);
+    await page.click("#task-done-toggle");
+    await page.waitForSelector(".tasks .task.done");
+    await task("Reprint the sign").locator("select.owner").selectOption("marketing");
+    await page.waitForFunction(() => document.querySelector('.member[data-id="marketing"] .member-head .btn')?.textContent === "1 open");
+    await task("Call the print shop").locator("button.x").click();
+    await page.waitForFunction(() => document.querySelectorAll(".tasks .task").length === 1);
+    assert.equal(await page.locator(".member", { hasText: "Console" }).count(), 1, "the console's own jobs are listed too");
+    await noOverflow("team 1280");
+    if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "team-c3d-1280.png"), fullPage: true }); }
+    await page.click('.seg-btn[data-store="ed"]');
+    await page.waitForFunction(() => document.querySelector("#board-title")?.textContent === "Elevated Designs tasks");
+    assert.equal(await page.locator(".tasks .task").count(), 0, "the boards never mix");
+    assert.equal(await page.locator('.member[data-id="c3d"]').count(), 0);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.fill("#task-new", "Order more Gildan 5000 in navy");
+    await page.click("#task-add");
+    await page.waitForSelector(".tasks .task");
+    await noOverflow("team 390");
+    if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "team-ed-390.png"), fullPage: true }); }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.click('a.nav[data-route="home"]');
+    await page.waitForSelector(".home-tasks li");
+    assert.equal(await page.locator(".home-tasks li").first().textContent(), "Order more Gildan 5000 in navy");
+  });
+
+  await step("shirt builder: a switch per Elevated Designs product, none on Charleston 3D; off sends only the tag", async () => {
+    await page.click('a.nav[data-route="products"]');
+    await page.waitForSelector('.prow:has-text("Lowcountry Tee")');
+    const bsw = (t) => page.locator(".prow", { hasText: t }).locator('.switch[data-field="builder"]');
+    assert.equal(await bsw("Lowcountry Tee").getAttribute("aria-checked"), "true");
+    await page.selectOption("#prod-filter", "builder");
+    assert.equal(await page.locator(".prow").count(), 1);
+    await page.selectOption("#prod-filter", "all");
+    const before = posts.length;
+    await bsw("Lowcountry Tee").click();
+    await page.waitForFunction(() => document.querySelector('.prow[data-id$="/201"] .pcust > span')?.textContent === "Shirt builder");
+    assert.deepEqual(posts.at(-1).body, { store: "ed", id: PRODUCTS.ed[0].id, builder: false });
+    assert.equal(posts.length - before, 1);
+    assert.equal(await bsw("Lowcountry Tee").getAttribute("aria-checked"), "false");
+    assert.match(await toastText(), /Lowcountry Tee is out of the shirt builder/);
+    assert.equal(await page.locator(".prow", { hasText: "Lowcountry Tee" }).locator('.switch[data-field="live"]').getAttribute("aria-checked"), "true", "still live on the site");
+    await bsw("Lowcountry Tee").click();
+    await page.waitForFunction(() => document.querySelector('.prow[data-id$="/201"] .switch[data-field="builder"]')?.getAttribute("aria-checked") === "true" && !document.querySelector(".prow.pending"));
+    await page.click('.seg-btn[data-store="c3d"]');
+    await page.waitForSelector('.prow:has-text("Rainbow Row")');
+    assert.equal(await page.locator('.switch[data-field="builder"]').count(), 0);
+    assert.equal(await page.locator('#prod-filter option[value="builder"]').isDisabled(), true);
+  });
+
+  await step("design library: every Elevated Designs image with categories, filters, edit one, move several; no logos or Charleston 3D in List a design", async () => {
+    for (const k of [...images.keys()]) images.delete(k);
+    const put = (key, o) => images.set(key, { key, type: "image/png", size: 2048, added: 5000 - images.size, tags: "", ...o });
+    put("d1-0123abcd", { name: "kittl-cmaaaaaaaaaaaaaaaaaaaaaaaa", category: "Clipped Images", source: "kittl", public: true, tags: "kittl:cmaaaaaaaaaaaaaaaaaaaaaaaa" });
+    put("d2-0123abcd", { name: "Palmetto Moon.png", category: "Lowcountry", public: true });
+    put("d3-0123abcd", { name: "Shrimp Boat.png", category: "Lowcountry", public: false });
+    put("d4-0123abcd", { name: "kittl-cmbbbbbbbbbbbbbbbbbbbbbbbb", category: "Clipped Images", source: "kittl", public: false, tags: "kittl:cmbbbbbbbbbbbbbbbbbbbbbbbb" });
+    put("d5-0123abcd", { name: "c3d-wordmark.png", category: "Charleston3D", public: false });
+    put("d6-0123abcd", { name: "Holy City Tee.png", public: false, tags: "studio" });
+    await page.goto(`${BASE}#designs/ed`);
+    await page.waitForSelector(".dl-tile");
+    assert.equal(await page.locator(".dl-tile").count(), 5, "Charleston 3D art is kept out");
+    assert.match(await page.locator("#dl-count").textContent(), /5 of 5 images/);
+    assert.match(await page.locator(".dl").textContent(), /1 Charleston 3D image is stored in this library/);
+    const chips = await page.locator(".dl .cat-row .chip").evaluateAll((b) => b.map((x) => x.dataset.cat));
+    assert.deepEqual(chips, ["", "Clipped Images", "Lowcountry", "Saved designs", "Brand logos"], "categories, logos last");
+    await page.click('.dl .cat-row .chip[data-cat="Lowcountry"]');
+    assert.equal(await page.locator(".dl-tile").count(), 2);
+    await page.selectOption("#dl-show", "app");
+    assert.equal(await page.locator(".dl-tile").count(), 1, "only the shirt-app one");
+    await page.selectOption("#dl-show", "");
+    await page.click('.dl .cat-row .chip[data-cat=""]');
+    await page.fill("#dl-q", "shrimp");
+    assert.equal(await page.locator(".dl-tile").count(), 1);
+    await page.fill("#dl-q", "");
+    // open one, rename, move it and show it in the shirt app
+    await page.click('.dl-tile:has-text("Shrimp Boat")');
+    await page.waitForSelector("#dl-sheet[open] #dl-name");
+    await page.fill("#dl-name", "Shrimp Boat Sunset");
+    await page.fill("#dl-cat", "Coastal");
+    await page.check("#dl-pub");
+    await page.click("#dl-save");
+    await page.waitForSelector("#dl-sheet:not([open])", { state: "hidden" });
+    assert.deepEqual([images.get("d3-0123abcd").name, images.get("d3-0123abcd").category, images.get("d3-0123abcd").public], ["Shrimp Boat Sunset", "Coastal", true]);
+    await page.waitForSelector('.dl .cat-row .chip[data-cat="Coastal"]');
+    // several at once
+    await page.click("#dl-select");
+    await page.click('.dl-tile:has-text("Palmetto Moon")');
+    await page.click('.dl-tile:has-text("Holy City Tee")');
+    assert.match(await page.locator(".dl-bulk").textContent(), /2 selected/);
+    await page.fill("#dl-bulk-cat", "Coastal");
+    await page.click("#dl-bulk-move");
+    await page.waitForFunction(() => document.querySelectorAll('.dl-tile').length && !document.querySelector(".dl-bulk").textContent.includes("2 selected"));
+    assert.equal(images.get("d2-0123abcd").category, "Coastal");
+    assert.equal(images.get("d6-0123abcd").category, "Coastal");
+    await page.click("#dl-select");
+    for (const w of [1280, 390]) {
+      await page.setViewportSize({ width: w, height: 860 });
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `no sideways scroll at ${w}`);
+      if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, `design-library-${w}.png`), fullPage: true }); }
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    // List a design: designs only, with their pictures
+    await page.goto(`${BASE}#products/ed/list`);
+    await page.click("#lib-refresh");
+    await page.waitForSelector(".lcard");
+    const names = await page.locator(".lcard strong").allTextContents();
+    assert.equal(names.length, 4, `logos and Charleston 3D art left out: ${names}`);
+    assert.ok(!names.some((n) => /wordmark/.test(n)));
+    assert.ok(names.some((n) => /^Clipped Images [0-9A-Z]{4}$/.test(n)), "Kittl imports get a readable name");
+    if (SCREENS) for (const w of [1280, 390]) { await page.setViewportSize({ width: w, height: 860 }); await page.screenshot({ path: path.join(SCREENS, `list-design-${w}.png`) }); }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.click('.lib-tools .chip[data-cat="Coastal"]');
+    assert.equal(await page.locator(".lcard").count(), 3);
+    // shirt designer: same categories, Put on a shirt from the library
+    await page.goto(`${BASE}#designs/ed`);
+    await page.click('.dl-tile:has-text("Palmetto Moon")');
+    await page.click("#dl-shirt");
+    await page.waitForSelector(".ed-print .ed-pl");
+    assert.match(await page.locator(".ed-side").textContent(), /Selected image/);
+    assert.ok(await page.locator('.ed-pane .cat-row .chip[data-cat="Brand logos"]').count(), "logos have their own category in the designer");
+  });
+
+  await step("shirt designer: edit an image (remove a white background, adjust, one color, crop) and the print file matches", async () => {
+    const out = await page.evaluate(async () => {
+      const { applyFx } = await import("./assets/studio.js");
+      const px = new Uint8ClampedArray([255, 255, 255, 255, 10, 20, 200, 255, 250, 250, 250, 255, 100, 100, 100, 255]);
+      const fx = { knock: "white", tol: 10, bright: 0, contrast: 0, sat: 0, hue: 0, gray: false, invert: false, ink: "", crop: [0, 0, 0, 0] };
+      const a = [...applyFx(px.slice(), 2, 2, fx)];
+      const b = [...applyFx(px.slice(), 2, 2, { ...fx, knock: "", invert: true })];
+      const c = [...applyFx(px.slice(), 2, 2, { ...fx, knock: "", ink: "#b8892a" })];
+      const d = [...applyFx(px.slice(), 2, 2, { ...fx, knock: "", gray: true })];
+      return { a, b, c, d };
+    });
+    assert.equal(out.a[3], 0, "white goes clear");
+    assert.equal(out.a[11], 0, "near-white goes clear too");
+    assert.equal(out.a[7], 255, "the art stays");
+    assert.deepEqual(out.b.slice(4, 7), [245, 235, 55], "invert");
+    assert.deepEqual(out.c.slice(4, 8), [184, 137, 42, 255], "one color keeps the shape");
+    assert.equal(out.d[4], out.d[5], "black and white");
+    // in the editor
+    await page.waitForSelector("#fx-panel");
+    const before = await page.locator(".ed-print .ed-pl").last().getAttribute("src");
+    await page.click('#fx-panel [data-knock="white"]');
+    await page.waitForFunction((b) => { const s = [...document.querySelectorAll(".ed-print .ed-pl")].at(-1)?.getAttribute("src"); return s && s !== b && s.startsWith("blob:"); }, before);
+    assert.match(await page.locator("#fx-panel summary").textContent(), /Edited/);
+    const h0 = await page.locator(".print-area .layer.sel").evaluate((n) => n.getBoundingClientRect().height);
+    await page.locator('#fx-panel input[data-crop="1"]').fill("40");
+    const h1 = await page.locator(".print-area .layer.sel").evaluate((n) => n.getBoundingClientRect().height);
+    assert.ok(h1 < h0, "cropping the top makes it shorter");
+    if (SCREENS) for (const w of [1280, 390]) {
+      await page.setViewportSize({ width: w, height: 900 });
+      await page.waitForTimeout(200);
+      await page.locator("#fx-panel").scrollIntoViewIfNeeded();
+      await page.screenshot({ path: path.join(SCREENS, `designer-edit-${w}.png`), fullPage: w === 390 });
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.click('#fx-panel [data-fx="gray"]');
+    assert.equal(await page.locator('#fx-panel [data-fx="gray"]').getAttribute("aria-pressed"), "true");
+    await page.click('.ed-side button:has-text("Flip upside down")');
+    assert.match(await page.locator(".ed-print .ed-pl").last().evaluate((n) => n.style.transform), /scaleY\(-1\)/);
+    const [dl] = await Promise.all([page.waitForEvent("download"), page.click('.ed-side button:has-text("Download print file")')]);
+    assert.match(dl.suggestedFilename(), /^print-front-/);
+    await page.click('.ed-side button:has-text("Undo all image edits")');
+    await page.waitForFunction(() => !document.querySelector("#fx-panel summary").textContent.includes("Edited"));
+  });
+
+  await step("3D file library: add a whole folder: only its 3MF files, none twice", async () => {
+    await page.goto(`${BASE}#files/c3d`);
+    await page.waitForSelector("#folder-add");
+    const zip = Buffer.from([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]);
+    const before = files.size;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "c3d-folder-"));
+    fs.writeFileSync(path.join(dir, "keychain.3mf"), zip);
+    fs.writeFileSync(path.join(dir, "vase.3mf"), zip);
+    fs.writeFileSync(path.join(dir, "notes.txt"), "hi");
+    fs.writeFileSync(path.join(dir, "part.stl"), "solid x\nendsolid x");
+    await page.setInputFiles("#folder-in", dir);
+    await page.waitForSelector(".toast >> text=Saved 2 files");
+    if (SCREENS) for (const w of [1280, 390]) { await page.setViewportSize({ width: w, height: 860 }); await page.screenshot({ path: path.join(SCREENS, `files-folder-${w}.png`), fullPage: true }); }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    assert.equal(files.size - before, 2, "only the 3MF files");
+    const again = fs.mkdtempSync(path.join(os.tmpdir(), "c3d-folder-"));
+    fs.writeFileSync(path.join(again, "keychain.3mf"), zip);
+    await page.setInputFiles("#folder-in", again);
+    await page.waitForSelector(".toast >> text=already in the library");
+    assert.equal(files.size - before, 2, "not added twice");
+  });
+
+  await step("back button: on every page but Home; goes back in the console, or Home when opened directly", async () => {
+    for (const k of ["c3d", "ed"]) {
+      await page.goto(`${BASE}#home/${k}`);
+      await page.waitForSelector('a.nav[data-route="home"][aria-current="page"]');
+      assert.equal(await page.locator("#view .back-btn").count(), 0, "no Back on Home");
+      const routes = await page.locator("#navs a.nav[href^='#']").evaluateAll((as) => as.map((a) => a.dataset.route).filter((r) => r && r !== "home"));
+      assert.ok(routes.length > 5, `${k} has pages`);
+      for (const r of routes) {
+        await page.click(`a.nav[data-route="${r}"]`);
+        await page.waitForFunction((x) => document.querySelector(`a.nav[data-route="${x}"]`)?.getAttribute("aria-current") === "page", r);
+        await page.waitForSelector("#view .back-btn", { state: "attached", timeout: 15000 }).catch(() => { throw new Error(`${k}/${r} has no Back button`); });
+        assert.equal(await page.locator("#view .back-btn").count(), 1, `${k}/${r}: one Back button`);
+      }
+      // Back returns to the page before
+      await page.click('a.nav[data-route="insights"]');
+      await page.waitForFunction(() => location.hash.startsWith("#insights"));
+      await page.click('a.nav[data-route="share"]');
+      await page.waitForSelector('#view .back-btn');
+      await page.waitForFunction(() => location.hash.startsWith("#share"));
+      await page.click("#view .back-btn");
+      await page.waitForFunction(() => location.hash.startsWith("#insights"));
+    }
+    // opened straight from a link: Back goes to that brand's Home
+    const fresh = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await fresh.goto(`${BASE}#share/ed`);
+    await fresh.waitForSelector("#view .back-btn");
+    await fresh.click("#view .back-btn");
+    await fresh.waitForFunction(() => location.hash === "#home/ed");
+    await fresh.close();
   });
 
   await step("no console errors", async () => {

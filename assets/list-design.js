@@ -7,9 +7,13 @@
 import { el, toast } from "./app.js";
 import { STORES, api, host } from "./api.js";
 import { SIZES, blankLabel, buildListing, colorSlug, describe, presetColors, seoFor, variantsFor } from "./listing.js";
+import { displayName, filterBar, isLogo, isOtherBrand } from "./image-filters.js";
 
 const LISTABLE = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-const fileUrl = (key) => `/api/images/${encodeURIComponent(key)}`;
+// Private designs (saved from the shirt designer) load through the signed link the keyed list hands out.
+const fileUrl = (item) => item.url ?? `/api/images/${encodeURIComponent(item.key)}`;
+// Brand logos and the other brand's art aren't designs to sell, so they never show here.
+const listable = (i) => !isLogo(i) && !isOtherBrand(i);
 const ext = () => el("span", { class: "ext", "aria-hidden": "true" }, "↗");
 
 let template = null; // from GET /api/listings, once per page load
@@ -19,16 +23,16 @@ const listed = new Map(); // imageKey -> { url, adminUrl, title } for this visit
 const pendingOps = new Map();
 
 export function listPanel({ onListed = () => {} } = {}) {
-  const state = { items: [], q: "", loading: false, error: null, loaded: false };
+  const state = { items: [], loading: false, error: null, loaded: false };
   const site = host(STORES.ed.site);
-  const search = el("input", { class: "field", type: "search", id: "lib-q", placeholder: "Search designs", "aria-label": "Search designs" });
+  const filters = filterBar({ onChange: () => draw(), id: "lib", placeholder: "Search designs" });
   const reload = el("button", { class: "btn ghost", type: "button", id: "lib-refresh" }, "Refresh");
   const count = el("p", { class: "muted small", id: "lib-count", "aria-live": "polite" });
   const grid = el("div", { class: "ldesigns", role: "list", "aria-labelledby": "lib-title" });
   const section = el("section", { class: "panel brand-band brand-ed", id: "list-design", "aria-labelledby": "lib-title" },
-    el("div", { class: "panel-head" }, el("h2", { id: "lib-title" }, `List a design on ${site}`), el("a", { class: "btn ghost", href: "#studio" }, "Open Design Studio")),
+    el("div", { class: "panel-head" }, el("h2", { id: "lib-title" }, `List a design on ${site}`), el("a", { class: "btn ghost", href: "#studio/ed" }, "Open shirt designer")),
     el("p", { class: "muted" }, "Pick a design from the image library. Add to Elevated Designs opens a ready-made T-shirt listing (shirts, colors, sizes, prices, description, SEO) to check, and List it puts it on the store, live straight away."),
-    el("div", { class: "toolbar" }, search, reload), count, grid);
+    el("div", { class: "row lib-tools" }, filters.el, reload), count, grid);
 
   const sheet = theSheet();
   const done = (key, out) => {
@@ -41,14 +45,14 @@ export function listPanel({ onListed = () => {} } = {}) {
     const ok = LISTABLE.has(i.type);
     const was = listed.get(i.key);
     return el("div", { class: "lcard", role: "listitem", "data-key": i.key },
-      el("img", { src: fileUrl(i.key), alt: "", loading: "lazy", width: "160", height: "160" }),
+      el("img", { src: fileUrl(i), alt: "", loading: "lazy", width: "160", height: "160" }),
       el("div", { class: "lmeta" },
-        el("strong", {}, i.name || i.key),
+        el("strong", {}, displayName(i)),
         i.tags ? el("span", { class: "muted small" }, i.tags) : null,
         was ? el("span", { class: "row small" }, el("span", { class: "pill s-live" }, "Listed"),
           el("a", { href: was.url, target: "_blank", rel: "noopener", "data-act": "listed-view" }, "View", ext())) : null),
       ok
-        ? el("button", { class: "btn brand", type: "button", "data-act": "list", "aria-label": `Add ${i.name || "this design"} to Elevated Designs`, onclick: (e) => sheet.open(i, e.currentTarget, done) }, "Add to Elevated Designs")
+        ? el("button", { class: "btn brand", type: "button", "data-act": "list", "aria-label": `Add ${displayName(i)} to Elevated Designs`, onclick: (e) => sheet.open(i, e.currentTarget, done) }, "Add to Elevated Designs")
         : el("p", { class: "muted small" }, "SVG can't be a Shopify product photo. Export it as a PNG in the Design Studio to list it."));
   }
 
@@ -60,13 +64,12 @@ export function listPanel({ onListed = () => {} } = {}) {
         el("div", { class: "row" }, el("button", { class: "btn", type: "button", onclick: load }, "Try again"))));
       return;
     }
-    const q = state.q.trim().toLowerCase();
-    const shown = state.items.filter((i) => !q || `${i.name} ${i.tags ?? ""}`.toLowerCase().includes(q));
+    const shown = filters.apply(state.items);
     count.textContent = state.items.length ? `${shown.length} of ${state.items.length} designs` : "";
     if (!state.items.length) {
       grid.replaceChildren(el("div", { class: "state state-empty" }, el("strong", {}, "No designs in the online library yet"),
         el("p", {}, "Upload them in the Design Studio, then come back to list them."),
-        el("div", { class: "row" }, el("a", { class: "btn", href: "#studio" }, "Open Design Studio"))));
+        el("div", { class: "row" }, el("a", { class: "btn", href: "#studio/ed" }, "Open shirt designer"))));
       return;
     }
     grid.replaceChildren(...(shown.length ? shown.map(card) : [el("p", { class: "muted" }, "No designs match that search.")]));
@@ -76,7 +79,8 @@ export function listPanel({ onListed = () => {} } = {}) {
     state.loading = true; state.error = null; draw();
     try {
       const out = await api("/api/images", { key: true, reason: "The image library needs the console key (the CONSOLE_KEY value set for this console)." });
-      state.items = out.items ?? [];
+      state.items = (out.items ?? []).filter(listable);
+      filters.setItems(state.items);
     } catch (e) {
       state.items = []; state.error = e;
     }
@@ -84,7 +88,6 @@ export function listPanel({ onListed = () => {} } = {}) {
     draw();
   }
 
-  search.addEventListener("input", () => { state.q = search.value; draw(); });
   reload.addEventListener("click", load);
   return {
     el: section,
@@ -114,10 +117,10 @@ function makeSheet() {
 
   function head(item) {
     return el("div", { class: "sheet-head" },
-      el("img", { src: fileUrl(item.key), alt: "", width: "64", height: "64" }),
+      el("img", { src: fileUrl(item), alt: "", width: "64", height: "64" }),
       el("div", { class: "stack", style: "gap:2px" }, el("span", { class: "eyebrow" }, "Elevated Designs"),
         el("h2", { id: "ls-heading" }, "Add to Elevated Designs"),
-        el("span", { class: "muted small" }, item.name || item.key)));
+        el("span", { class: "muted small" }, displayName(item))));
   }
 
   function fail(item, e) {

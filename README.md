@@ -108,6 +108,12 @@ If a scope is missing, that part of the page says which scope to add and the res
 - **Plain words on the page.** The page never shows setting names. "Connect Google Search Console" means `GSC_SERVICE_ACCOUNT` (and `<PREFIX>_GSC_PROPERTY` if the property isn't the domain), "Connect Google Analytics" means `C3D_GA4_PROPERTY` / `ED_GA4_PROPERTY`, "Connect Bing Webmaster Tools" means `BING_WEBMASTER_API_KEY`, "the console's storage" means the `MARKETING` KV binding, an IndexNow key means `C3D_INDEXNOW_KEY` / `ED_INDEXNOW_KEY`, and "automatic morning fixes are switched off" means `MARKETING_AUTOFIX=off`.
 - **UTM link builder and Tools.** Tagged links for the store's own pages, a button to send the whole sitemap to IndexNow, links to the outside tools, and a monthly routine checklist (kept in that browser).
 
+## 3D maker (Charleston 3D)
+
+`#maker3d/c3d` turns 1 to 4 photos of one object, or a short description, into a printable model with [Meshy](https://www.meshy.ai) (`lib/meshy.mjs`, `assets/meshy.js`). It uses Aaron's Meshy credits: shape only 20, photos with color 30, color added to a words model later 10, high detail +5. The start button asks twice before spending. Every model comes back as a 3MF and an STL for Bambu Studio and a GLB, turns in a 3D view, and saves into the 3D file library with one click. Meshy deletes models after 3 days, so save the ones worth keeping.
+
+Turn it on once with `npx wrangler secret put MESHY_API_KEY` (the key from meshy.ai › API). The key stays in the Worker; the page only ever talks to the console. Jobs are listed under `c3d-meshy:` in the IMAGES KV namespace.
+
 ## Kittl library sync
 
 The image library follows the Kittl "Clipped Images" folder by itself, so the shirt apps' designs stay current.
@@ -154,7 +160,7 @@ npx wrangler secret put ED_SHOPIFY_DOMAIN
 npx wrangler secret put ED_ADMIN_TOKEN
 ```
 
-Use `C3D_CLIENT_ID` and `C3D_CLIENT_SECRET` (or the `ED_` pair) instead of the `_ADMIN_TOKEN` if the store's app gives you a Client ID and secret; add the optional ones (`C3D_INDEXNOW_KEY`, `ED_INDEXNOW_KEY`, `BING_WEBMASTER_API_KEY`, `GSC_SERVICE_ACCOUNT`, `ED_HANDLING_DAYS`, `C3D_SITE_URL`, `ED_SITE_URL`) the same way. The full list is in [Connect a store](#connect-a-store). Each secret works straight away.
+Use `C3D_CLIENT_ID` and `C3D_CLIENT_SECRET` (or the `ED_` pair) instead of the `_ADMIN_TOKEN` if the store's app gives you a Client ID and secret; add the optional ones (`C3D_INDEXNOW_KEY`, `ED_INDEXNOW_KEY`, `BING_WEBMASTER_API_KEY`, `GSC_SERVICE_ACCOUNT`, `ED_HANDLING_DAYS`, `C3D_SITE_URL`, `ED_SITE_URL`, `MESHY_API_KEY`) the same way. The full list is in [Connect a store](#connect-a-store). Each secret works straight away.
 
 - See which are set: `npx wrangler secret list` (names only, never values)
 - Change one: run `npx wrangler secret put NAME` again

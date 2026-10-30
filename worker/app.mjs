@@ -9,17 +9,22 @@
 //   IMAGES   Workers KV namespace holding the image library (lib/kv-store.mjs)
 //   PRICING  Workers KV namespace holding where the shirt price sync got to (lib/pricing.mjs)
 //   MARKETING  Workers KV namespace holding each store's daily marketing scores and change log
-//              (lib/marketing.mjs, lib/promotions.mjs)
+//              (lib/marketing.mjs, lib/promotions.mjs) and the Team task boards (lib/team.mjs)
 // Secrets (set with `npx wrangler secret put NAME`, never in code): CONSOLE_KEY, the Shopify
-// domains and tokens (C3D_*, ED_*), and optionally INDEXNOW_KEY, ED_HANDLING_DAYS, *_SITE_URL.
+// domains and tokens (C3D_*, ED_*), and optionally INDEXNOW_KEY, ED_HANDLING_DAYS, *_SITE_URL,
+// MESHY_API_KEY (the 3D maker, lib/meshy.mjs).
 import { handleProducts, HttpError } from "../lib/shopify.mjs";
 import { handleInsights } from "../lib/insights.mjs";
 import { handleListings, libraryReader } from "../lib/listings.mjs";
 import { handleImages } from "../lib/images.mjs";
+import { handleFiles } from "../lib/files.mjs";
+import { r2BlobStore, combinedStore } from "../lib/r2-store.mjs";
+import { handleMeshy } from "../lib/meshy.mjs";
 import { kvBlobStore } from "../lib/kv-store.mjs";
 import { handlePricing, scheduledPricing } from "../lib/pricing.mjs";
 import { handleMarketing, runScheduledAudits, runScheduledFixes } from "../lib/marketing.mjs";
 import { handlePromotions } from "../lib/promotions.mjs";
+import { handleTeam } from "../lib/team.mjs";
 import { runScheduledSnapshots } from "../lib/tracker.mjs";
 import { syncKittlLibrary, STATE_KEY as KITTL_STATE_KEY } from "../lib/kittl-sync.mjs";
 
@@ -31,6 +36,17 @@ export const SITE_HEADERS = {
   "x-frame-options": "DENY",
   "cross-origin-opener-policy": "same-origin",
   "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=()",
+};
+// The tool apps in tools/ (nameplate maker, hype chain maker, print trends) are single files with
+// their own inline scripts, and run framed inside the console, so they get their own policy:
+// same-origin framing only, no outside connections except the fonts and the web image search.
+export const TOOL_HEADERS = {
+  "content-security-policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' blob: data: https://*.wikipedia.org https://commons.wikimedia.org https://upload.wikimedia.org; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'",
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "strict-origin-when-cross-origin",
+  "x-frame-options": "SAMEORIGIN",
+  "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=()",
+  "x-robots-tag": "noindex, nofollow",
 };
 // API answers: JSON that is never sniffed, cached, framed or run as a page.
 const API_HEADERS = {
@@ -87,7 +103,13 @@ const listings = jsonRoute(handleListings);
 const pricing = jsonRoute(handlePricing);
 const marketing = jsonRoute(handleMarketing);
 const promotions = jsonRoute(handlePromotions);
+const team = jsonRoute(handleTeam);
 const marketingKv = (env) => (env?.MARKETING && typeof env.MARKETING.get === "function" ? env.MARKETING : null);
+
+// Previews are small, so they stay in KV either way.
+const fileStore = (env) => env.FILES
+  ? combinedStore(r2BlobStore(env.FILES, "c3d-file/"), kvBlobStore(env.IMAGES, "c3d-file:"))
+  : kvBlobStore(env.IMAGES, "c3d-file:");
 
 export async function handleRequest(req, env) {
   const { pathname } = new URL(req.url);
@@ -97,6 +119,8 @@ export async function handleRequest(req, env) {
     if (pathname === "/api/marketing") return await marketing(req, env, { kv: marketingKv(env) });
     // Promotions log their changes in the Marketing change log, so they share its KV.
     if (pathname === "/api/promotions") return await promotions(req, env, { kv: marketingKv(env) });
+    // The Team page's task board is small JSON, kept in the same KV under "team:<store>".
+    if (pathname === "/api/team") return await team(req, env, { kv: marketingKv(env) });
     if (pathname === "/api/listings") {
       // The design is read through the image library's own read route, from the same KV namespace.
       const readImage = async (key) => libraryReader({ blobs: imageStore(env), env: envReader(env) })(key);
@@ -112,6 +136,17 @@ export async function handleRequest(req, env) {
     }
     if (pathname === "/api/images" || pathname.startsWith("/api/images/"))
       return await handleImages(req, { blobs: imageStore(env), env: envReader(env) });
+    // Charleston 3D's 3D files: in the FILES R2 bucket once it's bound (older ones stay readable in KV),
+    // otherwise in the IMAGES KV namespace under their own prefix. Never in the image list.
+    if (pathname === "/api/files" || pathname.startsWith("/api/files/")) {
+      imageStore(env); // same binding check and message as the image library
+      return await handleFiles(req, { blobs: fileStore(env), thumbs: kvBlobStore(env.IMAGES, "c3d-thumb:"), env: envReader(env) });
+    }
+    // The 3D maker: jobs under their own prefix; a model it keeps goes into the 3D file library above.
+    if (pathname === "/api/meshy" || pathname.startsWith("/api/meshy/")) {
+      imageStore(env);
+      return await handleMeshy(req, { jobs: kvBlobStore(env.IMAGES, "c3d-meshy:"), files: fileStore(env), env: envReader(env), fetch: (input, init) => fetch(input, init) });
+    }
     if (pathname === "/api" || pathname.startsWith("/api/")) return json({ error: "Not found" }, 404);
   } catch (e) {
     if (e instanceof HttpError) return json({ error: e.message, code: e.code }, e.status);
@@ -122,7 +157,7 @@ export async function handleRequest(req, env) {
   if (!env?.ASSETS) return new Response("Not found", { status: 404, headers: SITE_HEADERS });
   const res = await env.ASSETS.fetch(req);
   const out = new Response(res.body, res);
-  for (const [k, v] of Object.entries(SITE_HEADERS)) out.headers.set(k, v);
+  for (const [k, v] of Object.entries(pathname.startsWith("/tools/") ? TOOL_HEADERS : SITE_HEADERS)) out.headers.set(k, v);
   return out;
 }
 
