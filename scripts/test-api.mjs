@@ -807,11 +807,14 @@ test("images: content must match the declared type, and only image types are tak
 
 const { handleMember, clearMemberCache } = await import("../lib/members.mjs");
 // A fake store for store sign-in: the two discovery files, the Customer Account API and the Admin API.
-function fakeMemberShop({ tags = ["Pro", "designs:benz1"], goodToken = "shcat_GOOD", scopeDenied = false } = {}) {
+function fakeMemberShop({ tags = ["Pro", "designs:benz1"], goodToken = "shcat_GOOD", scopeDenied = false, noDiscovery = false } = {}) {
   const calls = [];
   const res = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   const fetch = async (url, init = {}) => {
     calls.push({ url: String(url), auth: init.headers?.authorization });
+    if (noDiscovery && String(url).includes("/.well-known/")) return new Response("Forbidden", { status: 403 });
+    if (url === "https://account.elevatedshirts.com/customer/api/2026-10/graphql")
+      return init.headers.authorization === goodToken ? res({ data: { customer: { id: "gid://shopify/Customer/78", firstName: "Lee" } } }) : res({ errors: [{ message: "Unauthorized" }] }, 401);
     if (url === "https://elevatedshirts.com/.well-known/openid-configuration")
       return res({ authorization_endpoint: "https://shopify.com/authentication/123/oauth/authorize", token_endpoint: "https://shopify.com/authentication/123/oauth/token", end_session_endpoint: "https://shopify.com/authentication/123/logout" });
     if (url === "https://elevatedshirts.com/.well-known/customer-account-api") return res({ graphql_api: "https://shopify.com/123/account/customer/api/2025-10/graphql" });
@@ -879,6 +882,20 @@ test("store sign-in: config, token check, tag-unlocked images with signed links,
   assert.equal((await handleMember(imgReq("/api/member", { method: "POST", headers: { authorization: "Bearer shcat_GOOD" } }), ctx)).status, 405);
   const evil = await handleMember(imgReq("/api/member", { method: "OPTIONS", headers: { origin: "https://evil.example" } }), ctx);
   assert.equal(evil.headers.get("access-control-allow-origin"), null, "other sites get no CORS");
+});
+
+test("store sign-in: the built-in addresses are used when the store refuses its discovery files", async () => {
+  clearMemberCache();
+  const blobs = fakeBlobs();
+  const ctx = { blobs, env: envOf(), fetch: fakeMemberShop({ noDiscovery: true }).fetch };
+  const cfg = await handleMember(imgReq("/api/member/config"), ctx);
+  assert.equal(cfg.status, 200);
+  assert.deepEqual(await cfg.json(), { clientId: "1cd847fd-6a88-46bb-af04-d486241fc519",
+    authorize: "https://account.elevatedshirts.com/authentication/oauth/authorize", token: "https://account.elevatedshirts.com/authentication/oauth/token", logout: "https://account.elevatedshirts.com/authentication/logout" });
+  const me = await handleMember(imgReq("/api/member", { headers: { authorization: "Bearer shcat_GOOD" } }), ctx);
+  assert.equal(me.status, 200);
+  assert.equal((await me.json()).customer.firstName, "Lee");
+  assert.equal((await handleMember(imgReq("/api/member", { headers: { authorization: "Bearer shcat_FAKE" } }), ctx)).status, 401, "a fake token is turned away, not a store error");
 });
 
 test("store sign-in: not switched on, missing scope, and access field edits", async () => {
