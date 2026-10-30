@@ -48,7 +48,7 @@ export async function renderTeam() {
     list);
   const team = el("section", { class: "panel", "aria-labelledby": "team-title" },
     el("div", { class: "panel-head" }, el("h2", { id: "team-title" }, "Who does what"), el("span", { class: "muted small" }, "Times are Charleston time")));
-  root.append(storeSwitcher(state.store, (k) => { state.store = k; state.who = "all"; load(); }), status, el("div", { class: "team-cols" }, board, team));
+  root.append(storeSwitcher(state.store, (k) => { state.store = k; state.who = "all"; load(); }), status, el("div", { class: "team-cols" }, board, team), handoffBoard());
 
   const nameOf = (id) => state.roster.find((m) => m.id === id)?.name ?? id;
   const openFor = (id) => state.tasks.filter((t) => !t.done && t.owner === id).length;
@@ -167,4 +167,71 @@ export async function homeTasks(k, hasKey) {
     box.append(el("p", { class: "muted" }, "Couldn't load the board."), link);
   }
   return box;
+}
+
+// ---------- handoff board (/api/handoffs, lib/handoffs.mjs) ----------
+// Every agent run writes one note here; the ops manager run reads them twice a day and writes the
+// brief (Needs you, Fixed, Watching) that Home shows.
+const HO_API = "/api/handoffs";
+const when = (iso) => (iso ? new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "");
+const STATUS_PILL = { ok: "s-live", partial: "s-attn", failed: "s-blind" };
+
+function briefLists(brief) {
+  const part = (title, items, id) => el("div", { class: "brief-part", "data-part": id }, el("h3", {}, title),
+    items?.length ? el("ul", {}, items.map((t) => el("li", {}, t))) : el("p", { class: "muted small" }, "Nothing."));
+  return el("div", { class: "brief" }, part("Needs you", brief.needsYou, "needs"), part("Fixed", brief.fixed, "fixed"), part("Watching", brief.watching, "watching"));
+}
+
+function handoffBoard() {
+  const st = { lane: "all", items: [], stale: [], lanes: [], error: null, loading: true };
+  const laneSel = el("select", { class: "field", id: "handoff-lane", "aria-label": "Show handoffs from" });
+  const list = el("div", { class: "handoffs", role: "list", "aria-labelledby": "handoff-title" });
+  const panel = el("section", { class: "panel", "aria-labelledby": "handoff-title" },
+    el("div", { class: "panel-head" }, el("h2", { id: "handoff-title" }, "Handoff board"), el("span", { class: "muted small" }, "One note per agent run, kept 30 days")),
+    el("div", { class: "toolbar" }, laneSel), list);
+  const card = (h) => el("article", { class: "handoff", role: "listitem", "data-lane": h.lane },
+    el("div", { class: "member-head" }, el("strong", {}, `${h.lane}: ${h.task}`), el("span", { class: `pill ${STATUS_PILL[h.status] ?? "b-other"}` }, h.status),
+      el("span", { class: "muted small" }, when(h.at))),
+    el("p", {}, h.did),
+    h.changed ? el("p", { class: "muted small" }, `Changed: ${h.changed}`) : null,
+    h.next ? el("p", { class: "muted small" }, `Next: ${h.next}`) : null,
+    h.needsAaron ? el("p", { class: "small" }, el("strong", {}, "Needs you: "), h.needsAaron) : null,
+    h.headsUp?.length ? el("ul", { class: "jobs" }, h.headsUp.map((x) => el("li", {}, `Heads-up to ${x.to}: ${x.text}`))) : null);
+  function draw() {
+    if (st.loading) { list.replaceChildren(el("p", { class: "muted" }, "Loading…")); return; }
+    if (st.error) { list.replaceChildren(el("p", { class: "muted" }, `Couldn't load the handoff board: ${st.error.message}`)); return; }
+    laneSel.replaceChildren(el("option", { value: "all" }, "Every lane"), ...st.lanes.map((l) => el("option", { value: l, selected: l === st.lane }, l)));
+    const shown = st.items.filter((h) => st.lane === "all" || h.lane === st.lane || h.headsUpTo?.includes(st.lane));
+    list.replaceChildren(
+      ...(st.stale.length ? [el("p", { class: "state state-stale", role: "status" }, `No note in the last 36 hours from: ${st.stale.join(", ")}. Check that their jobs ran.`)] : []),
+      ...(shown.length ? shown.slice(0, 40).map(card) : [el("p", { class: "muted" }, "No handoffs yet. Each agent writes one at the end of every run.")]));
+  }
+  async function load() {
+    try {
+      const out = await api(`${HO_API}?limit=200`, { key: true, reason: KEY_REASON });
+      Object.assign(st, { items: out.handoffs ?? [], stale: out.stale ?? [], lanes: out.lanes ?? [] });
+    } catch (e) { st.error = e; }
+    st.loading = false;
+    draw();
+  }
+  laneSel.addEventListener("change", () => { st.lane = laneSel.value; draw(); });
+  draw();
+  load();
+  return panel;
+}
+
+// Home's short version: the manager run's latest brief. Never asks for the key on Home.
+export async function homeBrief(hasKey) {
+  const link = el("a", { class: "btn ghost", href: "#team", style: "justify-self:start" }, "Handoff board");
+  if (!hasKey) return [el("p", { class: "muted" }, "The agents' twice-daily report is on the Team page."), link];
+  try {
+    const out = await api(`${HO_API}?limit=1`);
+    const b = out.brief;
+    const parts = [b ? briefLists(b) : el("p", { class: "muted" }, "No report yet. The ops manager run writes one at 6:30 AM and 5:30 PM.")];
+    if (b) parts.push(el("p", { class: "muted small" }, `From the manager run, ${when(b.at)}`));
+    if (out.stale?.length) parts.push(el("p", { class: "small" }, `No note in 36 hours from: ${out.stale.join(", ")}.`));
+    return [...parts, link];
+  } catch {
+    return [el("p", { class: "muted" }, "Couldn't load the agents' report."), link];
+  }
 }
