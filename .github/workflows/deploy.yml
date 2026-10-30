@@ -2,6 +2,8 @@
 # the Actions tab). Needs two repository secrets: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
 # (see the README, "Deploy from GitHub instead"). The console's own secrets (CONSOLE_KEY, Shopify
 # tokens) live only on the Worker, set with `wrangler secret put`; deploys keep them.
+# Until CLOUDFLARE_API_TOKEN is added, the Deploy step is skipped (deploy from the PC instead),
+# so a merge to main still runs the checks without sending a failure email.
 name: Deploy to Cloudflare
 
 on:
@@ -20,6 +22,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,6 +36,7 @@ jobs:
       - run: npm run check
       - run: npm test
       - name: Deploy
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' }}
         run: npx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
