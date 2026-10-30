@@ -14,8 +14,8 @@ function layerTexture() {
 }
 
 export class Preview {
-  constructor(host) {
-    this.host = host;
+  constructor(host, { dark = false } = {}) {
+    this.host = host; this.dark = dark;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     this.renderer.shadowMap.enabled = true;
@@ -43,13 +43,20 @@ export class Preview {
     this.floor = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.ShadowMaterial({ opacity: 0.16 }));
     this.floor.receiveShadow = true; this.floor.position.z = -0.01; this.scene.add(this.floor);
 
+    // printer bed: 256 mm square with a 10 mm grid, shown in the sign maker's 3D view
+    this.bed = new THREE.Group();
+    const grid = new THREE.GridHelper(256, 26, dark ? 0x8a8f99 : 0xb9b2a4, dark ? 0x5c616b : 0xd8d0c0);
+    grid.rotation.x = Math.PI / 2; grid.position.z = -0.02; this.bed.add(grid);
+    this.bed.visible = false; this.scene.add(this.bed);
+    if (dark) this.floor.material.opacity = 0.35;
+
     this.layers = layerTexture();
     this.group = new THREE.Group(); this.scene.add(this.group);
     this.fitted = false;
 
     this.resize();
-    new ResizeObserver(() => this.resize()).observe(host);
-    const loop = () => { if (this.controls.update()) this.draw(); requestAnimationFrame(loop); };
+    this.ro = new ResizeObserver(() => this.resize()); this.ro.observe(host);
+    const loop = () => { if (this.dead) return; if (this.controls.update()) this.draw(); requestAnimationFrame(loop); };
     requestAnimationFrame(loop);
   }
 
@@ -62,6 +69,14 @@ export class Preview {
   }
 
   draw() { this.renderer.render(this.scene, this.camera); }
+
+  dispose() {
+    this.dead = true; this.ro.disconnect(); this.controls.dispose();
+    for (const m of this.group.children) { m.geometry.dispose(); m.material.dispose(); }
+    this.renderer.dispose(); if (this.renderer.forceContextLoss) this.renderer.forceContextLoss();
+  }
+
+  setBed(on) { this.bed.visible = !!on; this.draw(); }
 
   show(parts, { refit = false } = {}) {
     for (const m of this.group.children) { m.geometry.dispose(); m.material.dispose(); }

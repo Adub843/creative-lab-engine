@@ -16,6 +16,13 @@ export const FONTS = [
   { id: "marker", name: "Permanent Marker", file: "permanent-marker-400-normal.woff" },
 ];
 const fontCache = new Map();
+// Fonts people import from their own computer (kept for this session; the project saves the bytes).
+export function registerFont(id, name, buffer) {
+  const font = window.opentype.parse(buffer);
+  if (!FONTS.some((f) => f.id === id)) FONTS.push({ id, name, local: true });
+  fontCache.set(id, Promise.resolve(font));
+  return font;
+}
 export function loadFont(id) {
   const f = FONTS.find((x) => x.id === id) || FONTS[0];
   if (!fontCache.has(f.id)) {
@@ -112,7 +119,8 @@ export function roundRect(x0, y0, x1, y1, r) {
 
 // Text as filled outlines. Lines are centred on x = 0; the block is centred on y = 0.
 // `size` is the cap height in mm (the height of a capital H), which is what people mean by text size.
-export function textPaths(font, text, size, { spacing = 0, lineGap = 0.25, align = "center" } = {}) {
+// `curve` bends each line along an arc spanning that many degrees (positive arches up).
+export function textPaths(font, text, size, { spacing = 0, lineGap = 0.25, align = "center", curve = 0 } = {}) {
   const capUnits = (font.tables.os2 && font.tables.os2.sCapHeight) || font.unitsPerEm * 0.7;
   const fs = size * font.unitsPerEm / capUnits; // font size giving the requested cap height
   const lines = String(text || "").split(/\r?\n/).map((s) => s.replace(/\s+$/, "")).filter((s, i, a) => s || a.length === 1);
@@ -121,14 +129,29 @@ export function textPaths(font, text, size, { spacing = 0, lineGap = 0.25, align
   lines.forEach((line, i) => {
     if (!line) return;
     const glyphs = font.stringToGlyphs(line);
-    let x = 0; const parts = [];
+    let x = 0; const placed = [];
     glyphs.forEach((g, gi) => {
-      const p = g.getPath(x, 0, fs);
-      parts.push(...flatten(p.commands));
       const adv = (g.advanceWidth || 0) * fs / font.unitsPerEm;
+      placed.push({ rings: flatten(g.getPath(x, 0, fs).commands), mid: x + adv / 2 });
       const kern = gi < glyphs.length - 1 ? font.getKerningValue(g, glyphs[gi + 1]) * fs / font.unitsPerEm : 0;
       x += adv + kern + spacing;
     });
+    const width = Math.max(1e-3, x - spacing);
+    let parts = [];
+    if (Math.abs(curve) > 0.5) {
+      // bend: a glyph centred at `mid` sits at angle (mid - width/2) / R on a circle of radius R
+      const R = width / Math.abs(curve * Math.PI / 180);
+      for (const g of placed) {
+        const a = (g.mid - width / 2) / R, c = Math.cos(a), s = Math.sin(a);
+        for (const r of g.rings) parts.push(r.map((q) => {
+          const lx = q.X / UM - g.mid, ly = q.Y / UM; // glyph-local, baseline at y = 0
+          // arch: circle centre below the baseline; smile: centre above it. Letters stay upright to the arc.
+          const X = curve > 0 ? (R + ly) * s + lx * c : (R - ly) * s + lx * c;
+          const Y = curve > 0 ? (R + ly) * c - lx * s - R : R - (R - ly) * c + lx * s;
+          return { X: Math.round(X * UM), Y: Math.round(Y * UM) };
+        }));
+      }
+    } else for (const g of placed) parts.push(...g.rings);
     let shape = union(parts);
     const b = bounds(shape);
     const dx = align === "left" ? -b.x0 : align === "right" ? -b.x1 : -b.cx;
@@ -144,27 +167,68 @@ export function textPaths(font, text, size, { spacing = 0, lineGap = 0.25, align
 export function opening(paths, w) { return offset(offset(paths, -w / 2), w / 2); }
 
 // ---------- solids ----------
+function dropCollinear(r) {
+  const out = [];
+  for (let i = 0; i < r.length; i++) {
+    const a = r[(i + r.length - 1) % r.length], b = r[i], c = r[(i + 1) % r.length];
+    if ((b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X) !== 0) out.push(b);
+  }
+  return out;
+}
+
 // Extrude filled outlines (with holes) from z0 to z1. Returns a flat Float32Array of triangles (mm).
 export function extrude(paths, z0, z1) {
   const c = new C.Clipper(); const tree = new C.PolyTree();
-  c.AddPaths(paths, C.PolyType.ptSubject, true);
+  // drop points that sit on a straight edge: earcut skips them, which would leave T-junctions in the mesh
+  // and pull every edge in by 5 µm so outlines that touch along an edge become separate, closed solids
+  const co = new C.ClipperOffset(2, 1); const shrunk = new C.Paths();
+  co.AddPaths(paths, C.JoinType.jtMiter, C.EndType.etClosedPolygon); co.Execute(shrunk, -5);
+  c.AddPaths(C.Clipper.CleanPolygons(shrunk, 1.5), C.PolyType.ptSubject, true);
   c.Execute(C.ClipType.ctUnion, tree, C.PolyFillType.pftNonZero, C.PolyFillType.pftNonZero);
   const out = [];
   const tri = (ax, ay, az, bx, by, bz, cx, cy, cz) => out.push(ax, ay, az, bx, by, bz, cx, cy, cz);
   const walk = (node) => {
     for (const outer of node.Childs()) {
       if (outer.IsHole()) continue;
-      const rings = [outer.Contour(), ...outer.Childs().map((h) => h.Contour())];
+      const rings = [outer.Contour(), ...outer.Childs().map((h) => h.Contour())].map(dropCollinear).filter((r) => r.length > 2);
+      if (!rings.length || rings[0].length < 3) continue;
       // caps
       const flat = [], holes = [];
       rings.forEach((r, i) => { if (i) holes.push(flat.length / 2); for (const q of r) flat.push(q.X / UM, q.Y / UM); });
       const idx = earcut(flat, holes, 2);
+      // integer copies of the ring points, to find any that earcut skipped (they'd leave T-junctions)
+      const ix = []; for (let k = 0; k < flat.length; k += 2) ix.push([Math.round(flat[k] * UM), Math.round(flat[k + 1] * UM)]);
+      const onEdge = (A, B) => {
+        const hit = [];
+        const minX = Math.min(A[0], B[0]), maxX = Math.max(A[0], B[0]), minY = Math.min(A[1], B[1]), maxY = Math.max(A[1], B[1]);
+        for (const P of ix) {
+          if (P[0] < minX || P[0] > maxX || P[1] < minY || P[1] > maxY) continue;
+          if ((P[0] === A[0] && P[1] === A[1]) || (P[0] === B[0] && P[1] === B[1])) continue;
+          if ((B[0] - A[0]) * (P[1] - A[1]) - (B[1] - A[1]) * (P[0] - A[0]) !== 0) continue;
+          hit.push(P);
+        }
+        const L = (B[0] - A[0]) ** 2 + (B[1] - A[1]) ** 2;
+        return hit.sort((m, n) => ((m[0] - A[0]) * (B[0] - A[0]) + (m[1] - A[1]) * (B[1] - A[1])) / L - ((n[0] - A[0]) * (B[0] - A[0]) + (n[1] - A[1]) * (B[1] - A[1])) / L);
+      };
+      const cap = (P0, P1, P2) => { // P* integer points, counter-clockwise
+        const ring = [P0, ...onEdge(P0, P1), P1, ...onEdge(P1, P2), P2, ...onEdge(P2, P0)];
+        const f = (P) => [P[0] / UM, P[1] / UM];
+        if (ring.length === 3) {
+          const [a, b, c] = ring.map(f);
+          tri(a[0], a[1], z1, b[0], b[1], z1, c[0], c[1], z1); tri(a[0], a[1], z0, c[0], c[1], z0, b[0], b[1], z0);
+          return;
+        }
+        const m = [(P0[0] + P1[0] + P2[0]) / 3 / UM, (P0[1] + P1[1] + P2[1]) / 3 / UM];
+        for (let k = 0; k < ring.length; k++) {
+          const a = f(ring[k]), b = f(ring[(k + 1) % ring.length]);
+          tri(m[0], m[1], z1, a[0], a[1], z1, b[0], b[1], z1); tri(m[0], m[1], z0, b[0], b[1], z0, a[0], a[1], z0);
+        }
+      };
       for (let i = 0; i < idx.length; i += 3) {
-        const a = idx[i] * 2, b = idx[i + 1] * 2, d = idx[i + 2] * 2;
-        const ccw = (flat[b] - flat[a]) * (flat[d + 1] - flat[a + 1]) - (flat[b + 1] - flat[a + 1]) * (flat[d] - flat[a]) > 0;
-        const [p, q] = ccw ? [b, d] : [d, b];
-        tri(flat[a], flat[a + 1], z1, flat[p], flat[p + 1], z1, flat[q], flat[q + 1], z1);
-        tri(flat[a], flat[a + 1], z0, flat[q], flat[q + 1], z0, flat[p], flat[p + 1], z0);
+        const a = idx[i], b = idx[i + 1], d = idx[i + 2];
+        const A = ix[a], B = ix[b], D = ix[d];
+        const ccw = (B[0] - A[0]) * (D[1] - A[1]) - (B[1] - A[1]) * (D[0] - A[0]) > 0;
+        if (ccw) cap(A, B, D); else cap(A, D, B);
       }
       // walls: outer contours run counter-clockwise, holes clockwise, so (dy, -dx) always faces out
       for (const r of rings) {
