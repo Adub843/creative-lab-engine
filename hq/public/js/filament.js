@@ -17,15 +17,20 @@ function vFilament(){ filLoad(); const d=FIL.data;
   const opt=(v,l,cur)=>`<option value="${esc(v)}"${v===cur?" selected":""}>${esc(l)}</option>`;
   const pal=d.palette.map(p=>`<button type="button" class="fil-chip" data-filhex="${esc(p.hex)}" title="${esc(p.brand+" "+p.line+" · "+p.color)}">${filSw(p.hex)}<span><b>${esc(p.name)}</b><span class="small muted">${esc(p.hex)} · ${esc(p.brand==="Polymaker"?p.color:p.brand+" "+p.color)}</span></span></button>`).join("");
   const pr=d.prices.filter(p=>FIL.pbrand==="all"||p.brand===FIL.pbrand);
-  const cell=o=>o?`<td><a href="${esc(safeUrl(o.url)||"#")}" target="_blank" rel="noopener"><b>$${o.price.toFixed(2)}</b></a><div class="small muted">${esc(o.store)}</div></td>`:`<td class="muted">—</td>`;
+  const lnk=(o,t)=>`<a href="${esc(safeUrl(o.url)||"#")}" target="_blank" rel="noopener">${t}</a>`;
+  const cell=o=>o?`<td>${lnk(o,`<b>$${o.per_kg.toFixed(2)}/kg</b>`)}<div class="small muted">${esc(o.store)} · ${esc(o.kg+" kg")} $${o.price.toFixed(2)}</div></td>`:`<td class="muted">—</td>`;
+  const stars=p=>p.rating?`<b>${p.rating.toFixed(1)}★</b><div class="small muted">${p.reviews.toLocaleString()} reviews</div>`:`<span class="muted">—</span>`;
+  const sup=(d.suppliers||[]).map(x=>`<tr><td><a href="${esc(safeUrl(x.url)||"#")}" target="_blank" rel="noopener"><b>${esc(x.company)}</b></a><div class="small muted">${esc(x.brands)}</div></td><td>${esc(x.best_price_per_kg)}</td><td>${esc(x.minimum_order)}</td><td class="small">${esc(x.what_you_need)}</td></tr>`).join("");
   const pbrands=[...new Set(d.prices.map(p=>p.brand))];
   return `<section class="card"><div class="card-head"><h2 class="big">Filament colors &amp; prices</h2><span class="eyebrow">${d.brands.length} brands · ${rows.length.toLocaleString()} colors · updated ${esc(d.updated)} · refreshes every Sunday</span></div>
       <p class="small" style="margin:0 0 10px">Mockups and product images use <b>Polymaker PLA</b> colors and their real hex codes first. Another brand's color is used only when Polymaker doesn't make it.</p>
       <a class="btn primary" href="data/filament-tracker.xlsx" download="Charleston 3D filament tracker.xlsx">Download the Excel sheet</a></section>
     <section class="card"><div class="card-head"><h2>Mockup colors</h2><span class="eyebrow">tap one to copy its hex</span></div><div class="fil-pal">${pal}</div></section>
-    <section class="card"><div class="card-head"><h2>Best prices, 1 kg spool</h2><span class="eyebrow">3 cheapest stores found · prices move daily, check the link</span></div>
+    <section class="card"><div class="card-head"><h2>Best prices per kg</h2><span class="eyebrow">3 cheapest stores, bulk and wholesale included · prices move daily, check the link</span></div>
       <div class="schbar"><select id="filPB" aria-label="Brand">${opt("all","All brands",FIL.pbrand)}${pbrands.map(b=>opt(b,b,FIL.pbrand)).join("")}</select></div>
-      <div class="tblwrap"><table class="tbl"><tr><th>Brand</th><th>Type</th><th>Best</th><th>2nd</th><th>3rd</th></tr>${pr.map(p=>`<tr><td>${esc(p.brand)}</td><td>${esc(p.type)}</td>${cell(p.top[0])}${cell(p.top[1])}${cell(p.top[2])}</tr>`).join("")}</table></div></section>
+      <div class="tblwrap"><table class="tbl"><tr><th>Brand</th><th>Type</th><th>Stars</th><th>Best</th><th>2nd</th><th>3rd</th><th>Cheapest 1 kg</th></tr>${pr.map(p=>`<tr><td>${esc(p.brand)}</td><td>${esc(p.type)}</td><td>${stars(p)}</td>${cell(p.top[0])}${cell(p.top[1])}${cell(p.top[2])}<td>${p.single?lnk(p.single,`<b>$${p.single.price.toFixed(2)}</b>`)+`<div class="small muted">${esc(p.single.store)}</div>`:`<span class="muted">—</span>`}</td></tr>`).join("")}</table></div></section>
+    ${sup?`<section class="card"><div class="card-head"><h2>Wholesale &amp; bulk</h2><span class="eyebrow">open to you with a reseller certificate</span></div>
+      <div class="tblwrap"><table class="tbl"><tr><th>Company</th><th>Best price</th><th>Minimum</th><th>What you need</th></tr>${sup}</table></div></section>`:""}
     <section class="card"><div class="card-head"><h2>Every color</h2><span class="eyebrow">${hits.length.toLocaleString()} match</span></div>
       <div class="schbar"><select id="filB" aria-label="Brand">${opt("all","All brands",FIL.brand)}${d.brands.map(b=>opt(b,b,FIL.brand)).join("")}</select>
         <select id="filT" aria-label="Type">${opt("all","All types",FIL.type)}${types.map(t=>opt(t,t,FIL.type)).join("")}</select>

@@ -1,0 +1,85 @@
+brand,type,avg_rating,reviews,source,checked
+Polymaker,PLA+,4.58,3305,"Amazon search, review-weighted",2026-10-30
+Polymaker,Matte PLA,4.52,35875,"Amazon search, review-weighted",2026-10-30
+Polymaker,PLA,4.51,1327,"Amazon search, review-weighted",2026-10-30
+Polymaker,Silk PLA,4.80,2955,"Amazon search, review-weighted",2026-10-30
+Polymaker,PETG,4.60,6132,"Amazon search, review-weighted",2026-10-30
+Polymaker,TPU 95A,4.59,3268,"Amazon search, review-weighted",2026-10-30
+Polymaker,ABS,3.60,28,"Amazon search, review-weighted",2026-10-30
+Bambu Lab,Matte PLA,4.57,3548,"Amazon search, review-weighted",2026-10-30
+Bambu Lab,Silk PLA,4.55,771,"Amazon search, review-weighted",2026-10-30
+Bambu Lab,PETG,4.49,2046,"Amazon search, review-weighted",2026-10-30
+Bambu Lab,TPU 95A,4.54,195,"Amazon search, review-weighted",2026-10-30
+Bambu Lab,ABS,4.61,572,"Amazon search, review-weighted",2026-10-30
+ELEGOO,PLA+,4.60,18729,"Amazon search, review-weighted",2026-10-30
+ELEGOO,Matte PLA,4.60,39448,"Amazon search, review-weighted",2026-10-30
+ELEGOO,Silk PLA,4.70,34200,"Amazon search, review-weighted",2026-10-30
+ELEGOO,PETG,4.47,33247,"Amazon search, review-weighted",2026-10-30
+ELEGOO,TPU 95A,4.60,471,"Amazon search, review-weighted",2026-10-30
+eSun,PLA,4.20,29134,"Amazon search, review-weighted",2026-10-30
+eSun,PLA+,4.41,138492,"Amazon search, review-weighted",2026-10-30
+eSun,Matte PLA,4.41,20066,"Amazon search, review-weighted",2026-10-30
+eSun,Silk PLA,4.64,5007,"Amazon search, review-weighted",2026-10-30
+eSun,PETG,4.36,14427,"Amazon search, review-weighted",2026-10-30
+eSun,TPU 95A,4.40,4470,"Amazon search, review-weighted",2026-10-30
+eSun,ABS,4.11,22730,"Amazon search, review-weighted",2026-10-30
+Sunlu,PLA,4.49,15532,"Amazon search, review-weighted",2026-10-30
+Sunlu,PLA+,4.55,13872,"Amazon search, review-weighted",2026-10-30
+Sunlu,Silk PLA,4.52,13616,"Amazon search, review-weighted",2026-10-30
+Sunlu,Matte PLA,4.44,9018,"Amazon search, review-weighted",2026-10-30
+Sunlu,PETG,4.60,2458,"Amazon search, review-weighted",2026-10-30
+Sunlu,TPU 95A,4.60,19923,"Amazon search, review-weighted",2026-10-30
+Sunlu,ABS,4.70,798,"Amazon search, review-weighted",2026-10-30
+Prusament,PLA,4.60,6039,"Amazon search, review-weighted",2026-10-30
+Prusament,PETG,4.50,3134,"Amazon search, review-weighted",2026-10-30
+Prusament,Matte PLA,3.90,12,"Amazon search, review-weighted",2026-10-30
+Hatchbox,PLA,4.70,81922,"Amazon search, review-weighted",2026-10-30
+Hatchbox,Matte PLA,4.40,3114,"Amazon search, review-weighted",2026-10-30
+Hatchbox,Silk PLA,4.70,1127,"Amazon search, review-weighted",2026-10-30
+Hatchbox,TPU 95A,4.60,4632,"Amazon search, review-weighted",2026-10-30
+Overture,PLA,4.49,18470,"Amazon search, review-weighted",2026-10-30
+Overture,Matte PLA,4.50,55644,"Amazon search, review-weighted",2026-10-30
+Overture,PLA+,4.50,14403,"Amazon search, review-weighted",2026-10-30
+Overture,Silk PLA,4.56,6741,"Amazon search, review-weighted",2026-10-30
+Overture,PETG,4.30,102533,"Amazon search, review-weighted",2026-10-30
+Overture,TPU 95A,4.63,4297,"Amazon search, review-weighted",2026-10-30
+Inland,PLA+,4.60,10796,"Amazon search, review-weighted",2026-10-30
+Creality,PLA,4.50,52152,"Amazon search, review-weighted",2026-10-30
+Creality,PLA+,4.49,23682,"Amazon search, review-weighted",2026-10-30
+Creality,Matte PLA,4.60,2969,"Amazon search, review-weighted",2026-10-30
+Creality,Silk PLA,4.60,12240,"Amazon search, review-weighted",2026-10-30
+Creality,PETG,4.61,2361,"Amazon search, review-weighted",2026-10-30
+Creality,TPU 95A,4.23,6091,"Amazon search, review-weighted",2026-10-30
+Creality,ABS,4.66,1256,"Amazon search, review-weighted",2026-10-30
+ANYCUBIC,PLA,4.38,6950,"Amazon search, review-weighted",2026-10-30
+ANYCUBIC,PLA+,4.50,774,"Amazon search, review-weighted",2026-10-30
+ANYCUBIC,Silk PLA,4.69,761,"Amazon search, review-weighted",2026-10-30
+ANYCUBIC,Matte PLA,4.69,2802,"Amazon search, review-weighted",2026-10-30
+ANYCUBIC,PETG,4.60,15120,"Amazon search, review-weighted",2026-10-30
+ANYCUBIC,TPU 95A,4.70,257,"Amazon search, review-weighted",2026-10-30
+JAYO,PLA+,4.40,2039,"Amazon search, review-weighted",2026-10-30
+JAYO,PLA,4.40,1786,"Amazon search, review-weighted",2026-10-30
+JAYO,Silk PLA,4.58,11139,"Amazon search, review-weighted",2026-10-30
+JAYO,Matte PLA,4.36,18292,"Amazon search, review-weighted",2026-10-30
+JAYO,PETG,4.20,14616,"Amazon search, review-weighted",2026-10-30
+JAYO,TPU 95A,4.44,311,"Amazon search, review-weighted",2026-10-30
+Kingroon,PLA,4.25,12050,"Amazon search, review-weighted",2026-10-30
+Kingroon,Silk PLA,4.41,5067,"Amazon search, review-weighted",2026-10-30
+Kingroon,PLA+,4.40,1461,"Amazon search, review-weighted",2026-10-30
+Kingroon,Matte PLA,4.60,1240,"Amazon search, review-weighted",2026-10-30
+Kingroon,PETG,4.29,3238,"Amazon search, review-weighted",2026-10-30
+Kingroon,TPU 95A,4.46,356,"Amazon search, review-weighted",2026-10-30
+Kingroon,ABS,5.00,5,"Amazon search, review-weighted",2026-10-30
+Protopasta,PLA,4.39,438,"Amazon search, review-weighted",2026-10-30
+GEEETECH,PLA,4.30,67817,"Amazon search, review-weighted",2026-10-30
+GEEETECH,Silk PLA,4.30,121097,"Amazon search, review-weighted",2026-10-30
+GEEETECH,Matte PLA,4.30,80522,"Amazon search, review-weighted",2026-10-30
+GEEETECH,PETG,4.30,47329,"Amazon search, review-weighted",2026-10-30
+GEEETECH,TPU 95A,4.30,13884,"Amazon search, review-weighted",2026-10-30
+ERYONE,Silk PLA,4.39,43399,"Amazon search, review-weighted",2026-10-30
+ERYONE,PLA+,4.60,1014,"Amazon search, review-weighted",2026-10-30
+ERYONE,PLA,4.32,7987,"Amazon search, review-weighted",2026-10-30
+ERYONE,Matte PLA,4.25,21081,"Amazon search, review-weighted",2026-10-30
+ERYONE,PETG,4.40,3662,"Amazon search, review-weighted",2026-10-30
+ERYONE,TPU 95A,4.46,2084,"Amazon search, review-weighted",2026-10-30
+ERYONE,ABS,4.40,186,"Amazon search, review-weighted",2026-10-30
