@@ -25,7 +25,7 @@ export const TOOLS = [
   { id: "list", group: "make", store: "ed", name: "List a design", ico: "＋", page: "products", path: "list",
     sub: "One click to the Elevated Designs store, with description, SEO and mockups" },
   { id: "makerstudio", group: "make", store: "c3d", name: "Maker Studio", ico: "⬡",
-    sub: "Every maker in one app: sign maker, name keychain and more, with 3MF export",
+    sub: "Every maker in one place: nameplates, hype chains, keychains, signs, light boxes",
     frame: "tools/maker-studio/" },
   { id: "nameplate", group: "make", store: "c3d", name: "Nameplate maker", ico: "▭",
     sub: "Type a name, pick a style, download a Bambu-ready 3MF or STL",
