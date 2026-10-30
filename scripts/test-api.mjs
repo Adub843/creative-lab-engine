@@ -884,7 +884,9 @@ test("store sign-in: config, token check, tag-unlocked images with signed links,
 test("store sign-in: not switched on, missing scope, and access field edits", async () => {
   clearMemberCache();
   const blobs = fakeBlobs();
-  const off = await handleMember(imgReq("/api/member/config"), { blobs, env: envOf(), fetch: fakeMemberShop().fetch });
+  const dflt = await handleMember(imgReq("/api/member/config"), { blobs, env: envOf(), fetch: fakeMemberShop().fetch });
+  assert.equal((await dflt.json()).clientId, "1cd847fd-6a88-46bb-af04-d486241fc519", "the ED storefront's public client ID is built in");
+  const off = await handleMember(imgReq("/api/member/config"), { blobs, env: envOf({ ED_CUSTOMER_CLIENT_ID: " " }), fetch: fakeMemberShop().fetch });
   assert.equal(off.status, 503);
   assert.match((await off.json()).error, /ED_CUSTOMER_CLIENT_ID/);
   const denied = await handleMember(imgReq("/api/member", { headers: { authorization: "Bearer shcat_GOOD" } }), { blobs, env: envOf(), fetch: fakeMemberShop({ scopeDenied: true }).fetch });
