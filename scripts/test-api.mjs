@@ -805,6 +805,101 @@ test("images: content must match the declared type, and only image types are tak
   assert.equal(ctx.blobs.m.size, 0);
 });
 
+const { handleMember, clearMemberCache } = await import("../lib/members.mjs");
+// A fake store for store sign-in: the two discovery files, the Customer Account API and the Admin API.
+function fakeMemberShop({ tags = ["Pro", "designs:benz1"], goodToken = "shcat_GOOD", scopeDenied = false } = {}) {
+  const calls = [];
+  const res = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  const fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), auth: init.headers?.authorization });
+    if (url === "https://elevatedshirts.com/.well-known/openid-configuration")
+      return res({ authorization_endpoint: "https://shopify.com/authentication/123/oauth/authorize", token_endpoint: "https://shopify.com/authentication/123/oauth/token", end_session_endpoint: "https://shopify.com/authentication/123/logout" });
+    if (url === "https://elevatedshirts.com/.well-known/customer-account-api") return res({ graphql_api: "https://shopify.com/123/account/customer/api/2025-10/graphql" });
+    if (url === "https://shopify.com/123/account/customer/api/2025-10/graphql")
+      return init.headers.authorization === goodToken ? res({ data: { customer: { id: "gid://shopify/Customer/77", firstName: "Dana" } } }) : res({ errors: [{ message: "Unauthorized" }] }, 401);
+    if (String(url).includes("/admin/api/")) {
+      const { query, variables } = JSON.parse(init.body);
+      checkGraphql(query, variables);
+      if (scopeDenied) return res({ errors: [{ message: "Access denied for tags field. Required access: `read_customers` access scope.", extensions: { code: "ACCESS_DENIED" } }] });
+      return res({ data: { customer: { tags } } });
+    }
+    return res({}, 404);
+  };
+  return { fetch, calls };
+}
+
+test("store sign-in: config, token check, tag-unlocked images with signed links, CORS preflight", async () => {
+  clearMemberCache();
+  const blobs = fakeBlobs();
+  const ictx = { blobs, env: envOf() };
+  const post = (h) => handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", ...KEYH, ...h }, body: PNG }), ictx);
+  await post({ "x-filename": "pub.png", "x-public": "1" });
+  await post({ "x-filename": "pro.png", "x-access": "PRO" });
+  await post({ "x-filename": "benz.png", "x-access": "designs:benz1, other" });
+  await post({ "x-filename": "all.png", "x-access": "members" });
+  await post({ "x-filename": "vip.png", "x-access": "vip" });
+  await post({ "x-filename": "secret.png" });
+  const shop = fakeMemberShop();
+  const env = envOf({ ED_CUSTOMER_CLIENT_ID: "client-abc" });
+  const ctx = { blobs, env, fetch: shop.fetch };
+  const app = { origin: "https://design.elevatedshirts.com" };
+
+  const cfg = await handleMember(imgReq("/api/member/config", { headers: app }), ctx);
+  assert.equal(cfg.status, 200);
+  assert.deepEqual(await cfg.json(), { clientId: "client-abc", authorize: "https://shopify.com/authentication/123/oauth/authorize", token: "https://shopify.com/authentication/123/oauth/token", logout: "https://shopify.com/authentication/123/logout" });
+  assert.equal(cfg.headers.get("access-control-allow-origin"), "https://design.elevatedshirts.com");
+
+  const pre = await handleMember(imgReq("/api/member", { method: "OPTIONS", headers: app }), ctx);
+  assert.equal(pre.status, 204);
+  assert.equal(pre.headers.get("access-control-allow-headers"), "authorization");
+
+  const me = await handleMember(imgReq("/api/member", { headers: { ...app, authorization: "Bearer shcat_GOOD" } }), ctx);
+  assert.equal(me.status, 200);
+  const body = await me.json();
+  assert.equal(body.customer.firstName, "Dana");
+  assert.deepEqual(body.tags, ["pro", "designs:benz1"]);
+  assert.deepEqual(body.items.map((i) => i.name).sort(), ["all.png", "benz.png", "pro.png"], "only images the tags unlock, never public or untagged private ones");
+  assert.equal(body.customer.id, undefined, "the customer's id isn't sent back");
+  for (const i of body.items) {
+    assert.match(i.url, /^https:\/\/console\.example\/api\/images\/[^?]+\?exp=\d+&sig=/);
+    const file = await handleImages(new Request(i.url), ictx);
+    assert.equal(file.status, 200, "the signed link opens the file");
+  }
+  assert.equal(shop.calls.find((c) => c.url.includes("/account/customer/api/")).auth, "shcat_GOOD", "the token goes to Shopify as-is");
+
+  const again = shop.calls.length;
+  assert.equal((await handleMember(imgReq("/api/member", { headers: { authorization: "Bearer shcat_GOOD" } }), ctx)).status, 200);
+  assert.equal(shop.calls.length, again, "a checked token is remembered for a few minutes");
+
+  const bad = await handleMember(imgReq("/api/member", { headers: { ...app, authorization: "Bearer shcat_EXPIRED" } }), ctx);
+  assert.equal(bad.status, 401);
+  assert.equal((await bad.json()).code, "signed_out");
+  assert.equal(bad.headers.get("access-control-allow-origin"), "https://design.elevatedshirts.com", "errors still reach the app");
+  assert.equal((await handleMember(imgReq("/api/member"), ctx)).status, 401, "no token");
+  assert.equal((await handleMember(imgReq("/api/member", { method: "POST", headers: { authorization: "Bearer shcat_GOOD" } }), ctx)).status, 405);
+  const evil = await handleMember(imgReq("/api/member", { method: "OPTIONS", headers: { origin: "https://evil.example" } }), ctx);
+  assert.equal(evil.headers.get("access-control-allow-origin"), null, "other sites get no CORS");
+});
+
+test("store sign-in: not switched on, missing scope, and access field edits", async () => {
+  clearMemberCache();
+  const blobs = fakeBlobs();
+  const off = await handleMember(imgReq("/api/member/config"), { blobs, env: envOf(), fetch: fakeMemberShop().fetch });
+  assert.equal(off.status, 503);
+  assert.match((await off.json()).error, /ED_CUSTOMER_CLIENT_ID/);
+  const denied = await handleMember(imgReq("/api/member", { headers: { authorization: "Bearer shcat_GOOD" } }), { blobs, env: envOf(), fetch: fakeMemberShop({ scopeDenied: true }).fetch });
+  assert.equal(denied.status, 502);
+  assert.match((await denied.json()).error, /read_customers/);
+
+  const ictx = { blobs, env: envOf() };
+  const up = await (await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", ...KEYH, "x-access": " VIP , designs:Benz1 ,," }, body: PNG }), ictx)).json();
+  assert.equal(up.item.access, "vip, designs:benz1");
+  const patch = (body) => handleImages(imgReq(`/api/images/${up.item.key}`, { method: "PATCH", headers: { "content-type": "application/json", ...KEYH }, body: JSON.stringify(body) }), ictx);
+  assert.equal((await (await patch({ access: Array.from({ length: 40 }, (_, n) => `tag-number-${n}`).join(",") })).json()).item.access.length <= 120, true, "long lists keep whole tags only");
+  assert.equal((await patch({ access: "" })).status, 200);
+  assert.equal(blobs.m.get(`image:${up.item.key}`).metadata.access, undefined, "an empty access clears it");
+});
+
 test("images: an SVG with script is never rendered on the console's origin", async () => {
   const ctx = { blobs: fakeBlobs(), env: envOf() };
   const up = await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/svg+xml", ...KEYH }, body: EVIL_SVG }), ctx);

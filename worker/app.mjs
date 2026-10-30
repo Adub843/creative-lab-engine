@@ -12,11 +12,13 @@
 //              (lib/marketing.mjs, lib/promotions.mjs) and the Team task boards (lib/team.mjs)
 // Secrets (set with `npx wrangler secret put NAME`, never in code): CONSOLE_KEY, the Shopify
 // domains and tokens (C3D_*, ED_*), and optionally INDEXNOW_KEY, ED_HANDLING_DAYS, *_SITE_URL,
-// MESHY_API_KEY (the 3D maker, lib/meshy.mjs).
+// MESHY_API_KEY (the 3D maker, lib/meshy.mjs). Variable (public): ED_CUSTOMER_CLIENT_ID (store sign-in
+// for the shirt app, lib/members.mjs).
 import { handleProducts, HttpError } from "../lib/shopify.mjs";
 import { handleInsights } from "../lib/insights.mjs";
 import { handleListings, libraryReader } from "../lib/listings.mjs";
 import { handleImages } from "../lib/images.mjs";
+import { handleMember } from "../lib/members.mjs";
 import { handleFiles } from "../lib/files.mjs";
 import { r2BlobStore, combinedStore } from "../lib/r2-store.mjs";
 import { handleMeshy } from "../lib/meshy.mjs";
@@ -134,6 +136,8 @@ export async function handleRequest(req, env) {
       // The first few reasons (a Kittl id and what went wrong, nothing private) say why images didn't copy.
       return json(last ? { ...rest, failed: failed.length, problems: failed.slice(0, 3) } : { ok: false, error: "No sync has run yet." }, 200);
     }
+    if (pathname === "/api/member" || pathname === "/api/member/config")
+      return await handleMember(req, { blobs: imageStore(env), env: envReader(env), fetch: (input, init) => fetch(input, init) });
     if (pathname === "/api/images" || pathname.startsWith("/api/images/"))
       return await handleImages(req, { blobs: imageStore(env), env: envReader(env) });
     // Charleston 3D's 3D files: in the FILES R2 bucket once it's bound (older ones stay readable in KV),
