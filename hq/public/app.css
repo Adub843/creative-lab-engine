@@ -1405,4 +1405,13 @@ details.mres[open]>summary{margin-bottom:12px}
 .fil-chip>span:last-child>*{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fil-sw{flex:none;width:38px;height:38px;border-radius:8px;border:1px solid rgba(0,0,0,.18);box-shadow:inset 0 1px 0 rgba(255,255,255,.25)}
 .fil-none{display:grid;place-items:center;color:var(--muted);background:repeating-linear-gradient(45deg,var(--line) 0 4px,transparent 4px 8px)}
+.fil-group{border-top:4px solid var(--g)}
+.fil-group h2{color:var(--g)}
+.fil-legend,.fil-keys{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0 0 10px}
+.fil-key{display:inline-flex;align-items:center;gap:6px;font-size:13px}
+.fil-key i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.fil-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.fil-tab{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:999px;padding:6px 12px;font:inherit;font-size:13px;cursor:pointer}
+.fil-tab.on{background:var(--g);border-color:var(--g);color:#fff}
+.fil-chart{width:100%;height:auto;display:block;color:var(--fg)}
 @media (max-width:520px){.fil-pal,.fil-grid{grid-template-columns:1fr 1fr}.fil-sw{width:30px;height:30px}}

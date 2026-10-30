@@ -86,7 +86,7 @@ const SUBJECTS=[
   {k:"ed", name:"Elevated Designs", tag:"Apparel · shirts · Shopify & Etsy", c:"#8b5cf6", rgb:"139,92,246", icon:"shirt", agents:["vera","lisa","carla","tina"],
     pages:[["Overview","elevated"],["Designs","design:ed"],["Listings","listings:ed"],["Custom orders","quotes"],["Design Lab","designlab"],["Marketing","growth:ed"],["Reviews","reviews"],["Shirt market","sellers"]]},
   {k:"c3d", name:"Charleston 3D", tag:"3D prints · makers · custom orders", c:"#14b8a6", rgb:"20,184,166", icon:"cube", agents:["andy","nora","carla"],
-    pages:[["Overview","c3d"],["3D designs","design:c3d"],["Listings","listings:c3d"],["Custom quotes","quotes"],["Redesign Studio","redesign"],["Marketing","growth:c3d"],["Reviews","reviews"],["Filament","filament"],["3D trends","print3d"]]},
+    pages:[["Overview","c3d"],["3D designs","design:c3d"],["Listings","listings:c3d"],["Custom quotes","quotes"],["Redesign Studio","redesign"],["Marketing","growth:c3d"],["Reviews","reviews"],["Supplies","filament"],["3D trends","print3d"]]},
   {k:"mkt", name:"Marketing", tag:"Websites · social media · Holo", c:"#f43f5e", rgb:"244,63,94", icon:"megaphone", agents:["tina","sage"],
     pages:[["Websites","website"],["Social media","social"],["Holo","holo"],["ED marketing","growth:ed"],["C3D marketing","growth:c3d"]]},
   {k:"create", name:"Create", tag:"Design · maker · code, all on one bench", c:"#ec4899", rgb:"236,72,153", icon:"brush", agents:["vera","andy","sam"], bench:true,

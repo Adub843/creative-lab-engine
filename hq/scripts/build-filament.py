@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the Charleston 3D filament tracker from hq/data/filament.
+"""Build the Charleston 3D supplies sheet (filament, light box parts, packing and shipping, Bambu Lab printers).
 
 Inputs (all in hq/data/filament):
   polymaker-official.csv  Polymaker's own hex codes and TD values (wiki.polymaker.com "HEX codes and TD").
@@ -8,9 +8,12 @@ Inputs (all in hq/data/filament):
   ratings.csv             Average star rating and review count per brand and type (Amazon search, review-weighted).
   suppliers.csv           Wholesale and bulk programs (minimums, discounts, what a reseller needs to apply).
 
+  ../supplies/c3d-supplies.csv  Every other supply: one row per offer, with pack size so the build can rank by unit price.
+  ../supplies/history.csv       Best price per item per week, appended by every build. Feeds the price graphs.
+
 Outputs:
   hq/public/data/filament.json          what the console's Filament page reads
-  hq/public/data/filament-tracker.xlsx  the Excel sheet (also the download on that page)
+  hq/public/data/c3d-supplies-sheet.xlsx  the Excel sheet (also the download on that page)
 
 Run from the repo root:  python3 hq/scripts/build-filament.py
 """
@@ -19,10 +22,22 @@ from collections import defaultdict
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font, Alignment
 from openpyxl.utils import get_column_letter
+from openpyxl.chart import LineChart, Reference
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 DATA = os.path.join(ROOT, "data", "filament")
 OUT = os.path.join(ROOT, "public", "data")
+SUP = os.path.join(ROOT, "data", "supplies")
+
+# Aaron (2026-10-30): track 3 filament brands only, Polymaker first.
+KEEP_BRANDS = ["Polymaker", "Bambu Lab", "ELEGOO"]
+kept = lambda b: b.lower() in [k.lower() for k in KEEP_BRANDS]
+
+# One color per group, used for tab colors, headers and row tints (Charleston 3D teal, brass, navy, coral).
+GROUPS = {"Filament": ("0F766E", "E6F4F1"), "Light box parts": ("8A6A2F", "F6EFE0"),
+          "Packing & shipping": ("1E3A5F", "E8EEF6"), "Bambu Lab printers": ("B4533F", "F9E9E5")}
+# Same colors, lightened so they read on the console's dark background.
+CONSOLE_COLORS = {"Filament": "#17a398", "Light box parts": "#c39a4a", "Packing & shipping": "#5b8fd6", "Bambu Lab printers": "#d0705c"}
 
 # Polymaker comes first, then the brands people buy most in the US, then everything else A to Z.
 BRAND_ORDER = ["Polymaker", "Bambu Lab", "ELEGOO", "eSun", "Sunlu", "Prusament", "Hatchbox", "Overture",
@@ -137,6 +152,46 @@ def load_prices():
     return out
 
 
+def load_supplies():
+    """Every non-filament supply, grouped by item, cheapest per unit first (top 3 stores/listings)."""
+    items = defaultdict(list)
+    with open(os.path.join(SUP, "c3d-supplies.csv"), newline="") as f:
+        for r in csv.DictReader(f):
+            units, price = float(r["units"]), float(r["price_usd"])
+            items[(r["group"], r["item"])].append({"store": r["store"], "product": r["product"], "pack": r["pack"],
+                                                   "unit": r["unit"], "price": price, "per_unit": round(price / units, 4),
+                                                   "rating": float(r["rating"]) if r["rating"] else None,
+                                                   "reviews": int(r["reviews"]) if r["reviews"] else 0,
+                                                   "url": r["url"], "checked": r["checked"]})
+    order = list(GROUPS)
+    out = [{"group": g, "item": i, "top": sorted(o, key=lambda x: x["per_unit"])[:3]} for (g, i), o in items.items()]
+    out.sort(key=lambda x: order.index(x["group"]) if x["group"] in order else 99)
+    return out
+
+
+def update_history(today, prices, supplies):
+    """Add this week's best price per item to history.csv (one row per item per day) and return the whole history."""
+    path = os.path.join(SUP, "history.csv")
+    rows = list(csv.DictReader(open(path, newline=""))) if os.path.exists(path) else []
+    rows = [r for r in rows if r["date"] != today]
+    for p in prices:
+        o = p["top"][0]
+        rows.append({"date": today, "group": "Filament", "item": f'{p["brand"]} {p["type"]}', "best": o["per_kg"],
+                     "unit": "kg", "store": o["store"]})
+    for s in supplies:
+        o = s["top"][0]
+        rows.append({"date": today, "group": s["group"], "item": s["item"],
+                     "best": o["price"] if o["unit"] == "printer" else o["per_unit"], "unit": o["unit"], "store": o["store"]})
+    rows.sort(key=lambda r: (r["date"], r["group"], r["item"]))
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["date", "group", "item", "best", "unit", "store"])
+        w.writeheader()
+        w.writerows(rows)
+    for r in rows:
+        r["best"] = float(r["best"])
+    return rows
+
+
 def load_suppliers():
     with open(os.path.join(DATA, "suppliers.csv"), newline="") as f:
         return list(csv.DictReader(f))
@@ -175,13 +230,14 @@ def text_on(hexv):
     return "000000" if (r * 299 + g * 587 + b * 114) / 1000 > 140 else "FFFFFF"
 
 
-def sheet(ws, headers, widths):
+def sheet(ws, headers, widths, color="0F766E"):
     ws.append(headers)
+    ws.sheet_properties.tabColor = color
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
     for c in ws[1]:
         c.font = Font(bold=True, color="FFFFFF")
-        c.fill = PatternFill("solid", fgColor="0F766E")
+        c.fill = PatternFill("solid", fgColor=color)
     ws.freeze_panes = "A2"
 
 
@@ -193,11 +249,13 @@ def swatch(cell, hexv):
 
 def main():
     today = datetime.date.today().isoformat()
-    colors = load_polymaker() + load_community()
+    colors = [r for r in load_polymaker() + load_community() if kept(r["brand"])]
     colors.sort(key=lambda r: (brand_rank(r["brand"]), r["source"] != "Polymaker official", r["type"], r["line"], r["color"]))
-    prices = load_prices()
-    suppliers = load_suppliers()
-    specs = load_specs()
+    prices = [p for p in load_prices() if kept(p["brand"])]
+    suppliers = [sp for sp in load_suppliers() if any(kept(b.strip()) for b in sp["brands"].split(","))]
+    supplies = load_supplies()
+    history = update_history(today, prices, supplies)
+    specs = [r for r in load_specs() if kept(r["brand"])]
     brands = sorted({r["brand"] for r in colors}, key=brand_rank)
 
     # Mockup palette: for each plain color name, the Polymaker PLA hex first, otherwise the first other brand that has it.
@@ -224,23 +282,22 @@ def main():
     ws.title = "Read me"
     pm_pla = sum(1 for r in colors if r["brand"] == "Polymaker" and r["type"] in ("PLA", "PLA+"))
     lines = [
-        ["Charleston 3D filament tracker"],
+        ["Charleston 3D supplies sheet"],
         ["Updated", today],
-        ["Brands", len(brands)],
-        ["Colors", len(colors)],
+        ["Filament brands", ", ".join(KEEP_BRANDS) + " (Polymaker first)"],
+        ["Filament colors", len(colors)],
         ["Polymaker PLA colors (official hex)", pm_pla],
-        ["Brand and type prices", len(prices)],
-        ["Offers checked", sum(p["all"] for p in prices)],
+        ["Filament brand and type prices", len(prices)],
+        ["Other supplies tracked", len(supplies)],
         ["Wholesale and bulk programs", len(suppliers)],
         [],
-        ["Rule for mockups and images", "Use Polymaker PLA colors first (tab 'Polymaker PLA'). Use another brand's color only when Polymaker doesn't make it."],
-        ["Polymaker colors", "Polymaker's own hex codes and TD values from wiki.polymaker.com."],
-        ["Other brands", "SpoolmanDB community filament database (MIT license), refreshed weekly."],
-        ["Prices", "Ranked by price per kg, so bulk boxes and wholesale count. Top 3 different stores per brand and type, plus the cheapest single 1 kg spool and the average star rating. Sources: brand stores and their bulk boxes, Polymaker US Wholesale, Amazon, Walmart, MatterHackers. Prices change daily; check the link before buying."],
-        ["Wholesale", "Tab 'Wholesale & bulk': programs you can join with your reseller certificate, with minimum order, discount and how to apply."],
-        ["Ratings", "Average stars weighted by review count across that brand and type's Amazon listings."],
-        ["Refresh", "Every Sunday the weekly task searches again, rebuilds this file and the console page."],
-        ["Add a brand or price", "Add rows to hq/data/filament/prices.csv or a file in hq/data/filament/community, then run python3 hq/scripts/build-filament.py."],
+        ["Tabs by color", "Teal = filament, brass = light box parts, navy = packing and shipping, coral = Bambu Lab printers. 'Summary' shows the best price for everything on one page; 'Price history' has a graph per group that grows every week."],
+        ["Rule for mockups and images", "Use Polymaker PLA colors first (tab 'Polymaker PLA'). Use Bambu Lab or ELEGOO colors only when Polymaker doesn't make it."],
+        ["Filament prices", "Ranked by price per kg, so bulk boxes and wholesale count. Top 3 stores per brand and type, plus the cheapest single 1 kg spool and the average star rating."],
+        ["Supply prices", "Ranked by unit price (per ft, box, roll, label or packet), so big packs count. Only listings rated 4.3 stars or more with 50+ reviews. Printer prices are the Bambu Lab store's base model price."],
+        ["Sources", "Brand stores and their bulk boxes, Polymaker US Wholesale, Amazon, Walmart, MatterHackers, Bambu Lab store. Prices change daily; check the link before buying."],
+        ["Refresh", "Every Sunday the weekly task searches again, adds this week's best prices to the history and rebuilds this file and the console page."],
+        ["Add an item", "Add rows to hq/data/supplies/c3d-supplies.csv (or hq/data/filament/prices.csv for filament), then run python3 hq/scripts/build-filament.py."],
     ]
     for l in lines:
         ws.append(l)
@@ -251,6 +308,93 @@ def main():
         row[0].font = Font(bold=True)
         if len(row) > 1:
             row[1].alignment = Alignment(wrap_text=True, vertical="top", horizontal="left")
+
+    money = '"$"#,##0.00'
+    ws = wb.create_sheet("Summary")
+    sheet(ws, ["Group", "Item", "Best price", "Per", "Pack", "Pack price", "Store", "Stars", "Reviews", "Link"],
+          [20, 40, 11, 8, 12, 11, 24, 7, 9, 44], "1E3A5F")
+    def tint(row, group):
+        for c in ws[row]:
+            c.fill = PatternFill("solid", fgColor=GROUPS[group][1])
+        ws.cell(row, 1).font = Font(bold=True, color=GROUPS[group][0])
+    for p in prices:
+        o = p["top"][0]
+        ws.append(["Filament", f'{p["brand"]} {p["type"]}', o["per_kg"], "kg", f'{o["kg"]:g} kg', o["price"], o["store"],
+                   p["rating"] or "", p["reviews"] or "", o["url"]])
+        tint(ws.max_row, "Filament")
+    for sp in supplies:
+        o = sp["top"][0]
+        per = o["price"] if o["unit"] == "printer" else o["per_unit"]
+        ws.append([sp["group"], sp["item"], per, o["unit"], o["pack"], o["price"], o["store"], o["rating"] or "", o["reviews"] or "", o["url"]])
+        tint(ws.max_row, sp["group"])
+    for r in range(2, ws.max_row + 1):
+        ws.cell(r, 3).number_format = '"$"#,##0.000' if (ws.cell(r, 3).value or 0) < 1 else money
+        ws.cell(r, 6).number_format = money
+        ws.cell(r, 10).hyperlink = ws.cell(r, 10).value
+    ws.auto_filter.ref = ws.dimensions
+
+    for g in [g for g in GROUPS if g != "Filament"]:
+        ws = wb.create_sheet(g.replace("&", "and") if len(g) > 31 else g)
+        sheet(ws, ["Item", "Rank", "Price per unit", "Per", "Pack", "Pack price", "Store", "Product", "Stars", "Reviews", "Checked", "Link"],
+              [38, 6, 13, 8, 12, 11, 18, 44, 7, 9, 11, 44], GROUPS[g][0])
+        for sp in [x for x in supplies if x["group"] == g]:
+            for i, o in enumerate(sp["top"], 1):
+                ws.append([sp["item"] if i == 1 else "", i, o["per_unit"], o["unit"], o["pack"], o["price"], o["store"], o["product"],
+                           o["rating"] or "", o["reviews"] or "", o["checked"], o["url"]])
+                r = ws.max_row
+                ws.cell(r, 3).number_format = '"$"#,##0.000' if o["per_unit"] < 1 else money
+                ws.cell(r, 6).number_format = money
+                ws.cell(r, 12).hyperlink = o["url"]
+                if i == 1:
+                    for c in ws[r]:
+                        c.fill = PatternFill("solid", fgColor=GROUPS[g][1])
+                    ws.cell(r, 1).font = Font(bold=True)
+
+    # Price history: one table and one line graph per group. Each weekly build adds a row.
+    ws = wb.create_sheet("Price history")
+    ws.sheet_properties.tabColor = "1E3A5F"
+    dates = sorted({h["date"] for h in history})
+    item_order = [f'{p["brand"]} {p["type"]}' for p in prices] + [sp["item"] for sp in supplies]
+    for j in range(2, 30):
+        ws.column_dimensions[get_column_letter(j)].width = 14
+    row = 1
+    for g in GROUPS:
+        hs = [h for h in history if h["group"] == g]
+        if not hs:
+            continue
+        seen = {h["item"] for h in hs}
+        items = [i for i in item_order if i in seen] + sorted(seen - set(item_order))
+        if g == "Filament":
+            items = [i for i in items if i.endswith(" PLA") or i.endswith(" PETG")]  # keep the graph readable
+        unit = "per kg" if g == "Filament" else "printer price" if g == "Bambu Lab printers" else "per unit"
+        ws.cell(row, 1, f"{g} ({unit})").font = Font(bold=True, size=12, color=GROUPS[g][0])
+        ws.cell(row + 1, 1, "Week")
+        for j, it in enumerate(items, 2):
+            ws.cell(row + 1, j, it)
+        ws.row_dimensions[row + 1].height = 45
+        for c in ws[row + 1]:
+            if c.value:
+                c.alignment = Alignment(wrap_text=True, vertical="center")
+                c.font = Font(bold=True, color="FFFFFF")
+                c.fill = PatternFill("solid", fgColor=GROUPS[g][0])
+        look = {(h["date"], h["item"]): h["best"] for h in hs}
+        for k, d in enumerate(dates):
+            ws.cell(row + 2 + k, 1, d)
+            for j, it in enumerate(items, 2):
+                v = look.get((d, it))
+                if v is not None:
+                    ws.cell(row + 2 + k, j, v).number_format = money
+        ch = LineChart()
+        ch.title = f"{g}: best price {unit}"
+        ch.height, ch.width = 7.5, 22
+        ch.y_axis.title = "USD"
+        ch.add_data(Reference(ws, min_col=2, max_col=len(items) + 1, min_row=row + 1, max_row=row + 1 + len(dates)), titles_from_data=True)
+        ch.set_categories(Reference(ws, min_col=1, min_row=row + 2, max_row=row + 1 + len(dates)))
+        for se in ch.series:
+            se.marker.symbol = "circle"
+        ws.add_chart(ch, f"{get_column_letter(len(items) + 3)}{row}")
+        row += max(len(dates) + 4, 17)
+    ws.column_dimensions["A"].width = 12
 
     ws = wb.create_sheet("Polymaker PLA")
     sheet(ws, ["Line", "Color", "Swatch", "Hex", "Second hex", "TD", "SKU"], [32, 40, 10, 10, 11, 6, 10])
@@ -269,7 +413,7 @@ def main():
         swatch(ws.cell(ws.max_row, 2), p["hex"])
 
     money = '"$"0.00'
-    ws = wb.create_sheet("Prices")
+    ws = wb.create_sheet("Filament prices")
     sheet(ws, ["Brand", "Type", "Avg stars", "Reviews", "Best store", "$/kg", "Pack", "Price",
                "2nd store", "$/kg", "Pack", "Price", "3rd store", "$/kg", "Pack", "Price",
                "Cheapest 1 kg spool", "Store", "Checked", "Best link", "2nd link", "3rd link", "1 kg link"],
@@ -339,13 +483,22 @@ def main():
         ws.append([b, len(rs), len({r["line"] for r in rs}), ", ".join(sorted({r["type"] for r in rs}))])
 
     os.makedirs(OUT, exist_ok=True)
-    wb.save(os.path.join(OUT, "filament-tracker.xlsx"))
+    first = ["Read me", "Summary", "Filament prices", "Light box parts", "Packing & shipping", "Bambu Lab printers", "Price history", "Wholesale & bulk"]
+    wb._sheets.sort(key=lambda w: first.index(w.title) if w.title in first else len(first))
+    for name in ["Filament prices", "All offers", "Wholesale & bulk", "Polymaker PLA", "Mockup palette", "Product specs", "All colors", "Brands"]:
+        wb[name].sheet_properties.tabColor = "0F766E"
+    old = os.path.join(OUT, "filament-tracker.xlsx")
+    if os.path.exists(old):
+        os.remove(old)
+    wb.save(os.path.join(OUT, "c3d-supplies-sheet.xlsx"))
     keys = ["brand", "type", "finish", "line", "color", "hex", "hex2", "td", "source"]
     slim = [{k: v for k, v in p.items() if k != "offers"} for p in prices]
     json.dump({"updated": today, "brands": brands, "palette": palette, "prices": slim, "suppliers": suppliers,
+               "supplies": supplies, "groups": CONSOLE_COLORS,
+               "history": [[h["date"], h["group"], h["item"], h["best"]] for h in history],
                "keys": keys, "colors": [[r[k] for k in keys] for r in colors]},
               open(os.path.join(OUT, "filament.json"), "w"), separators=(",", ":"))
-    print(f"{len(brands)} brands, {len(colors)} colors, {pm_pla} Polymaker PLA, {len(prices)} price rows, {len(palette)} palette colors")
+    print(f"{len(brands)} brands, {len(colors)} colors, {pm_pla} Polymaker PLA, {len(prices)} price rows, {len(palette)} palette colors, {len(supplies)} supplies, {len(history)} history rows")
 
 
 if __name__ == "__main__":
