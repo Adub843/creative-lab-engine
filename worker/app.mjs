@@ -9,7 +9,8 @@
 //   IMAGES   Workers KV namespace holding the image library (lib/kv-store.mjs)
 //   PRICING  Workers KV namespace holding where the shirt price sync got to (lib/pricing.mjs)
 //   MARKETING  Workers KV namespace holding each store's daily marketing scores and change log
-//              (lib/marketing.mjs, lib/promotions.mjs) and the Team task boards (lib/team.mjs)
+//              (lib/marketing.mjs, lib/promotions.mjs), the Team task boards (lib/team.mjs) and the
+//              agents' handoff board and manager brief (lib/handoffs.mjs)
 // Secrets (set with `npx wrangler secret put NAME`, never in code): CONSOLE_KEY, the Shopify
 // domains and tokens (C3D_*, ED_*), and optionally INDEXNOW_KEY, ED_HANDLING_DAYS, *_SITE_URL,
 // MESHY_API_KEY (the 3D maker, lib/meshy.mjs). Variable (public): ED_CUSTOMER_CLIENT_ID (store sign-in
@@ -27,6 +28,7 @@ import { handlePricing, scheduledPricing } from "../lib/pricing.mjs";
 import { handleMarketing, runScheduledAudits, runScheduledFixes } from "../lib/marketing.mjs";
 import { handlePromotions } from "../lib/promotions.mjs";
 import { handleTeam } from "../lib/team.mjs";
+import { handleHandoffs } from "../lib/handoffs.mjs";
 import { runScheduledSnapshots } from "../lib/tracker.mjs";
 import { syncKittlLibrary, STATE_KEY as KITTL_STATE_KEY } from "../lib/kittl-sync.mjs";
 
@@ -106,6 +108,7 @@ const pricing = jsonRoute(handlePricing);
 const marketing = jsonRoute(handleMarketing);
 const promotions = jsonRoute(handlePromotions);
 const team = jsonRoute(handleTeam);
+const handoffs = jsonRoute(handleHandoffs);
 const marketingKv = (env) => (env?.MARKETING && typeof env.MARKETING.get === "function" ? env.MARKETING : null);
 
 // Previews are small, so they stay in KV either way.
@@ -123,6 +126,8 @@ export async function handleRequest(req, env) {
     if (pathname === "/api/promotions") return await promotions(req, env, { kv: marketingKv(env) });
     // The Team page's task board is small JSON, kept in the same KV under "team:<store>".
     if (pathname === "/api/team") return await team(req, env, { kv: marketingKv(env) });
+    // The agents' handoff board and the manager run's brief, in the same KV under "handoffs".
+    if (pathname === "/api/handoffs") return await handoffs(req, env, { kv: marketingKv(env) });
     if (pathname === "/api/listings") {
       // The design is read through the image library's own read route, from the same KV namespace.
       const readImage = async (key) => libraryReader({ blobs: imageStore(env), env: envReader(env) })(key);
