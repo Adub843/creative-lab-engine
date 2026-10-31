@@ -2703,8 +2703,8 @@ test("wrangler.toml: MARKETING and PRICING KV bindings, the daily audit cron, th
   const toml = fs.readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   assert.match(toml, /\[\[kv_namespaces\]\]\s*\nbinding = "MARKETING"/);
   assert.match(toml, /\[\[kv_namespaces\]\]\s*\nbinding = "PRICING"/);
-  // Off until the switch-over from the old business-console Worker; the line to turn back on is kept beside it.
-  assert.match(toml, /\[triggers\][\s\S]*# crons = \["0 11 \* \* \*", "30 11 \* \* \*", "\*\/15 \* \* \* \*", "45 \* \* \* \*"\]\ncrons = \[\]/);
+  // On since the switch-over from the old business-console Worker (2026-10-31).
+  assert.match(toml, /\[triggers\][\s\S]*\ncrons = \["0 11 \* \* \*", "30 11 \* \* \*", "\*\/15 \* \* \* \*", "45 \* \* \* \*"\]/);
   assert.match(toml, /\[\[queues\.consumers\]\]\s*\nqueue = "creative-lab-actions"\s*\nmax_batch_size = 1\s*\nmax_batch_timeout = 0/);
   const W2 = await import("../worker/app.mjs");
   assert.equal(W2.AUDIT_CRON, "0 11 * * *");
