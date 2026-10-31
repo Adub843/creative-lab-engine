@@ -72,7 +72,6 @@ CONSOLE_PAGE = "https://claude.ai/artifact/U8rNeWMPq7NfF7f88AEuPK"
 # sheet changed or the last one is over a day old.
 # Hourly at :45: the image library follows the Kittl library (lib/kittl-sync.mjs).
 [triggers]
-# OFF until the switch-over: the old business-console Worker still runs these, and the free plan allows 5 crons
-# per account. At the switch-over the old Worker's crons are removed and this line becomes:
-# crons = ["0 11 * * *", "30 11 * * *", "*/15 * * * *", "45 * * * *"]
-crons = []
+# On since the switch-over (2026-10-31): the old business-console Worker's crons were removed first, because the free
+# plan allows 5 crons per account.
+crons = ["0 11 * * *", "30 11 * * *", "*/15 * * * *", "45 * * * *"]

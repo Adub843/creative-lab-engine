@@ -183,7 +183,7 @@ The skills live in project files `agent-skills-catalog/skills/` and on the Deskt
 ## This repo: creative-lab-engine
 
 - 2026-10-30: Aaron's only console is Creative Lab Studios (https://claude.ai/artifact/U8rNeWMPq7NfF7f88AEuPK). This repo is its background engine, moved here from Adub843/Business-console with full history and every branch; the old Business-console repo and Worker are being retired. The engine (Worker `creative-lab-engine`) has no pages: the console sends actions through the `creative-lab-actions` queue and reads answers from the `creative-lab-engine` R2 bucket (worker/queue.mjs). The shirt apps still read `/api/images?public=1` from it.
-- Its crons stay off (`crons = []`) until the switch-over from the old Worker, because both would otherwise run the price sync and SEO fixes, and the free plan allows 5 crons per account.
+- Its crons (11:00 and 11:30 UTC daily, every 15 minutes, hourly at :45) run here since the switch-over on 2026-10-31; the old business-console Worker has none. The free plan allows 5 crons per account. The shirt apps' public art list (`/api/images?public=1`) is served from a saved copy in KV (`snapshot:public-images`), because the free plan's 1,000 KV lists a day are shared with Hype Chain.
 
 ### Older notes (from Business-console)
 

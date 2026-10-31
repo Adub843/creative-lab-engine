@@ -3098,6 +3098,27 @@ test("kittl sync: the hourly cron saves its result and /api/library-sync shows t
   assert.equal((await list.json()).items.length, 2, "the sync's own record isn't listed as an image");
 });
 
+test("public list: a saved copy answers repeat visits without KV lists, survives a failed list, and a change drops it", async () => {
+  const kv = fakeKV();
+  await libItem(kvBlobStore(kv), 1);
+  const get = async () => (await (await handleImages(imgReq("/api/images?public=1"), { blobs: kvBlobStore(kv), env: envOf() })).json()).items.length;
+  const lists = () => kv.ops.filter(([op, k]) => op === "list" && k === "image:").length;
+  assert.equal(await get(), 1);
+  assert.equal(lists(), 1);
+  assert.equal(await get(), 1);
+  assert.equal(lists(), 1, "the second visit reads the saved copy");
+  await libItem(kvBlobStore(kv), 2);
+  assert.equal(await get(), 2, "an upload drops the copy, so the new image shows");
+  assert.equal(lists(), 2);
+  const realList = kv.list;
+  kv.list = async () => { throw new Error("KV list() limit exceeded for the day."); };
+  const snap = JSON.parse(new TextDecoder().decode(kv.m.get("snapshot:public-images").data));
+  snap.at = Date.now() - 7 * 3600e3;
+  kv.m.set("snapshot:public-images", { data: new TextEncoder().encode(JSON.stringify(snap)).buffer, metadata: null });
+  assert.equal(await get(), 2, "an old copy still answers when listing fails");
+  kv.list = realList;
+});
+
 // ---------- rank tracker ----------
 const TR = await import("../lib/tracker.mjs");
 async function trackerSa() {
