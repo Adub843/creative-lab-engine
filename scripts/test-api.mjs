@@ -2051,6 +2051,22 @@ test("marketing: a broken site lists each problem with a fix", async () => {
   assert.equal(levelOf(down, "sitemap"), "fail");
 });
 
+test("marketing: a 429 from Shopify is tried again, then reported as a warning, not a broken site", async () => {
+  let calls = 0;
+  const limited = async () => { calls++; return new Response("Too many requests", { status: 429, headers: { "retry-after": "1" } }); };
+  const a = await MK.auditSite(limited, { store: "ed", site: "https://elevatedshirts.com", key: MKENV.ED_INDEXNOW_KEY, clock: () => NOW });
+  for (const id of ["home-up", "sitemap", "robots", "llms", "indexnow-key"]) {
+    assert.equal(levelOf(a, id), "warn", id);
+    assert.match(a.checks.find((c) => c.id === id).fix, /Shopify limited/);
+  }
+  assert.ok(!a.checks.some((c) => /password|Create page handle llms/.test(c.fix ?? "")), "no domain, password or llms advice for a 429");
+  assert.equal(calls, 10, "each of the 5 pages is asked twice");
+  let n = 0;
+  const once = async () => (n++ === 0 ? new Response("", { status: 429 }) : new Response("User-agent: *", { status: 200 }));
+  const page = await MK.getPage(once, "https://elevatedshirts.com/robots.txt", { retryWaitMs: 1 });
+  assert.equal(page.status, 200);
+});
+
 test("marketing: the Elevated Designs key is never verified on Charleston 3D (brands stay apart)", async () => {
   const a = await MK.auditSite(fakeSite().fetch, { store: "c3d", site: "https://charleston3d.com", key: MKENV.ED_INDEXNOW_KEY, clock: () => NOW });
   assert.equal(levelOf(a, "indexnow-key"), "fail");
