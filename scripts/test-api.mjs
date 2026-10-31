@@ -2061,6 +2061,12 @@ test("marketing: a 429 from Shopify is tried again, then reported as a warning, 
   }
   assert.ok(!a.checks.some((c) => /password|Create page handle llms/.test(c.fix ?? "")), "no domain, password or llms advice for a 429");
   assert.equal(calls, 10, "each of the 5 pages is asked twice");
+  assert.equal(a.scores.seo, null, "checks Shopify turned away don't lower the score");
+  const kvm = new Map([["history:ed", JSON.stringify([{ date: "2026-10-27", scores: { overall: 80 } }])]]);
+  const kv = { get: async (k) => JSON.parse(kvm.get(k) ?? "null"), put: async (k, v) => kvm.set(k, v) };
+  const saved = await MK.saveHistory(kv, a);
+  assert.equal(saved.history.length, 1, "a run Shopify turned away isn't charted");
+  assert.equal(saved.previous.scores.overall, 80);
   let n = 0;
   const once = async () => (n++ === 0 ? new Response("", { status: 429 }) : new Response("User-agent: *", { status: 200 }));
   const page = await MK.getPage(once, "https://elevatedshirts.com/robots.txt", { retryWaitMs: 1 });
