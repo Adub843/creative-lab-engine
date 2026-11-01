@@ -17,7 +17,7 @@
 import { handleProducts, HttpError } from "../lib/shopify.mjs";
 import { handleInsights } from "../lib/insights.mjs";
 import { handleListings, libraryReader } from "../lib/listings.mjs";
-import { handleImages } from "../lib/images.mjs";
+import { handleImages, refreshPublicSnapshot } from "../lib/images.mjs";
 import { handleMember } from "../lib/members.mjs";
 import { handleFiles } from "../lib/files.mjs";
 import { r2BlobStore, combinedStore } from "../lib/r2-store.mjs";
@@ -201,6 +201,8 @@ export async function scheduledKittlSync(env, fetchImpl = (input, init) => fetch
   try {
     const result = await syncKittlLibrary({ blobs: imageStore(env), fetchImpl });
     await env.IMAGES.put(KITTL_STATE_KEY, JSON.stringify(result));
+    // A fresh store, so its saved public list is rebuilt even when the sync itself dropped it.
+    try { await refreshPublicSnapshot(imageStore(env)); } catch (e) { console.error("public list copy", e?.message); }
     return result;
   } catch (e) {
     console.error("kittl sync", e?.code ?? e?.name, e?.message);

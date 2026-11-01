@@ -3119,6 +3119,17 @@ test("public list: a saved copy answers repeat visits without KV lists, survives
   kv.list = realList;
 });
 
+test("kittl cron: saves a fresh public list copy, so the shirt apps don't need a KV list later that day", async () => {
+  const kv = fakeKV();
+  await libItem(kvBlobStore(kv), 1);
+  await scheduledKittlSync({ IMAGES: kv }, kittlFetch(manifest([1, 2])).fetchImpl);
+  const snap = JSON.parse(new TextDecoder().decode(kv.m.get("snapshot:public-images").data));
+  assert.equal(snap.items.length, 2);
+  kv.list = async () => { throw new Error("KV list() limit exceeded for the day."); };
+  const res = await handleImages(imgReq("/api/images?public=1"), { blobs: kvBlobStore(kv), env: envOf() });
+  assert.equal((await res.json()).items.length, 2);
+});
+
 // ---------- rank tracker ----------
 const TR = await import("../lib/tracker.mjs");
 async function trackerSa() {
