@@ -192,6 +192,15 @@ async function main() {
     if (body.done) t.doneAt = "2026-10-27T13:00:00Z";
     return json(200, { store: body.store, task: t, tasks });
   });
+  // Handoff board and the manager run's brief (lib/handoffs.mjs), read-only here.
+  const HANDOFFS = { handoffs: [{ id: "h1", lane: "marketing", task: "Daily site check", status: "ok", at: "2026-10-27T11:05:00Z", did: "Checked both sites; no problems.", headsUpTo: [] }],
+    brief: { at: "2026-10-27T10:30:00Z", needsYou: ["Turn on auto-renew for epix3d.com"], fixed: ["Fixed a broken link"], watching: [] }, lanes: ["ops", "c3d", "ed", "marketing", "builder", "admin", "console", "claude"], stale: [] };
+  const handoffCalls = [];
+  await page.route("**/api/handoffs**", async (route) => {
+    const req = route.request(); handoffCalls.push(req.url());
+    if (req.headers()["x-console-key"] !== KEY) return route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: "Wrong or missing console key.", code: "bad_key" }) });
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(HANDOFFS) });
+  });
   await page.route("**/api/insights**", async (route) => {
     const u = new URL(route.request().url());
     const store = u.searchParams.get("store");
@@ -2003,6 +2012,8 @@ async function main() {
     await task("Call the print shop").locator("button.x").click();
     await page.waitForFunction(() => document.querySelectorAll(".tasks .task").length === 1);
     assert.equal(await page.locator(".member", { hasText: "Console" }).count(), 1, "the console's own jobs are listed too");
+    await page.waitForSelector(".handoffs .handoff");
+    assert.match(await page.locator(".handoffs .handoff").first().textContent(), /marketing: Daily site check/);
     await noOverflow("team 1280");
     if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "team-c3d-1280.png"), fullPage: true }); }
     await page.click('.seg-btn[data-store="ed"]');
@@ -2019,6 +2030,9 @@ async function main() {
     await page.click('a.nav[data-route="home"]');
     await page.waitForSelector(".home-tasks li");
     assert.equal(await page.locator(".home-tasks li").first().textContent(), "Order more Gildan 5000 in navy");
+    await page.waitForSelector('.brief-part[data-part="needs"] li');
+    assert.equal(await page.locator('.brief-part[data-part="needs"] li').first().textContent(), "Turn on auto-renew for epix3d.com");
+    assert.ok(handoffCalls.some((u) => u.includes("limit=1")) && handoffCalls.some((u) => u.includes("limit=200")));
   });
 
   await step("shirt builder: a switch per Elevated Designs product, none on Charleston 3D; off sends only the tag", async () => {
