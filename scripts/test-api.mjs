@@ -1871,6 +1871,22 @@ test("worker: a listing reads its design from the same KV image library", async 
     assert.equal(calls.length, before);
   });
 
+  test("pricing: a failed cron step saves its reason once, and keeps the sync's place", async () => {
+    const kvData = new Map([["pricing:state", JSON.stringify({ phase: "idle", hash: "abc", finishedAt: "2026-10-31T15:45:08.542Z" })]]);
+    let writes = 0;
+    const kv = { get: async (k) => (kvData.has(k) ? JSON.parse(kvData.get(k)) : null), put: async (k, v) => { writes++; kvData.set(k, v); } };
+    const env = envOf({ ED_SHOPIFY_DOMAIN: "elevated-designs.myshopify.com", ED_ADMIN_TOKEN: "shpat_x", GSC_SERVICE_ACCOUNT: "not json" });
+    const fetchImpl = async () => { throw new Error("no network in this test"); };
+    await assert.rejects(P.scheduledPricing({ env, kv, fetchImpl }), /valid JSON/);
+    const s = JSON.parse(kvData.get("pricing:state"));
+    assert.match(s.error, /valid JSON/);
+    assert.ok(s.errorAt);
+    assert.equal(s.phase, "idle");
+    assert.equal(s.hash, "abc");
+    await assert.rejects(P.scheduledPricing({ env, kv, fetchImpl }));
+    assert.equal(writes, 1, "the same reason again is not written again");
+  });
+
   test("pricing: route needs the key, is ED only, and reports where the sync is", async () => {
     const kv = { get: async () => ({ phase: "idle", report: { changed: 3 } }), put: async () => {} };
     const r0 = await P.handlePricing({ method: "GET", query: new URLSearchParams("store=ed"), header: () => null }, { env: envOf(), kv, fetch });
