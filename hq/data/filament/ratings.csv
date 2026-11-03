@@ -1,21 +1,21 @@
 brand,type,avg_rating,reviews,source,checked
-Polymaker,PLA+,4.58,3305,"Amazon search, review-weighted",2026-10-30
-Polymaker,Matte PLA,4.52,35875,"Amazon search, review-weighted",2026-10-30
-Polymaker,PLA,4.51,1327,"Amazon search, review-weighted",2026-10-30
-Polymaker,Silk PLA,4.80,2955,"Amazon search, review-weighted",2026-10-30
-Polymaker,PETG,4.60,6132,"Amazon search, review-weighted",2026-10-30
-Polymaker,TPU 95A,4.59,3268,"Amazon search, review-weighted",2026-10-30
-Polymaker,ABS,3.60,28,"Amazon search, review-weighted",2026-10-30
-Bambu Lab,Matte PLA,4.57,3548,"Amazon search, review-weighted",2026-10-30
-Bambu Lab,Silk PLA,4.55,771,"Amazon search, review-weighted",2026-10-30
-Bambu Lab,PETG,4.49,2046,"Amazon search, review-weighted",2026-10-30
+Polymaker,PLA+,4.59,9386,"Amazon search, review-weighted",2026-11-02
+Polymaker,Matte PLA,4.59,45502,"Amazon search, review-weighted",2026-11-02
+Polymaker,PLA,4.59,10449,"Amazon search, review-weighted",2026-11-02
+Polymaker,Silk PLA,4.79,2308,"Amazon search, review-weighted",2026-11-02
+Polymaker,PETG,4.60,5643,"Amazon search, review-weighted",2026-11-02
+Polymaker,TPU 95A,4.60,3616,"Amazon search, review-weighted",2026-11-02
+Polymaker,ABS,3.50,64,"Amazon search, review-weighted",2026-11-02
+Bambu Lab,Matte PLA,4.62,2275,"Amazon search, review-weighted",2026-11-02
+Bambu Lab,Silk PLA,4.60,1000,"Amazon search, review-weighted",2026-11-02
+Bambu Lab,PETG,4.52,353,"Amazon search, review-weighted",2026-11-02
 Bambu Lab,TPU 95A,4.54,195,"Amazon search, review-weighted",2026-10-30
-Bambu Lab,ABS,4.61,572,"Amazon search, review-weighted",2026-10-30
-ELEGOO,PLA+,4.60,18729,"Amazon search, review-weighted",2026-10-30
-ELEGOO,Matte PLA,4.60,39448,"Amazon search, review-weighted",2026-10-30
-ELEGOO,Silk PLA,4.70,34200,"Amazon search, review-weighted",2026-10-30
-ELEGOO,PETG,4.47,33247,"Amazon search, review-weighted",2026-10-30
-ELEGOO,TPU 95A,4.60,471,"Amazon search, review-weighted",2026-10-30
+Bambu Lab,ABS,4.60,555,"Amazon search, review-weighted",2026-11-02
+ELEGOO,PLA+,4.60,44878,"Amazon search, review-weighted",2026-11-02
+ELEGOO,Matte PLA,4.61,39443,"Amazon search, review-weighted",2026-11-02
+ELEGOO,Silk PLA,4.70,13736,"Amazon search, review-weighted",2026-11-02
+ELEGOO,PETG,4.45,45772,"Amazon search, review-weighted",2026-11-02
+ELEGOO,TPU 95A,4.64,424,"Amazon search, review-weighted",2026-11-02
 eSun,PLA,4.20,29134,"Amazon search, review-weighted",2026-10-30
 eSun,PLA+,4.41,138492,"Amazon search, review-weighted",2026-10-30
 eSun,Matte PLA,4.41,20066,"Amazon search, review-weighted",2026-10-30
@@ -83,3 +83,5 @@ ERYONE,Matte PLA,4.25,21081,"Amazon search, review-weighted",2026-10-30
 ERYONE,PETG,4.40,3662,"Amazon search, review-weighted",2026-10-30
 ERYONE,TPU 95A,4.46,2084,"Amazon search, review-weighted",2026-10-30
 ERYONE,ABS,4.40,186,"Amazon search, review-weighted",2026-10-30
+Bambu Lab,PLA,4.48,1856,"Amazon search, review-weighted",2026-11-02
+ELEGOO,PLA,4.60,23841,"Amazon search, review-weighted",2026-11-02
