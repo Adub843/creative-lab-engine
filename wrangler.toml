@@ -63,6 +63,11 @@ max_batch_size = 1
 max_batch_timeout = 0
 max_retries = 0
 
+# Workers Logs: keeps the crons' and the queue's console.error lines (price sync, Kittl sync, queue failures) so a
+# failure can be read in the dashboard (Workers > creative-lab-engine > Logs). Free plan: 200,000 log lines a day.
+[observability]
+enabled = true
+
 [vars]
 CONSOLE_PAGE = "https://claude.ai/artifact/U8rNeWMPq7NfF7f88AEuPK"
 
