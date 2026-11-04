@@ -271,6 +271,20 @@ test("Dev Dashboard app: wrong secret is a clear 502 without leaking it; half-se
   assert.match(half.body.error, /ED_CLIENT_ID and ED_CLIENT_SECRET/);
 });
 
+test("Dev Dashboard app: Shopify's own refusal reason is shown, never the secret", async () => {
+  clearTokenCache();
+  const fetch = async (url) => String(url).endsWith("/admin/oauth/access_token")
+    ? new Response(JSON.stringify({ error: "invalid_client", error_description: "Could not find Shopify API application with api_key dev-client-id <b>x</b>" }), { status: 400 })
+    : new Response("{}", { status: 500 });
+  const res = await handleProducts(keyed({ store: "ed" }), { env: envOf({ ED_ADMIN_TOKEN: undefined, ED_CLIENT_ID: "dev-client-id", ED_CLIENT_SECRET: "other-secret" }), fetch });
+  assert.equal(res.status, 502);
+  assert.equal(res.body.code, "shopify_auth");
+  assert.match(res.body.error, /HTTP 400: invalid_client: Could not find Shopify API application with api_key \[hidden\]/);
+  assert.ok(!res.body.error.includes("dev-client-id"));
+  assert.ok(!res.body.error.includes("<"));
+  assert.ok(!JSON.stringify(res.body).includes("other-secret"));
+});
+
 test("userErrors are propagated as 422 with Shopify's messages", async () => {
   const sh = fakeShopify({ publishErrors: [{ field: ["id"], message: "Product can't be published: missing price" }] });
   const res = await handleProducts(post({ store: "c3d", id: PID, live: true }), { env: envOf(), fetch: sh.fetch });
@@ -1538,8 +1552,10 @@ test("build: dist/ holds only index.html, assets/ and tools/, and wrangler.toml 
   assert.match(toml, /^run_worker_first = true$/m, "API routes and security headers go through the Worker");
   assert.match(toml, /compatibility_flags = \["nodejs_compat"\]/);
   assert.match(toml, /\[\[kv_namespaces\]\]\s+binding = "IMAGES"/);
-  assert.ok(!/\[vars\]|shpat_|CONSOLE_KEY\s*=|_TOKEN\s*=|_SECRET\s*=/.test(toml), "no vars, no secrets in wrangler.toml");
-  assert.deepEqual([...toml.matchAll(/bucket_name\s*=\s*"([^"]+)"/g)].map((m) => m[1]), ["c3d-files"], "one R2 bucket: Charleston 3D's print files");
+  assert.ok(!/shpat_|CONSOLE_KEY\s*=|_TOKEN\s*=|_SECRET\s*=/.test(toml), "no secrets in wrangler.toml");
+  const vars = toml.split(/\n\[vars\]\n/)[1]?.split(/\n\[/)[0] ?? "";
+  assert.deepEqual(vars.split("\n").filter((l) => l.trim() && !l.startsWith("#")).map((l) => l.split("=")[0].trim()), toml.includes("[vars]") ? ["CONSOLE_PAGE"] : [], "the only plain variable is the console's address");
+  assert.deepEqual([...toml.matchAll(/bucket_name\s*=\s*"([^"]+)"/g)].map((m) => m[1]), ["c3d-files", "creative-lab-engine"], "two R2 buckets: Charleston 3D's print files and the console's action answers");
   // Nothing in this project runs on Netlify: no config, functions, packages, code or docs for it.
   for (const gone of ["netlify.toml", "netlify", "lib/netlify.mjs"]) assert.ok(!fs.existsSync(path.join(root, gone)), `${gone} is gone`);
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
@@ -1550,10 +1566,10 @@ test("build: dist/ holds only index.html, assets/ and tools/, and wrangler.toml 
   for (const f of hosting) assert.ok(!/netlify/i.test(fs.readFileSync(path.join(root, f), "utf8")), `${f} mentions Netlify`);
 });
 
-test("worker: the entry module exports only the fetch and scheduled handlers (workerd refuses anything else)", async () => {
+test("worker: the entry module exports only the fetch, scheduled and queue handlers (workerd refuses anything else)", async () => {
   const entry = await import("../worker/index.mjs");
   assert.deepEqual(Object.keys(entry), ["default"]);
-  assert.deepEqual(Object.keys(entry.default), ["fetch", "scheduled"]);
+  assert.deepEqual(Object.keys(entry.default), ["fetch", "scheduled", "queue"]);
   const res = await entry.default.fetch(wreq("/api/nope"), workerEnv());
   assert.equal(res.status, 404);
 });
@@ -1855,6 +1871,22 @@ test("worker: a listing reads its design from the same KV image library", async 
     assert.equal(calls.length, before);
   });
 
+  test("pricing: a failed cron step saves its reason once, and keeps the sync's place", async () => {
+    const kvData = new Map([["pricing:state", JSON.stringify({ phase: "idle", hash: "abc", finishedAt: "2026-10-31T15:45:08.542Z" })]]);
+    let writes = 0;
+    const kv = { get: async (k) => (kvData.has(k) ? JSON.parse(kvData.get(k)) : null), put: async (k, v) => { writes++; kvData.set(k, v); } };
+    const env = envOf({ ED_SHOPIFY_DOMAIN: "elevated-designs.myshopify.com", ED_ADMIN_TOKEN: "shpat_x", GSC_SERVICE_ACCOUNT: "not json" });
+    const fetchImpl = async () => { throw new Error("no network in this test"); };
+    await assert.rejects(P.scheduledPricing({ env, kv, fetchImpl }), /valid JSON/);
+    const s = JSON.parse(kvData.get("pricing:state"));
+    assert.match(s.error, /valid JSON/);
+    assert.ok(s.errorAt);
+    assert.equal(s.phase, "idle");
+    assert.equal(s.hash, "abc");
+    await assert.rejects(P.scheduledPricing({ env, kv, fetchImpl }));
+    assert.equal(writes, 1, "the same reason again is not written again");
+  });
+
   test("pricing: route needs the key, is ED only, and reports where the sync is", async () => {
     const kv = { get: async () => ({ phase: "idle", report: { changed: 3 } }), put: async () => {} };
     const r0 = await P.handlePricing({ method: "GET", query: new URLSearchParams("store=ed"), header: () => null }, { env: envOf(), kv, fetch });
@@ -2033,6 +2065,28 @@ test("marketing: a broken site lists each problem with a fix", async () => {
   const down = await MK.auditSite(fakeSite({ down: true }).fetch, { store: "c3d", site: "https://charleston3d.com", key: "c3dkey12345678", clock: () => NOW });
   assert.equal(levelOf(down, "home-up"), "fail");
   assert.equal(levelOf(down, "sitemap"), "fail");
+});
+
+test("marketing: a 429 from Shopify is tried again, then reported as a warning, not a broken site", async () => {
+  let calls = 0;
+  const limited = async () => { calls++; return new Response("Too many requests", { status: 429, headers: { "retry-after": "1" } }); };
+  const a = await MK.auditSite(limited, { store: "ed", site: "https://elevatedshirts.com", key: MKENV.ED_INDEXNOW_KEY, clock: () => NOW });
+  for (const id of ["home-up", "sitemap", "robots", "llms", "indexnow-key"]) {
+    assert.equal(levelOf(a, id), "warn", id);
+    assert.match(a.checks.find((c) => c.id === id).fix, /Shopify limited/);
+  }
+  assert.ok(!a.checks.some((c) => /password|Create page handle llms/.test(c.fix ?? "")), "no domain, password or llms advice for a 429");
+  assert.equal(calls, 10, "each of the 5 pages is asked twice");
+  assert.equal(a.scores.seo, null, "checks Shopify turned away don't lower the score");
+  const kvm = new Map([["history:ed", JSON.stringify([{ date: "2026-10-27", scores: { overall: 80 } }])]]);
+  const kv = { get: async (k) => JSON.parse(kvm.get(k) ?? "null"), put: async (k, v) => kvm.set(k, v) };
+  const saved = await MK.saveHistory(kv, a);
+  assert.equal(saved.history.length, 1, "a run Shopify turned away isn't charted");
+  assert.equal(saved.previous.scores.overall, 80);
+  let n = 0;
+  const once = async () => (n++ === 0 ? new Response("", { status: 429 }) : new Response("User-agent: *", { status: 200 }));
+  const page = await MK.getPage(once, "https://elevatedshirts.com/robots.txt", { retryWaitMs: 1 });
+  assert.equal(page.status, 200);
 });
 
 test("marketing: the Elevated Designs key is never verified on Charleston 3D (brands stay apart)", async () => {
@@ -2665,7 +2719,9 @@ test("wrangler.toml: MARKETING and PRICING KV bindings, the daily audit cron, th
   const toml = fs.readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   assert.match(toml, /\[\[kv_namespaces\]\]\s*\nbinding = "MARKETING"/);
   assert.match(toml, /\[\[kv_namespaces\]\]\s*\nbinding = "PRICING"/);
-  assert.match(toml, /\[triggers\]\s*\ncrons = \["0 11 \* \* \*", "30 11 \* \* \*", "\*\/15 \* \* \* \*", "45 \* \* \* \*"\]/);
+  // On since the switch-over from the old business-console Worker (2026-10-31).
+  assert.match(toml, /\[triggers\][\s\S]*\ncrons = \["0 11 \* \* \*", "30 11 \* \* \*", "\*\/15 \* \* \* \*", "45 \* \* \* \*"\]/);
+  assert.match(toml, /\[\[queues\.consumers\]\]\s*\nqueue = "creative-lab-actions"\s*\nmax_batch_size = 1\s*\nmax_batch_timeout = 0/);
   const W2 = await import("../worker/app.mjs");
   assert.equal(W2.AUDIT_CRON, "0 11 * * *");
   assert.equal(W2.AUTOFIX_CRON, "30 11 * * *");
@@ -3056,6 +3112,38 @@ test("kittl sync: the hourly cron saves its result and /api/library-sync shows t
   assert.deepEqual([bad.failed, bad.problems], [1, [`${kid(3)}: not a valid png file`]], "the reason a copy failed is shown");
   const list = await handleImages(imgReq("/api/images?public=1"), { blobs: kvBlobStore(kv), env: envOf() });
   assert.equal((await list.json()).items.length, 2, "the sync's own record isn't listed as an image");
+});
+
+test("public list: a saved copy answers repeat visits without KV lists, survives a failed list, and a change drops it", async () => {
+  const kv = fakeKV();
+  await libItem(kvBlobStore(kv), 1);
+  const get = async () => (await (await handleImages(imgReq("/api/images?public=1"), { blobs: kvBlobStore(kv), env: envOf() })).json()).items.length;
+  const lists = () => kv.ops.filter(([op, k]) => op === "list" && k === "image:").length;
+  assert.equal(await get(), 1);
+  assert.equal(lists(), 1);
+  assert.equal(await get(), 1);
+  assert.equal(lists(), 1, "the second visit reads the saved copy");
+  await libItem(kvBlobStore(kv), 2);
+  assert.equal(await get(), 2, "an upload drops the copy, so the new image shows");
+  assert.equal(lists(), 2);
+  const realList = kv.list;
+  kv.list = async () => { throw new Error("KV list() limit exceeded for the day."); };
+  const snap = JSON.parse(new TextDecoder().decode(kv.m.get("snapshot:public-images").data));
+  snap.at = Date.now() - 7 * 3600e3;
+  kv.m.set("snapshot:public-images", { data: new TextEncoder().encode(JSON.stringify(snap)).buffer, metadata: null });
+  assert.equal(await get(), 2, "an old copy still answers when listing fails");
+  kv.list = realList;
+});
+
+test("kittl cron: saves a fresh public list copy, so the shirt apps don't need a KV list later that day", async () => {
+  const kv = fakeKV();
+  await libItem(kvBlobStore(kv), 1);
+  await scheduledKittlSync({ IMAGES: kv }, kittlFetch(manifest([1, 2])).fetchImpl);
+  const snap = JSON.parse(new TextDecoder().decode(kv.m.get("snapshot:public-images").data));
+  assert.equal(snap.items.length, 2);
+  kv.list = async () => { throw new Error("KV list() limit exceeded for the day."); };
+  const res = await handleImages(imgReq("/api/images?public=1"), { blobs: kvBlobStore(kv), env: envOf() });
+  assert.equal((await res.json()).items.length, 2);
 });
 
 // ---------- rank tracker ----------
@@ -3526,4 +3614,109 @@ test("worker: with the FILES bucket bound, uploads go to R2 and the 3D file libr
   const plain = await W.handleRequest(wreq("/api/files", { method: "POST", headers: { ...KEYH, "x-filename": "cup.3mf" }, body: new Uint8Array([0x50, 0x4b, 3, 4]) }), workerEnv({ IMAGES: kv }));
   assert.equal(plain.status, 201);
   assert.ok(kv.m.has(`c3d-file:${(await plain.json()).item.key}`));
+});
+
+// The Creative Lab Studios console's actions arrive on a queue and their answers go to the RESULTS bucket (worker/queue.mjs).
+function fakeResults() {
+  const m = new Map();
+  return { m,
+    async put(key, data, { httpMetadata, customMetadata } = {}) {
+      for (const v of Object.values(customMetadata ?? {})) assert.equal(typeof v, "string", "R2 custom metadata values are strings");
+      m.set(key, { bytes: data instanceof ArrayBuffer ? new Uint8Array(data.slice(0)) : ArrayBuffer.isView(data) ? new Uint8Array(data) : new TextEncoder().encode(String(data)), httpMetadata: { ...httpMetadata }, customMetadata: { ...customMetadata }, uploaded: new Date() });
+    },
+    async get(key) { const o = m.get(key); return o ? { key, httpMetadata: o.httpMetadata, customMetadata: o.customMetadata, arrayBuffer: async () => o.bytes.buffer.slice(0) } : null; },
+    async delete(keys) { for (const k of [].concat(keys)) m.delete(k); },
+    async list({ prefix = "" } = {}) { return { objects: [...m.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key, uploaded: m.get(key).uploaded })), truncated: false }; },
+  };
+}
+
+test("queue: a console action runs like the old API route, signed with the engine's key", async () => {
+  const Q = await import("../worker/queue.mjs");
+  const RESULTS = fakeResults();
+  const env = workerEnv({ RESULTS });
+  const text = (id) => new TextDecoder().decode(RESULTS.m.get(`results/${id}`).bytes);
+  // A library upload: the console puts the bytes in uploads/ first, then sends the action.
+  await RESULTS.put("uploads/up-0000001", PNG.buffer.slice(PNG.byteOffset, PNG.byteOffset + PNG.byteLength), { httpMetadata: { contentType: "image/png" } });
+  const up = await Q.runAction({ id: "act-0000001", method: "POST", path: "/api/images", bodyRef: "uploads/up-0000001", filename: "palm.png", tags: "palmetto" }, env);
+  assert.equal(up.status, 201);
+  assert.equal(RESULTS.m.has("uploads/up-0000001"), false, "the upload is removed once used");
+  assert.equal(RESULTS.m.get("results/act-0000001").customMetadata.status, "201");
+  // A big upload comes in parts, joined in order, and every part is removed afterwards.
+  const half = Math.floor(PNG.byteLength / 2);
+  await RESULTS.put("uploads/up-0000002.p0", PNG.slice(0, half), { httpMetadata: { contentType: "image/png" } });
+  await RESULTS.put("uploads/up-0000002.p1", PNG.slice(half));
+  const big = await Q.runAction({ id: "act-0000004", method: "POST", path: "/api/images", bodyParts: ["uploads/up-0000002.p0", "uploads/up-0000002.p1"], filename: "palm-2.png" }, env);
+  assert.equal(big.status, 201);
+  assert.equal([...RESULTS.m.keys()].some((k) => k.startsWith("uploads/up-0000002")), false);
+  // Listing needs the key; the engine adds it, so the console never holds it.
+  const ls = await Q.runAction({ id: "act-0000002", method: "GET", path: "/api/images" }, env);
+  assert.equal(ls.status, 200);
+  assert.ok(JSON.parse(text("act-0000002")).items.some((i) => i.name === "palm.png"));
+  // Without a key on the engine, nothing that needs one runs.
+  const nokey = await Q.runAction({ id: "act-0000003", method: "GET", path: "/api/images" }, workerEnv({ RESULTS, CONSOLE_KEY: undefined }));
+  assert.equal(nokey.status >= 400, true);
+});
+
+test("queue: bad actions are refused with a plain reason and nothing outside /api/ runs", async () => {
+  const Q = await import("../worker/queue.mjs");
+  const RESULTS = fakeResults();
+  const env = workerEnv({ RESULTS });
+  for (const [msg, why] of [
+    [{ id: "act-0000010", path: "/" }, /Only \/api\//],
+    [{ id: "act-0000011", method: "TRACE", path: "/api/images" }, /Unknown method/],
+    [{ id: "act-0000012", method: "POST", path: "/api/images", bodyRef: "results/act-0000010" }, /uploads\//],
+    [{ id: "act-0000013", method: "POST", path: "/api/images", bodyRef: "uploads/missing-001" }, /wasn't found/],
+    [{ id: "act-0000014", method: "POST", path: "/api/images", bodyParts: ["uploads/a", "../x"] }, /uploads\//],
+    [{ id: "act-0000015", method: "POST", path: "/api/images", bodyParts: "uploads/a" }, /list of up to 200/],
+  ]) {
+    const r = await Q.runAction(msg, env);
+    assert.equal(r.status, 400);
+    assert.match(JSON.parse(new TextDecoder().decode(RESULTS.m.get(`results/${msg.id}`).bytes)).error, why);
+  }
+  assert.deepEqual(await Q.runAction({ id: "../../etc", path: "/api/images" }, env), { id: null, status: 400 }, "a bad id saves nothing");
+  // handleQueue acks every message, even a failing one, so nothing loops.
+  let acked = 0;
+  await Q.handleQueue({ messages: [{ body: { id: "act-0000020", path: "/api/nope" }, ack: () => acked++ }] }, env);
+  assert.equal(acked, 1);
+  assert.equal(RESULTS.m.get("results/act-0000020").customMetadata.status, "404");
+});
+
+test("queue: answers and uploads older than a day are pruned", async () => {
+  const Q = await import("../worker/queue.mjs");
+  const RESULTS = fakeResults();
+  await RESULTS.put("results/old-0000001", new ArrayBuffer(1));
+  await RESULTS.put("uploads/old-0000002", new ArrayBuffer(1));
+  await RESULTS.put("results/new-0000003", new ArrayBuffer(1));
+  for (const k of ["results/old-0000001", "uploads/old-0000002"]) RESULTS.m.get(k).uploaded = new Date(Date.now() - 2 * 864e5);
+  assert.equal(await Q.pruneResults({ RESULTS }), 2);
+  assert.deepEqual([...RESULTS.m.keys()], ["results/new-0000003"]);
+});
+
+test("engine: with CONSOLE_PAGE set, pages go to the Creative Lab console and the API and tools still work", async () => {
+  const W = await import("../worker/app.mjs");
+  const page = "https://claude.ai/artifact/U8rNeWMPq7NfF7f88AEuPK";
+  const env = workerEnv({ CONSOLE_PAGE: page });
+  const home = await W.handleRequest(wreq("/"), env);
+  assert.equal(home.status, 302);
+  assert.equal(home.headers.get("location"), page);
+  assert.equal((await W.handleRequest(wreq("/api/images?public=1"), env)).status, 200, "the shirt apps still read the library");
+  assert.notEqual((await W.handleRequest(wreq("/tools/nameplate-maker/"), env)).status, 302);
+});
+
+test("picture: only Shopify picture addresses, resized, behind the key", async () => {
+  const { handlePicture } = await import("../lib/picture.mjs");
+  const seen = [];
+  const fetch = async (u) => { seen.push(String(u)); return new Response(PNG, { status: 200, headers: { "content-type": "image/png" } }); };
+  const req = (u, key = ENV.CONSOLE_KEY, w) => ({ method: "GET", query: new URLSearchParams({ u, ...(w ? { w } : {}) }), header: (k) => (k === "x-console-key" ? key : null) });
+  const env = (k) => ENV[k];
+  const ok = await handlePicture(req("https://cdn.shopify.com/s/files/1/shirt.png?v=1", ENV.CONSOLE_KEY, "160"), { env, fetch });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.headers.get("content-type"), "image/png");
+  assert.match(seen[0], /width=160/);
+  await handlePicture(req("https://elevatedshirts.com/cdn/shop/files/a.jpg"), { env, fetch });
+  for (const bad of ["https://evil.example/x.png", "http://cdn.shopify.com/x.png", "https://elevatedshirts.com/admin", "not a url"])
+    await assert.rejects(handlePicture(req(bad), { env, fetch }), /Only Shopify|picture address/);
+  await assert.rejects(handlePicture(req("https://cdn.shopify.com/x.png", "wrong-key-xxxxxxxxxxxx"), { env, fetch }), /console key/);
+  const notPic = async () => new Response("<html>", { status: 200, headers: { "content-type": "text/html" } });
+  await assert.rejects(handlePicture(req("https://cdn.shopify.com/x.png"), { env, fetch: notPic }), /isn't a picture/);
 });

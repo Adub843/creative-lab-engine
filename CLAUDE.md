@@ -180,7 +180,12 @@ The skills live in project files `agent-skills-catalog/skills/` and on the Deskt
   - each repo's `CLAUDE.md` (repo copies leave out account emails and add a short "This repo" section)
 - Never put secret values in any copy.
 
-## This repo: Business-console
+## This repo: creative-lab-engine
+
+- 2026-10-30: Aaron's only console is Creative Lab Studios (https://claude.ai/artifact/U8rNeWMPq7NfF7f88AEuPK). This repo is its background engine, moved here from Adub843/Business-console with full history and every branch; the old Business-console repo and Worker are being retired. The engine (Worker `creative-lab-engine`) has no pages: the console sends actions through the `creative-lab-actions` queue and reads answers from the `creative-lab-engine` R2 bucket (worker/queue.mjs). The shirt apps still read `/api/images?public=1` from it.
+- Its crons (11:00 and 11:30 UTC daily, every 15 minutes, hourly at :45) run here since the switch-over on 2026-10-31; the old business-console Worker has none. The free plan allows 5 crons per account. The shirt apps' public art list (`/api/images?public=1`) is served from a saved copy in KV (`snapshot:public-images`), because the free plan's 1,000 KV lists a day are shared with Hype Chain.
+
+### Older notes (from Business-console)
 
 - The private back office on Cloudflare Workers + KV (IMAGES, PRICING, MARKETING), with crons at 11:00 UTC, 11:30 UTC and every 15 minutes. It's deployed by hand from Aaron's PC: `npx.cmd wrangler deploy` in `Desktop\business-console`. The GitHub Action deploys only once the CLOUDFLARE_API_TOKEN/ACCOUNT_ID repo secrets exist.
 - Before deploying, make sure the branch contains every merged PR (#5, #6, #7, #8). `npm run check` and `npm test` must pass.

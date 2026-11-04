@@ -17,7 +17,7 @@
 import { handleProducts, HttpError } from "../lib/shopify.mjs";
 import { handleInsights } from "../lib/insights.mjs";
 import { handleListings, libraryReader } from "../lib/listings.mjs";
-import { handleImages } from "../lib/images.mjs";
+import { handleImages, refreshPublicSnapshot } from "../lib/images.mjs";
 import { handleMember } from "../lib/members.mjs";
 import { handleFiles } from "../lib/files.mjs";
 import { r2BlobStore, combinedStore } from "../lib/r2-store.mjs";
@@ -27,6 +27,7 @@ import { handlePricing, scheduledPricing } from "../lib/pricing.mjs";
 import { handleMarketing, runScheduledAudits, runScheduledFixes } from "../lib/marketing.mjs";
 import { handlePromotions } from "../lib/promotions.mjs";
 import { handleTeam } from "../lib/team.mjs";
+import { handlePicture } from "../lib/picture.mjs";
 import { runScheduledSnapshots } from "../lib/tracker.mjs";
 import { syncKittlLibrary, STATE_KEY as KITTL_STATE_KEY } from "../lib/kittl-sync.mjs";
 
@@ -129,6 +130,11 @@ export async function handleRequest(req, env) {
       return await listings(req, env, { readImage });
     }
     if (pathname === "/api/pricing") return await pricing(req, env, { kv: env?.PRICING ?? null });
+    // A Shopify product picture for the console (it can't load pictures from other sites itself).
+    if (pathname === "/api/picture") {
+      const url = new URL(req.url);
+      return await handlePicture({ method: req.method, query: url.searchParams, header: (k) => req.headers.get(k) }, { env: envReader(env), fetch: (input, init) => fetch(input, init) });
+    }
     // The last Kittl library sync (counts only), so a check doesn't need the console key.
     if (pathname === "/api/library-sync" && req.method === "GET") {
       const last = env?.IMAGES ? await env.IMAGES.get(KITTL_STATE_KEY, "json") : null;
@@ -157,6 +163,9 @@ export async function handleRequest(req, env) {
     console.error("console api error", pathname, e?.name);
     return json({ error: "Something went wrong on the server." }, 500);
   }
+  // The engine has no pages of its own: with CONSOLE_PAGE set, anything that isn't /api/ or a tool
+  // goes to the Creative Lab Studios console instead.
+  if (env?.CONSOLE_PAGE && !pathname.startsWith("/tools/")) return Response.redirect(String(env.CONSOLE_PAGE), 302);
   // Everything else is one of the app's files.
   if (!env?.ASSETS) return new Response("Not found", { status: 404, headers: SITE_HEADERS });
   const res = await env.ASSETS.fetch(req);
@@ -192,6 +201,8 @@ export async function scheduledKittlSync(env, fetchImpl = (input, init) => fetch
   try {
     const result = await syncKittlLibrary({ blobs: imageStore(env), fetchImpl });
     await env.IMAGES.put(KITTL_STATE_KEY, JSON.stringify(result));
+    // A fresh store, so its saved public list is rebuilt even when the sync itself dropped it.
+    try { await refreshPublicSnapshot(imageStore(env)); } catch (e) { console.error("public list copy", e?.message); }
     return result;
   } catch (e) {
     console.error("kittl sync", e?.code ?? e?.name, e?.message);
