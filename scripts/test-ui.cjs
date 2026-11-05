@@ -1614,7 +1614,21 @@ async function main() {
     fields: { home_title: { label: "Home page title", group: "search", max: 70 }, bing_verification: { label: "Bing verification code", group: "search", max: 32 }, city: { label: "City", group: "geo", max: 60 }, ga4_id: { label: "Google Analytics 4 ID", group: "analytics", max: 20 } },
     settings: { home_title: "Charleston3D | 3D Printed Gifts Made in Charleston, SC", bing_verification: "", city: "Charleston", ga4_id: "" } };
   const mkTraffic = { shop: { available: true, sources: [{ source: "search", name: "Google", sessions: 30, conversionRate: 3.3 }, { source: "direct", name: "", sessions: 10, conversionRate: null }],
-      campaigns: [{ source: "qr", medium: "print", campaign: "ed-builder", sessions: 4, conversionRate: 0 }] },
+      campaigns: [{ source: "qr", medium: "print", campaign: "ed-builder", sessions: 4, conversionRate: 0 }],
+      stats: {
+        summary: { sessions: 412, visitors: 318, pageviews: 1290, pagesPerSession: 3.13, avgDuration: 104, bounceRate: 44.2, conversionRate: 1.46, addedToCartRate: 5.8, reachedCheckoutRate: 2.9, completedCheckoutRate: 1.46 },
+        daily: Array.from({ length: 30 }, (_, k) => ({ date: `2026-10-${String(k + 1).padStart(2, "0")}`, sessions: 8 + ((k * 7) % 11), visitors: 6, pageviews: 30 })),
+        countries: [{ label: "United States", sessions: 380, conversionRate: 1.6 }, { label: "Canada", sessions: 18, conversionRate: 0 }],
+        regions: [{ label: "South Carolina, United States", sessions: 240, conversionRate: 2.1 }, { label: "North Carolina, United States", sessions: 41, conversionRate: 0 }],
+        cities: [{ label: "Charleston, South Carolina, United States", sessions: 150, conversionRate: 2.7 }, { label: "Mount Pleasant, South Carolina, United States", sessions: 44, conversionRate: 2.3 }],
+        devices: [{ label: "Mobile", sessions: 300, avgDuration: 88, bounceRate: 47, conversionRate: 1.3 }, { label: "Desktop", sessions: 112, avgDuration: 151, bounceRate: 36, conversionRate: 1.8 }],
+        browsers: [{ label: "Safari", sessions: 220, conversionRate: 1.4 }, { label: "Chrome", sessions: 170, conversionRate: 1.5 }],
+        systems: [{ label: "iOS", sessions: 230, conversionRate: 1.3 }, { label: "Windows", sessions: 80, conversionRate: 1.9 }],
+        pages: [{ label: "/", sessions: 210, pageviews: 640, avgDuration: 97, bounceRate: 41, conversionRate: 1.4 }, { label: "/collections/charleston-tees-and-sweatshirts", sessions: 90, pageviews: 330, avgDuration: 142, bounceRate: 30, conversionRate: 2.2 }],
+        channels: [{ label: "Direct", sessions: 200, avgDuration: 90, bounceRate: 45, conversionRate: 1.5 }, { label: "Organic search", sessions: 120, avgDuration: 130, bounceRate: 38, conversionRate: 1.7 }],
+        hours: Array.from({ length: 24 }, (_, h) => ({ hour: h, sessions: h > 7 && h < 23 ? 5 + ((h * 3) % 9) : 0 })),
+        weekdays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((day, i) => ({ day, sessions: 40 + i * 6 })),
+      }, missing: [] },
     google: { connected: false, note: "Connect Google Search Console to see Google searches here (see the setup guide)." },
     bing: { connected: true, clicks: 3, impressions: 120, start: "2026-09-26", end: "2026-10-25", queries: [{ query: "charleston 3d printing", impressions: 60, clicks: 2, position: 7.5 }], opportunities: [{ query: "charleston 3d printing", position: 7.5 }] } };
   let mkCompetitors = [];
@@ -1826,6 +1840,8 @@ async function main() {
 
   await step("marketing: traffic, QR campaigns and Bing searches", async () => {
     await page.waitForSelector("td:has-text('ed-builder')");
+    assert.match(await page.locator("#mk-traffic").textContent(), /Time on site.*1m 44s/s);
+    assert.match(await page.locator("#mk-traffic").textContent(), /Charleston, South Carolina/);
     assert.match(await page.locator("text=Closest to page 1").locator("..").textContent(), /charleston 3d printing.*#7\.5/);
     assert.match(await page.locator("text=Connect Google Search Console to see Google searches").first().textContent(), /setup guide/);
   });
