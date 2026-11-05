@@ -2602,6 +2602,42 @@ test("marketing: traffic by source and UTM campaign, Bing queries, Google not se
   assert.match(d.body.shop.note, /read_reports/);
 });
 
+test("marketing: site stats (totals, daily, locations, devices, pages, channels, hours, weekdays) from ShopifyQL", async () => {
+  const seen = [];
+  const table = (cols, rows) => ({ shopifyqlQuery: { parseErrors: [], tableData: { columns: cols.map((name) => ({ name })), rows } } });
+  const sh = fakeShopify({ override: { MarketingTraffic: (v, data) => {
+    const q = v.q; seen.push(q);
+    if (/GROUP BY browser_that_fails|session_device_os/.test(q)) return data({ shopifyqlQuery: { parseErrors: ["Unknown column"], tableData: null } });
+    if (/average_session_duration, bounce_rate, conversion_rate, added_to_cart_rate/.test(q) && !/GROUP BY|TIMESERIES/.test(q))
+      return data(table(["sessions", "online_store_visitors", "pageviews", "pageviews_per_session", "average_session_duration", "bounce_rate", "conversion_rate", "added_to_cart_rate", "reached_checkout_rate", "completed_checkout_rate"],
+        [["200", "150", "640", "3.2", "95.4", "0.41", "0.015", "0.06", "0.03", "0.015"]]));
+    if (/TIMESERIES day/.test(q)) return data(table(["day", "sessions", "online_store_visitors", "pageviews"], [["2026-10-21", "10", "8", "30"], ["2026-10-20", "5", "5", "9"]]));
+    if (/GROUP BY session_city/.test(q)) return data(table(["session_city", "session_region", "session_country", "sessions", "online_store_visitors", "conversion_rate"], [["Charleston", "South Carolina", "United States", "60", "40", "0.05"], ["", "", "", "0", "0", "0"]]));
+    if (/GROUP BY session_country/.test(q)) return data(table(["session_country", "sessions", "online_store_visitors", "conversion_rate"], [["United States", "180", "130", "0.02"], ["Canada", "20", "20", "0"]]));
+    if (/GROUP BY landing_page_path/.test(q)) return data(table(["landing_page_path", "sessions", "pageviews", "average_session_duration", "bounce_rate", "conversion_rate"], [["/", "120", "300", "61.6", "0.5", "0.01"]]));
+    if (/GROUP BY hour_of_day/.test(q)) return data(table(["hour_of_day", "sessions"], [["9", "12"], ["21", "30"]]));
+    if (/GROUP BY day_of_week/.test(q)) return data(table(["day_of_week", "sessions"], [["Monday", "40"], ["Saturday", "70"]]));
+    if (/GROUP BY referrer_source|GROUP BY utm_source/.test(q)) return data(table(["referrer_source", "sessions"], []));
+    return data(table(["sessions"], []));
+  } } });
+  const res = await MK.handleMarketing(keyed({ store: "ed", part: "traffic", days: "30" }), mkCtx(mkFetch(sh).fetch));
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.days, 30);
+  assert.ok(seen.every((q) => /SINCE -30d UNTIL today/.test(q)), "every report covers the chosen days");
+  const st = res.body.shop.stats;
+  assert.deepEqual(st.summary, { sessions: 200, visitors: 150, pageviews: 640, pagesPerSession: 3.2, avgDuration: 95, bounceRate: 41, conversionRate: 1.5, addedToCartRate: 6, reachedCheckoutRate: 3, completedCheckoutRate: 1.5 });
+  assert.deepEqual(st.daily.map((d) => d.date), ["2026-10-20", "2026-10-21"]);
+  assert.deepEqual(st.countries.map((c) => [c.label, c.sessions, c.conversionRate]), [["United States", 180, 2], ["Canada", 20, 0]]);
+  assert.deepEqual(st.cities.map((c) => c.label), ["Charleston, South Carolina, United States"], "empty rows are dropped");
+  assert.deepEqual(st.pages[0], { label: "/", sessions: 120, visitors: null, conversionRate: 1, avgDuration: 62, bounceRate: 50, pageviews: 300 });
+  assert.equal(st.hours.length, 24); assert.equal(st.hours[21].sessions, 30); assert.equal(st.hours[0].sessions, 0);
+  assert.deepEqual(st.weekdays.map((d) => d.sessions), [40, 0, 0, 0, 0, 70, 0]);
+  assert.equal(st.systems, null, "a report Shopify can't run is left out");
+  assert.deepEqual(res.body.shop.missing, ["systems"]);
+  const bad = await MK.handleMarketing(keyed({ store: "ed", part: "traffic", days: "9999" }), mkCtx(mkFetch(sh).fetch));
+  assert.equal(bad.body.days, 90, "out-of-range days fall back to 90");
+});
+
 test("marketing: Google Search Console with a service account signs a JWT and reads queries for the store's own property", async () => {
   MK.clearGoogleToken();
   const pair = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
