@@ -189,7 +189,7 @@ function drawNav() {
 }
 
 // Switching store: pages that show one store's data reload in place; a tool only the other store
-// has (the shirt designer, the nameplate maker) gives way to Home.
+// has (the shirt designer, Maker Studio) gives way to Home.
 export function setStore(k, navigate = true) {
   if (!STORE_KEYS.includes(k)) return;
   store.set("bc-store", k);
@@ -245,7 +245,7 @@ function home() {
   const imgs = el("div", {}, el("p", { class: "muted" }, "Loading images…"));
   if (k === "ed") recentImages().then((n) => imgs.replaceChildren(n)).catch(() => imgs.replaceChildren(el("p", { class: "muted" }, "Couldn't load images.")));
   const primary = k === "ed" ? el("a", { class: "btn primary", href: "#products/ed/list" }, "List a design")
-    : el("a", { class: "btn primary", href: "#nameplate/c3d" }, "Make a nameplate");
+    : el("a", { class: "btn primary", href: "#makerstudio/c3d" }, "Open Maker Studio");
   return [
     el("div", { class: `home-head brand-${k}` }, el("div", { class: `brand-chip logo-${k}` }, brandLogo(k)),
       header(today, b.name, b.tagline, [primary])),
@@ -259,12 +259,14 @@ function home() {
 }
 
 // A self-contained tool app (assets in /tools/<slug>/), shown full size inside the console.
-function framePage(t) {
-  const frame = el("iframe", { class: "tool-frame", src: t.frame, title: t.name, loading: "eager", allow: "clipboard-write; fullscreen" });
+const OLD_MAKERS = ["nameplate", "hypechain", "maker"];
+function framePage(t, tab) {
+  const src = tab && /^[a-z0-9-]+$/.test(tab) ? `${t.frame}#${tab}` : t.frame;
+  const frame = el("iframe", { class: "tool-frame", src, title: t.name, loading: "eager", allow: "clipboard-write; fullscreen" });
   return [
     el("header", { class: "page-head tool-head" },
       el("div", { class: "stack" }, el("h1", {}, t.name), el("p", { class: "muted" }, t.sub)),
-      el("div", { class: "row" }, el("a", { class: "btn ghost", href: t.frame, target: "_blank", rel: "noopener" }, "Open full screen", el("span", { class: "ext", "aria-hidden": "true" }, "↗")))),
+      el("div", { class: "row" }, el("a", { class: "btn ghost", href: src, target: "_blank", rel: "noopener" }, "Open full screen", el("span", { class: "ext", "aria-hidden": "true" }, "↗")))),
     frame,
   ];
 }
@@ -439,7 +441,9 @@ function addBack(nodes, k) {
 }
 
 async function render() {
-  let [route = "", second] = location.hash.slice(1).split("/");
+  let [route = "", second, third] = location.hash.slice(1).split("/");
+  // The makers used to have their own pages; old links open the same maker inside Maker Studio.
+  if (OLD_MAKERS.includes(route)) { location.replace(`#makerstudio/c3d/${route}`); return; }
   if (route === "c3d" || route === "ed") { store.set("bc-store", route); history.replaceState(null, "", `#home/${route}`); route = "home"; }
   markStep();
   if (!route || route === "dashboard") route = "home";
@@ -466,7 +470,7 @@ async function render() {
     designs: async () => (await import("./design-library.js")).designLibraryPage(header),
     maker3d: () => meshyPage(header),
   };
-  const make = frameTool ? () => framePage(frameTool) : pages[route] ?? home;
+  const make = frameTool ? () => framePage(frameTool, third) : pages[route] ?? home;
   const nodes = [await make()].flat().filter(Boolean);
   if (make !== home) addBack(nodes, k);
   pageStoreHandler = takeStoreHandler();

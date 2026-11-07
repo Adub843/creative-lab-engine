@@ -27,17 +27,8 @@ export const TOOLS = [
   { id: "makerstudio", group: "make", store: "c3d", name: "Maker Studio", ico: "⬡",
     sub: "Every maker in one place: nameplates, hype chains, keychains, signs, light boxes",
     frame: "tools/maker-studio/" },
-  { id: "nameplate", group: "make", store: "c3d", name: "Nameplate maker", ico: "▭",
-    sub: "Type a name, pick a style, download a Bambu-ready 3MF or STL",
-    frame: "tools/nameplate-maker/" },
-  { id: "hypechain", group: "make", store: "c3d", name: "Hype chain maker", ico: "◇",
-    sub: "Custom pendant designer: logo or text to a printable chain pendant",
-    frame: "tools/hype-chain-maker/" },
   { id: "maker3d", group: "make", store: "c3d", name: "3D maker", ico: "◈", page: "maker3d",
     sub: "Photos or a few words in, a printable 3D model out (Meshy)" },
-  { id: "maker", group: "make", store: "c3d", name: "Maker", ico: "◫",
-    sub: "Picture in, Bambu file out: light boxes, keychains, signs and lithophanes",
-    frame: "tools/maker/" },
 
   // Library
   { id: "library", group: "library", store: "ed", name: "Design library", ico: "▦", page: "designs",
