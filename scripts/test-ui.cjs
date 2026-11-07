@@ -477,11 +477,11 @@ async function main() {
       await noOverflow(`${r} 1280`);
     };
     await page.click('.seg-btn[data-store="c3d"]');
-    for (const r of ["home", "products", "insights", "share", "map", "trends", "makerstudio", "nameplate", "hypechain", "maker"]) await visit(r);
+    for (const r of ["home", "products", "insights", "share", "map", "trends", "makerstudio"]) await visit(r);
     assert.equal(await page.locator('a.nav[data-route="studio"]').count(), 0, "the shirt designer is Elevated Designs only");
     await page.click('.seg-btn[data-store="ed"]');
     for (const r of ["home", "studio", "library", "share"]) await visit(r);
-    assert.equal(await page.locator('a.nav[data-route="nameplate"]').count(), 0, "the 3D makers are Charleston 3D only");
+    assert.equal(await page.locator('a.nav[data-route="makerstudio"]').count(), 0, "the 3D makers are Charleston 3D only");
     await page.click('.seg-btn[data-store="c3d"]');
     await page.click('a.nav[data-route="home"]');
     assert.equal(await page.locator(".tool-row").count(), 0, "Home doesn't repeat the sidebar's tools");
@@ -848,7 +848,7 @@ async function main() {
   });
 
   await step("home pages: store links go to the Shopify sites, not Netlify", async () => {
-    const pages = ["home", "products", "insights", "marketing", "promote", "studio", "map", "share", "team", "trends", "makerstudio", "nameplate", "hypechain", "maker", "files", "maker3d", "designs"];
+    const pages = ["home", "products", "insights", "marketing", "promote", "studio", "map", "share", "team", "trends", "makerstudio", "files", "maker3d", "designs"];
     const hashes = new Set();
     for (const [k, site, app] of [["c3d", "https://charleston3d.com", "https://app.charleston3d.com"], ["ed", "https://elevatedshirts.com", "https://design.elevatedshirts.com"]]) {
       await page.click('a.nav[data-route="home"]');
@@ -927,9 +927,20 @@ async function main() {
     await page.setViewportSize({ width: 1280, height: 900 });
   });
 
+  await step("maker studio: the one maker link; old maker links open the same maker inside it", async () => {
+    await page.goto(`${BASE}#home/c3d`);
+    for (const r of ["nameplate", "hypechain", "maker"]) assert.equal(await page.locator(`a.nav[data-route="${r}"]`).count(), 0, `no separate ${r} link`);
+    assert.equal(await page.locator('#view a.btn.primary').getAttribute("href"), "#makerstudio/c3d");
+    for (const r of ["nameplate", "hypechain", "maker"]) {
+      await page.goto(`${BASE}#${r}/c3d`);
+      await page.waitForFunction((rt) => location.hash === `#makerstudio/c3d/${rt}`, r);
+      await page.waitForSelector(`iframe.tool-frame[src="tools/maker-studio/#${r}"]`);
+    }
+  });
+
   await step("mobile 390px: nav fits, every link is reachable and works", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
-    for (const [k, routes] of [["c3d", ["home", "products", "insights", "share", "map", "maker", "nameplate"]], ["ed", ["home", "studio", "library", "share"]]]) {
+    for (const [k, routes] of [["c3d", ["home", "products", "insights", "share", "map", "makerstudio"]], ["ed", ["home", "studio", "library", "share"]]]) {
       await page.goto(`${BASE}#home/${k}`);
       for (const r of routes) {
         await page.click("#more");
