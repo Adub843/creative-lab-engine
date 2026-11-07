@@ -48,7 +48,7 @@
     for (const a of tabs.children) a.toggleAttribute("aria-current", false), a.dataset.id === m.id && a.setAttribute("aria-current", "page");
     if (view.getAttribute("src") !== m.src) { view.setAttribute("src", m.src); view.title = m.name + " maker"; hideBackBar(); }
   }
-  // A maker copied from the Design Studio carries a "Back to Design Studio" bar; inside the studio the tabs replace it.
+  // A maker opened on its own carries a "Back to Maker Studio" bar; inside Maker Studio the tabs replace it.
   // Checked as the maker page is read, not only at its load, which waits for the 3D libraries.
   let watch = 0;
   function hideBackBar() {
@@ -62,7 +62,7 @@
         if (!bar) return;
         clearInterval(watch);
         if (bar.tagName === "DIV") { bar.remove(); return; }
-        const back = bar.querySelector('a[href="/#makers"]');
+        const back = bar.querySelector('a[href="/#makers"], a[href^="/#makerstudio"]');
         if (back) { const sep = back.nextElementSibling; back.remove(); if (sep && sep.classList.contains("sep")) sep.remove(); }
       } catch { clearInterval(watch); }
     }, 50);

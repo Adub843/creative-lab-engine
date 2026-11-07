@@ -10,6 +10,12 @@ workers_dev = true
 # Keep variables added in the Cloudflare dashboard (IndexNow and Bing keys) when deploying.
 keep_vars = true
 
+# The E: drive library (Library, E: drive; lib/drive.mjs): the files stay on Aaron's PC and come through the
+# Cloudflare Tunnel run by drive-server/. A plain address, not a secret. library.epix3d.com is the tunnel's name from
+# the Design Studio days; it can later move to a console hostname (re-run drive-server/setup.ps1 with the new name).
+[vars]
+DRIVE_ORIGIN = "https://library.epix3d.com"
+
 # Copies index.html and assets/ into dist/ before `wrangler dev` and `wrangler deploy`.
 [build]
 command = "node scripts/build.mjs"
