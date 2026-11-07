@@ -1867,6 +1867,31 @@ test("worker: a listing reads its design from the same KV image library", async 
     assert.equal(r2.body.markup, 10);
     assert.equal(r2.body.report.changed, 3);
   });
+
+  test("pricing: the Price sheet page gets every row, with blank and design prices, and never makes one up", async () => {
+    const v = P.sheetView(SHEET, 10);
+    assert.equal(v.length, 5);
+    const s = v.find((r) => r.id === "gildan-64000" && r.size === "S");
+    assert.deepEqual([s.cost, s.suggested, s.yours, s.price, s.designPrice, s.offered], [2.81, 13.99, null, 13.99, 23.99, true]);
+    const x = v.find((r) => r.size === "2XL");
+    assert.deepEqual([x.price, x.designPrice], [21.5, 31.5], "your_price wins");
+    const off = v.find((r) => r.id === "fruit-3930r");
+    assert.deepEqual([off.offered, off.price, off.designPrice], [false, null, null], "offer=no has no store price");
+    assert.throws(() => P.sheetView([["name"]]), /needs id and size/);
+    const cat = P.catalogView();
+    assert.ok(cat.length > 50 && cat.every((r) => r.id && r.size));
+    assert.ok(cat.some((r) => r.id === "gildan-64000" && r.size === "S" && r.price > 0));
+    // The route: key needed, ED only, works without the PRICING KV, falls back to the bundled copy.
+    const hdr = (k) => (k === "x-console-key" ? ENV.CONSOLE_KEY : null);
+    const q = (s) => ({ method: "GET", query: new URLSearchParams(s), header: hdr });
+    assert.equal((await P.handlePricing({ ...q("store=ed&view=sheet"), header: () => null }, { env: envOf(), kv: null, fetch })).status, 401);
+    assert.equal((await P.handlePricing(q("store=c3d&view=sheet"), { env: envOf(), kv: null, fetch })).status, 400);
+    const r = await P.handlePricing(q("store=ed&view=sheet"), { env: envOf(), kv: null, fetch });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.source, "bundled");
+    assert.ok(r.body.rows.length > 50);
+    assert.match(r.body.sheetUrl, /11G7MyaGqSaz3WCd21etMYc-YebpAbyKzmvE1aqNWpy8/);
+  });
 }
 
 // ---------- marketing ----------

@@ -361,6 +361,11 @@ async function studioPage() {
   return [header("Elevated Designs", "Shirt designer", "Pick art from the library, place it on a real shirt photo, and download the print file or a mockup. No key needed to design."), await renderStudio()];
 }
 
+async function pricesPage() {
+  const { renderPrices } = await import("./prices.js");
+  return [header("Elevated Designs", "Price sheet", "The shirt price sheet, size by size: what each blank costs, what the store charges for it plain and with a design. Prices are changed in the sheet; the store follows within 15 minutes."), await renderPrices()];
+}
+
 // ---------- router ----------
 // #<page>/<store>[/<sub>]. Old addresses keep working: #dashboard is Home, #c3d and #ed are Home for that store.
 const view = document.getElementById("view");
@@ -455,7 +460,7 @@ async function render() {
   const frameTool = TOOLS.find((t) => t.frame && t.id === route);
   // A tool of the other store: show this store's Home rather than mixing the brands.
   if (frameTool && frameTool.store !== k) { location.replace(`#home/${k}`); return; }
-  if (((route === "studio" || route === "designs") && k !== "ed") || ((route === "files" || route === "maker3d") && k !== "c3d")) { location.replace(`#home/${k}`); return; }
+  if (((route === "studio" || route === "designs" || route === "prices") && k !== "ed") || ((route === "files" || route === "maker3d") && k !== "c3d")) { location.replace(`#home/${k}`); return; }
   const pages = {
     home,
     map: () => mapPage(pendingFilter ?? k),
@@ -469,6 +474,7 @@ async function render() {
     files: () => filesPage(header),
     designs: async () => (await import("./design-library.js")).designLibraryPage(header),
     maker3d: () => meshyPage(header),
+    prices: pricesPage,
   };
   const make = frameTool ? () => framePage(frameTool, third) : pages[route] ?? home;
   const nodes = [await make()].flat().filter(Boolean);

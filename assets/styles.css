@@ -746,3 +746,8 @@ textarea.field { resize: vertical; font-family: var(--f-body); }
   .tasks .task .task-t { flex-basis: calc(100% - 60px); }
   .tasks select.owner { margin-left: 27px; }
 }
+
+/* Price sheet: one heading row per blank */
+.price-group th { font-family: inherit; font-size: 14px; text-transform: none; letter-spacing: 0; color: var(--fg); background: var(--sunk); padding-top: 10px; }
+/* On a phone: size, cost, and the two selling prices; the rest is on a wider screen or in the sheet */
+@media (max-width: 640px) { .price-tbl .opt { display: none; } .price-tbl th, .price-tbl td { padding: 7px 6px; } }
