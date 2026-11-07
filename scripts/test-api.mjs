@@ -3756,3 +3756,76 @@ test("picture: only Shopify picture addresses, resized, behind the key", async (
   const notPic = async () => new Response("<html>", { status: 200, headers: { "content-type": "text/html" } });
   await assert.rejects(handlePicture(req("https://cdn.shopify.com/x.png"), { env, fetch: notPic }), /isn't a picture/);
 });
+
+// ---------- Charleston 3D listings from the console's 3D files picker ----------
+const { handleC3dListings } = await import("../lib/c3d-listings.mjs");
+const C3D_ITEM = { store: "c3d", ref: "andy-20261017-santakey", title: "Santa's Magic Key", descriptionHtml: "<p>A key for Santa.</p>",
+  price: 10.99, tags: ["christmas", "santa key"], seoTitle: "Santa Magic Key", seoDescription: "Personalized Santa key.", productType: "Ornament",
+  photos: [{ resourceUrl: `${STAGED_URL}tmp/123/santa-1.png`, alt: "Santa key, front" }], live: true };
+const photoReq = (bytes, type = "image/png", headers = {}) => ({ method: "POST", query: new URLSearchParams(),
+  header: (k) => ({ "content-type": type, "x-console-key": "open-sesame-test-key-0001", "x-filename": "santa key.png", ...headers })[k.toLowerCase()] ?? null,
+  text: async () => "", bytes: async () => bytes });
+
+test("c3d listing: makes one product on the C3D store and puts it live", async () => {
+  const sh = fakeShopify();
+  const res = await handleC3dListings(post(C3D_ITEM), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  assert.equal(res.body.live, true);
+  assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["OnlineStorePublication", "ConsoleListingLookup", "ConsoleListingCreate", "ConsolePublish"]);
+  assert.ok(sh.calls.filter((c) => c.op).every((c) => c.domain === "charleston3d.myshopify.com"), "only the C3D store");
+  assert.equal(sh.calls.find((c) => c.op === "ConsoleListingLookup").variables.q, 'tag:"item:andy-20261017-santakey"');
+  const input = sh.calls.find((c) => c.op === "ConsoleListingCreate").variables.input;
+  assert.equal(input.vendor, "Charleston3D");
+  assert.equal(input.status, "ACTIVE");
+  assert.ok(input.tags.includes("item:andy-20261017-santakey"));
+  assert.equal(input.variants.length, 1);
+  assert.equal(input.variants[0].price, "10.99");
+  assert.equal(input.variants[0].inventoryItem.tracked, false);
+  assert.deepEqual(input.seo, { title: "Santa Magic Key", description: "Personalized Santa key." });
+  assert.equal(input.files[0].originalSource, `${STAGED_URL}tmp/123/santa-1.png`);
+  assert.ok(sh.calls.some((c) => c.indexnow));
+  noLeak(res);
+});
+
+test("c3d listing: live false leaves it off the site", async () => {
+  const sh = fakeShopify();
+  const res = await handleC3dListings(post({ ...C3D_ITEM, live: false }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 201);
+  assert.equal(res.body.live, false);
+  assert.ok(!sh.calls.some((c) => c.op === "ConsolePublish" || c.indexnow));
+});
+
+test("c3d listing: the same item twice never makes a second product", async () => {
+  const sh = fakeShopify({ listed: [{ id: "gid://shopify/Product/777", handle: "santas-magic-key", title: "Santa's Magic Key", status: "ACTIVE", tags: ["item:andy-20261017-santakey"], publishedOnPublication: false }] });
+  const res = await handleC3dListings(post(C3D_ITEM), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.alreadyListed, true);
+  assert.equal(res.body.live, true);
+  assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["OnlineStorePublication", "ConsoleListingLookup", "ConsolePublish"]);
+});
+
+test("c3d listing: bad input, wrong store, no key, scripts and foreign photo hosts are refused", async () => {
+  const sh = fakeShopify();
+  const run = async (over, headers) => handleC3dListings(post({ ...C3D_ITEM, ...over }, headers), { env: envOf(), fetch: sh.fetch });
+  assert.equal((await run({ store: "ed" })).body.code, "wrong_store");
+  assert.equal((await run({ price: 0 })).status, 400);
+  assert.equal((await run({ price: 10.999 })).status, 400);
+  assert.equal((await run({ title: "" })).status, 400);
+  assert.equal((await run({ ref: "../x" })).status, 400);
+  assert.equal((await run({ descriptionHtml: '<img src=x onerror="alert(1)">' })).status, 400);
+  assert.equal((await run({ photos: [{ resourceUrl: "https://evil.example.com/x.png" }] })).status, 400);
+  assert.equal((await run({ extra: 1 })).status, 400);
+  assert.equal((await run({}, { "content-type": "application/json" })).status, 401);
+  assert.ok(!sh.calls.some((c) => c.op === "ConsoleListingCreate"));
+});
+
+test("c3d listing photo: stages the bytes in Shopify's upload storage", async () => {
+  const sh = fakeShopify();
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+  const res = await handleC3dListings(photoReq(png), { env: envOf(), fetch: sh.fetch }, "photo");
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.match(res.body.resourceUrl, /^https:\/\/shopify-staged-uploads\.storage\.googleapis\.com\/tmp\/123\/santa-key\.png$/);
+  assert.equal(sh.calls.find((c) => c.upload).upload.size, png.byteLength);
+  assert.equal((await handleC3dListings(photoReq(png, "image/svg+xml"), { env: envOf(), fetch: sh.fetch }, "photo")).status, 415);
+  assert.equal((await handleC3dListings(photoReq(new Uint8Array()), { env: envOf(), fetch: sh.fetch }, "photo")).status, 400);
+});
