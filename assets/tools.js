@@ -25,7 +25,7 @@ export const TOOLS = [
   { id: "list", group: "make", store: "ed", name: "List a design", ico: "＋", page: "products", path: "list",
     sub: "One click to the Elevated Designs store, with description, SEO and mockups" },
   { id: "makerstudio", group: "make", store: "c3d", name: "Maker Studio", ico: "⬡",
-    sub: "Every maker in one place: nameplates, hype chains, keychains, signs, light boxes",
+    sub: "Every maker in one place: nameplates, hype chains, light boxes, keychains, signs and plate frames",
     frame: "tools/maker-studio/" },
   { id: "maker3d", group: "make", store: "c3d", name: "3D maker", ico: "◈", page: "maker3d",
     sub: "Photos or a few words in, a printable 3D model out (Meshy)" },

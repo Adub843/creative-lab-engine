@@ -41,7 +41,7 @@ export const SITE_HEADERS = {
   "cross-origin-opener-policy": "same-origin",
   "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=()",
 };
-// The tool apps in tools/ (nameplate maker, hype chain maker, print trends) are single files with
+// The tool apps in tools/ (Maker Studio and its makers, print trends) are single files with
 // their own inline scripts, and run framed inside the console, so they get their own policy:
 // same-origin framing only, no outside connections except the fonts and the web image search.
 export const TOOL_HEADERS = {
