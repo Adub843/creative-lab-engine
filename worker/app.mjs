@@ -17,6 +17,7 @@
 import { handleProducts, HttpError } from "../lib/shopify.mjs";
 import { handleInsights } from "../lib/insights.mjs";
 import { handleListings, libraryReader } from "../lib/listings.mjs";
+import { handleC3dListings, MAX_PHOTO_BYTES } from "../lib/c3d-listings.mjs";
 import { handleImages, refreshPublicSnapshot } from "../lib/images.mjs";
 import { handleMember } from "../lib/members.mjs";
 import { handleFiles } from "../lib/files.mjs";
@@ -128,6 +129,21 @@ export async function handleRequest(req, env) {
       // The design is read through the image library's own read route, from the same KV namespace.
       const readImage = async (key) => libraryReader({ blobs: imageStore(env), env: envReader(env) })(key);
       return await listings(req, env, { readImage });
+    }
+    // Charleston 3D listings from the console's 3D files picker: photos first (raw bytes), then the listing.
+    if (pathname === "/api/c3d-listings" || pathname === "/api/c3d-listings/photo") {
+      const url = new URL(req.url);
+      const out = await handleC3dListings({
+        method: req.method, query: url.searchParams, header: (k) => req.headers.get(k),
+        text: () => readTextCapped(req, MAX_JSON_BYTES),
+        bytes: async () => {
+          if (Number(req.headers.get("content-length")) > MAX_PHOTO_BYTES) throw new HttpError(413, "too_large", "The photo is larger than 20 MB.");
+          const buf = new Uint8Array(await req.arrayBuffer());
+          if (buf.byteLength > MAX_PHOTO_BYTES) throw new HttpError(413, "too_large", "The photo is larger than 20 MB.");
+          return buf;
+        },
+      }, { env: envReader(env), fetch: (input, init) => fetch(input, init) }, pathname.endsWith("/photo") ? "photo" : "");
+      return json(out.body, out.status);
     }
     if (pathname === "/api/pricing") return await pricing(req, env, { kv: env?.PRICING ?? null });
     // A Shopify product picture for the console (it can't load pictures from other sites itself).
