@@ -44,6 +44,8 @@ export const TOOLS = [
 
   // Store
   { id: "products", group: "store", name: "Products", ico: "▤", page: "products", sub: "What's live on the site" },
+  { id: "prices", group: "store", store: "ed", name: "Price sheet", ico: "$", page: "prices",
+    sub: "Every blank and size: supplier cost, the store's price and the design price, from the Google price sheet" },
   { id: "orders", group: "store", name: "Orders", ico: "▣", url: (b) => `${b.site}/admin/orders`, sub: "Shopify admin" },
 
   // System

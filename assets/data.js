@@ -195,7 +195,7 @@ export const TOPOLOGY = [
       links: [{ label: "Open Kittl", url: "https://www.kittl.com" }] },
     { id: "sheet", name: "Shirt price sheet", where: "Google Sheets", brand: "ed",
       does: "Blank cost per brand, style and size. The 15-minute sync reprices every Elevated Designs shirt from it.", to: [["console", "read by the price sync"]],
-      links: [{ label: "Open sheet", url: "https://docs.google.com/spreadsheets/d/11G7MyaGqSaz3WCd21etMYc-YebpAbyKzmvE1aqNWpy8/edit" }] },
+      links: [{ label: "Price sheet page", url: "#prices/ed" }, { label: "Open sheet", url: "https://docs.google.com/spreadsheets/d/11G7MyaGqSaz3WCd21etMYc-YebpAbyKzmvE1aqNWpy8/edit" }] },
     { id: "search", name: "Google and Bing", where: "Search Console, GA4, Bing Webmaster, IndexNow", brand: "other",
       does: "Search clicks, positions and engagement for the Marketing page; IndexNow tells Bing about changed pages.", to: [],
       links: [{ label: "Search Console", url: "https://search.google.com/search-console" }, { label: "Google Analytics", url: "https://analytics.google.com" }, { label: "Bing Webmaster", url: "https://www.bing.com/webmasters" }] },
