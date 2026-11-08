@@ -2758,13 +2758,13 @@ test("wrangler.toml: MARKETING and PRICING KV bindings, the daily audit cron, th
   assert.match(toml, /\[\[kv_namespaces\]\]\s*\nbinding = "MARKETING"/);
   assert.match(toml, /\[\[kv_namespaces\]\]\s*\nbinding = "PRICING"/);
   // On since the switch-over from the old business-console Worker (2026-10-31).
-  assert.match(toml, /\[triggers\][\s\S]*\ncrons = \["0 11 \* \* \*", "30 11 \* \* \*", "\*\/15 \* \* \* \*", "45 \* \* \* \*", "45 4 \* \* \*"\]/);
+  assert.match(toml, /\[triggers\][\s\S]*\ncrons = \["0 11 \* \* \*", "30 11 \* \* \*", "\*\/15 \* \* \* \*", "45 \* \* \* \*"\]/);
   assert.match(toml, /\[\[queues\.consumers\]\]\s*\nqueue = "creative-lab-actions"\s*\nmax_batch_size = 1\s*\nmax_batch_timeout = 0/);
   const W2 = await import("../worker/app.mjs");
   assert.equal(W2.AUDIT_CRON, "0 11 * * *");
   assert.equal(W2.AUTOFIX_CRON, "30 11 * * *");
-  assert.equal(W2.KITTL_CRON, "45 4 * * *");
   assert.equal(W2.UPKEEP_CRON, "45 * * * *");
+  assert.equal(W2.KITTL_CRON, W2.UPKEEP_CRON, "no cron slot is free, so the nightly sync shares the hourly cron");
 });
 
 // ---------- promotions ----------
@@ -3191,7 +3191,7 @@ test("kittl cron: saves a fresh public list copy, so the shirt apps don't need a
 const at = (iso) => Date.parse(iso);
 const manifestReads = (calls) => calls.filter((u) => u === KS.MANIFEST_URL).length;
 
-test("crons: the Kittl sync runs only on the nightly 04:45 cron; the hourly :45 cron only renews the public list and prunes", async () => {
+test("crons: the hourly :45 cron syncs Kittl only on its 04:45 UTC run; other hours only renew the public list; every run prunes", async () => {
   const W3 = await import("../worker/app.mjs");
   const entry = (await import("../worker/index.mjs")).default;
   const kv = fakeKV(), RESULTS = fakeResults();
@@ -3199,7 +3199,7 @@ test("crons: the Kittl sync runs only on the nightly 04:45 cron; the hourly :45 
   await libItem(kvBlobStore(kv), 1);
   const { fetchImpl, calls } = kittlFetch(manifest([1, 2]));
   const lists = () => kv.ops.filter(([op, k]) => op === "list" && k === "image:").length;
-  // Both crons fire at 04:45 UTC: the sync must run exactly once, and the old answers are pruned once.
+  // The 04:45 UTC run: the sync runs exactly once, and old answers are pruned.
   await RESULTS.put("results/old-0000001", new ArrayBuffer(1));
   RESULTS.m.get("results/old-0000001").uploaded = new Date(Date.now() - 2 * 864e5);
   await RESULTS.put("digest/2026-11-01.json", "{}");
@@ -3209,22 +3209,24 @@ test("crons: the Kittl sync runs only on the nightly 04:45 cron; the hourly :45 
     entry.scheduled({ cron, scheduledTime: at(iso) }, env, { waitUntil: (p) => waits.push(p) });
     return Promise.all(waits);
   };
-  await withFetch(() => Promise.all([run(W3.KITTL_CRON, "2026-11-08T04:45:00Z"), run(W3.UPKEEP_CRON, "2026-11-08T04:45:00Z")]), fetchImpl);
-  assert.equal(manifestReads(calls), 1, "one sync at 04:45, not two");
+  await withFetch(() => run(W3.UPKEEP_CRON, "2026-11-08T04:45:00Z"), fetchImpl);
+  assert.equal(manifestReads(calls), 1, "one sync at 04:45");
   assert.equal(JSON.parse(new TextDecoder().decode(kv.m.get(KS.STATE_KEY).data)).trigger, "nightly");
   assert.equal(RESULTS.m.has("results/old-0000001"), false, "old queue answers are pruned on the hourly cron");
   assert.equal(RESULTS.m.has("digest/2026-11-01.json"), true, "pruning never touches the digest");
-  assert.equal(lists(), 2, "the sync lists once and saves one fresh public list; the 04:45 upkeep adds nothing");
+  assert.equal(lists(), 2, "the sync lists once and saves one fresh public list, nothing more");
   // Every other hour: no Kittl list read, and with a fresh public copy no KV list either.
   await withFetch(async () => {
-    for (const h of ["05", "06", "12", "23"]) await run(W3.UPKEEP_CRON, `2026-11-08T${h}:45:00Z`);
+    for (const h of ["00", "03", "05", "06", "12", "23"]) await run(W3.UPKEEP_CRON, `2026-11-08T${h}:45:00Z`);
   }, fetchImpl);
   assert.equal(manifestReads(calls), 1, "the hourly cron never syncs");
   assert.equal(lists(), 2, "a fresh copy is kept as it is (one KV read, no list)");
   // A library change dropped the copy: the next hourly run saves a new one.
   await libItem(kvBlobStore(kv), 3);
   assert.equal(kv.m.has("snapshot:public-images"), false);
-  assert.deepEqual(await W3.scheduledUpkeep(env, at("2026-11-08T07:45:00Z")), { snapshot: "renewed" });
+  assert.deepEqual(await W3.handleScheduled(env, W3.UPKEEP_CRON, at("2026-11-08T07:45:00Z")), { snapshot: "renewed" });
+  assert.equal(manifestReads(calls), 1);
+  assert.deepEqual([W3.isKittlRun(at("2026-11-08T04:45:00Z")), W3.isKittlRun(at("2026-07-08T04:45:00Z")), W3.isKittlRun(at("2026-11-08T05:45:00Z"))], [true, true, false]);
   assert.equal(JSON.parse(new TextDecoder().decode(kv.m.get("snapshot:public-images").data)).items.length, 3);
   // Near the 6-hour limit it's renewed before a shirt app visit would have to list.
   const I2 = await import("../lib/images.mjs");

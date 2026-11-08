@@ -169,7 +169,7 @@ export const TOPOLOGY = [
       does: "IMAGES (design library), PRICING (price sync state), MARKETING (scores, change log, keywords).", to: [],
       links: [{ label: "KV in Cloudflare", url: "https://dash.cloudflare.com/?to=/:account/workers/kv/namespaces" }] },
     { id: "crons", name: "Scheduled jobs", where: "Worker cron triggers (UTC)", brand: "other",
-      does: "11:00 daily health check of both sites. 11:30 daily safe SEO fixes. Every 15 minutes the shirt price sync steps on. Nightly at 11:45 PM Eastern the image library follows the Kittl library (or on Sync now). 11:30 the daily digest is saved.",
+      does: "11:00 daily health check of both sites. 11:30 daily safe SEO fixes. Every 15 minutes the shirt price sync steps on. Nightly at 04:45 UTC the image library follows the Kittl library (or on Sync now). 11:30 the daily digest is saved.",
       to: [["console", "runs inside the Worker"]], links: [] },
   ] },
   { layer: "Code and deploys (GitHub)", nodes: [

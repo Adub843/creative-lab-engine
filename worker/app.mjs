@@ -214,14 +214,17 @@ export async function handleRequest(req, env) {
 // subrequest allowance), and every 15 minutes one step of the shirt price sync (lib/pricing.mjs).
 export const AUDIT_CRON = "0 11 * * *";
 export const AUTOFIX_CRON = "30 11 * * *";
-// Nightly at 04:45 UTC (11:45 PM Eastern, after the 11:30 PM task publishes kittl.json): the image library
-// follows Aaron's Kittl library (lib/kittl-sync.mjs). This is the only cron that runs the sync.
-export const KITTL_CRON = "45 4 * * *";
-// Hourly at :45: upkeep only. The shirt apps' saved public list is renewed when it's missing or near its age
-// limit, and old queue answers are pruned (worker/index.mjs). It never runs the Kittl sync. At 04:45 both crons
-// fire; this one then leaves the public list to the nightly run, which saves a fresh copy after syncing.
+// Hourly at :45 (the account has no free cron slot for a separate nightly one, so this cron does both jobs):
+// - the 04:45 UTC run is the nightly Kittl library sync (lib/kittl-sync.mjs), after the 11:30 PM Eastern task
+//   publishes kittl.json. 04:45 UTC is 11:45 PM Eastern in standard time and 12:45 AM during daylight time.
+//   The sync saves a fresh public list itself.
+// - every other hour is upkeep only: the shirt apps' saved public list is renewed when it's missing or near its
+//   age limit. It never runs the Kittl sync.
+// Every run also prunes old queue answers (worker/index.mjs).
 export const UPKEEP_CRON = "45 * * * *";
+export const KITTL_CRON = UPKEEP_CRON;
 export const KITTL_HOUR_UTC = 4;
+export const isKittlRun = (scheduledTime) => new Date(scheduledTime).getUTCHours() === KITTL_HOUR_UTC;
 export async function handleScheduled(env, cron, scheduledTime = Date.now()) {
   if (!cron || cron === AUDIT_CRON) return runScheduledAudits(envReader(env), (input, init) => fetch(input, init), marketingKv(env));
   if (cron === AUTOFIX_CRON) {
@@ -231,8 +234,7 @@ export async function handleScheduled(env, cron, scheduledTime = Date.now()) {
     await scheduledDigest(env, fixes);
     return fixes;
   }
-  if (cron === KITTL_CRON) return scheduledKittlSync(env, undefined, "nightly");
-  if (cron === UPKEEP_CRON) return scheduledUpkeep(env, scheduledTime);
+  if (cron === UPKEEP_CRON) return isKittlRun(scheduledTime) ? scheduledKittlSync(env, undefined, "nightly") : scheduledUpkeep(env);
   try {
     return await scheduledPricing({ env: envReader(env), kv: env?.PRICING ?? null, fetchImpl: (input, init) => fetch(input, init) });
   } catch (e) {
@@ -273,8 +275,7 @@ export async function librarySyncNow(env, fetchImpl = (input, init) => fetch(inp
 }
 
 // The hourly upkeep: renew the shirt apps' saved public list when needed (one KV read most hours).
-export async function scheduledUpkeep(env, scheduledTime = Date.now()) {
-  if (new Date(scheduledTime).getUTCHours() === KITTL_HOUR_UTC) return { snapshot: "left to the nightly sync" };
+export async function scheduledUpkeep(env) {
   try { return { snapshot: await renewPublicSnapshot(imageStore(env)) }; }
   catch (e) { console.error("public list copy", e?.message); return { snapshot: "failed" }; }
 }

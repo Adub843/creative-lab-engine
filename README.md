@@ -109,9 +109,9 @@ Turn it on once with `npx wrangler secret put MESHY_API_KEY` (the key from meshy
 ## Kittl library sync
 
 The image library follows the Kittl "Clipped Images" folder by itself, so the shirt apps' designs stay current.
-- Once a night at 11:45 PM Eastern (cron `45 4 * * *`, 04:45 UTC, after the 11:30 PM task pushes the list), the Worker reads the list at https://design.elevatedshirts.com/library/kittl.json (lib/kittl-sync.mjs).
+- Once a night at 04:45 UTC (11:45 PM Eastern in standard time, 12:45 AM in daylight time), after the 11:30 PM task pushes the list, on the 04:45 run of the hourly `45 * * * *` cron (the account has no free cron slot for its own), the Worker reads the list at https://design.elevatedshirts.com/library/kittl.json (lib/kittl-sync.mjs).
 - **Sync now:** the console can run it at once with `POST /api/library-sync` (console key; through the queue: `{"id": "<id>", "method": "POST", "path": "/api/library-sync"}`). It answers with the same counts as the GET. A second press within 60 seconds gets the last result back (marked `debounced`) instead of running again.
-- The hourly `45 * * * *` cron no longer syncs. It only renews the shirt apps' saved public art list (`snapshot:public-images`) when it's missing or over 5 hours old, and prunes old queue answers. At 04:45 the nightly run saves the fresh list itself.
+- The hourly `45 * * * *` cron's other 23 runs don't sync. They only renew the shirt apps' saved public art list (`snapshot:public-images`) when it's missing or over 5 hours old. Every run prunes old queue answers. At 04:45 the sync saves the fresh list itself.
 - New Kittl images are copied in, up to 30 per run, from Kittl's image host only.
 - Images that left Kittl are removed. Only Kittl images in a listed category are ever removed. If more than 10% would go at once, nothing is removed and the run reports a warning.
 - Console uploads, other categories, and your edits (name, tags, hidden or shown) are never touched.
