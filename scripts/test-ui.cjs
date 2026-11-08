@@ -100,7 +100,7 @@ async function main() {
   const imageCalls = [];
   let staleList = null; // when set, the list answers this instead (Workers KV lists can lag behind writes)
   const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
-  // The hourly Kittl library sync status (no key needed).
+  // The nightly Kittl library sync status (no key needed).
   await page.route("**/api/library-sync", (route) => route.fulfill({ status: 200, contentType: "application/json",
     body: JSON.stringify({ ok: true, at: "2026-10-26T19:45:00Z", inKittl: 731, added: 8, removed: 0, waiting: 0, failed: 0, problems: [] }) }));
   await page.route("**/api/images**", async (route) => {
@@ -670,7 +670,7 @@ async function main() {
     assert.equal(await page.locator('.lib .tile:has-text("secret")').count(), 0, "private images stay hidden without the key");
     assert.equal(imageCalls.filter((c) => c.method === "GET" && !c.key).at(-1).auth, null, "the list is read without the key");
     assert.match(await page.locator(".editor").textContent(), /1 of 1 images\. These are the shirt app images\./);
-    assert.match(await page.locator(".editor").textContent(), /Kittl sync .*: 8 added, 0 removed\. Runs every hour\./);
+    assert.match(await page.locator(".editor").textContent(), /Kittl sync .*: 8 added, 0 removed\. Runs nightly at 11:45 PM Eastern\./);
     await page.fill('.editor input[type="search"]', "zzq-only-tag");
     assert.equal(await page.locator(".lib .tile").count(), 1, "search by tag finds it");
     await page.fill('.editor input[type="search"]', "nothing-like-this");

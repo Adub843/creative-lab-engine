@@ -63,7 +63,7 @@ max_batch_size = 1
 max_batch_timeout = 0
 max_retries = 0
 
-# Workers Logs: keeps the crons' and the queue's console.error lines (price sync, Kittl sync, queue failures) so a
+# Workers Logs: keeps the crons' and the queue's console.error lines (price sync, Kittl sync, digest, queue failures) so a
 # failure can be read in the dashboard (Workers > creative-lab-engine > Logs). Free plan: 200,000 log lines a day.
 [observability]
 enabled = true
@@ -75,8 +75,11 @@ CONSOLE_PAGE = "https://claude.ai/artifact/U8rNeWMPq7NfF7f88AEuPK"
 # 11:30 UTC daily: applies the safe SEO fixes (titles, descriptions, alt text) to both stores.
 # Every 15 minutes: moves the shirt price sync one step on; a new sync only starts when the price
 # sheet changed or the last one is over a day old.
-# Hourly at :45: the image library follows the Kittl library (lib/kittl-sync.mjs).
+# 04:45 UTC nightly (11:45 PM Eastern, after the 11:30 PM task publishes kittl.json): the image library follows
+# the Kittl library (lib/kittl-sync.mjs). The console's "Sync now" runs it on demand (POST /api/library-sync).
+# Hourly at :45: upkeep only (renews the shirt apps' saved public art list when needed, prunes old queue answers);
+# it never runs the Kittl sync. The 11:30 run also writes the daily digest to the RESULTS bucket (digest/).
 [triggers]
 # On since the switch-over (2026-10-31): the old business-console Worker's crons were removed first, because the free
-# plan allows 5 crons per account.
-crons = ["0 11 * * *", "30 11 * * *", "*/15 * * * *", "45 * * * *"]
+# plan allows 5 crons per account. This uses all 5.
+crons = ["0 11 * * *", "30 11 * * *", "*/15 * * * *", "45 * * * *", "45 4 * * *"]

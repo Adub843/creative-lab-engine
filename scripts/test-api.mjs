@@ -2758,12 +2758,13 @@ test("wrangler.toml: MARKETING and PRICING KV bindings, the daily audit cron, th
   assert.match(toml, /\[\[kv_namespaces\]\]\s*\nbinding = "MARKETING"/);
   assert.match(toml, /\[\[kv_namespaces\]\]\s*\nbinding = "PRICING"/);
   // On since the switch-over from the old business-console Worker (2026-10-31).
-  assert.match(toml, /\[triggers\][\s\S]*\ncrons = \["0 11 \* \* \*", "30 11 \* \* \*", "\*\/15 \* \* \* \*", "45 \* \* \* \*"\]/);
+  assert.match(toml, /\[triggers\][\s\S]*\ncrons = \["0 11 \* \* \*", "30 11 \* \* \*", "\*\/15 \* \* \* \*", "45 \* \* \* \*", "45 4 \* \* \*"\]/);
   assert.match(toml, /\[\[queues\.consumers\]\]\s*\nqueue = "creative-lab-actions"\s*\nmax_batch_size = 1\s*\nmax_batch_timeout = 0/);
   const W2 = await import("../worker/app.mjs");
   assert.equal(W2.AUDIT_CRON, "0 11 * * *");
   assert.equal(W2.AUTOFIX_CRON, "30 11 * * *");
-  assert.equal(W2.KITTL_CRON, "45 * * * *");
+  assert.equal(W2.KITTL_CRON, "45 4 * * *");
+  assert.equal(W2.UPKEEP_CRON, "45 * * * *");
 });
 
 // ---------- promotions ----------
@@ -3126,16 +3127,18 @@ test("kittl sync: a mass removal, an empty or broken list, and bad files change 
 
 test("kittl sync: a few copies per run, the rest on the next runs", async () => {
   const blobs = fakeBlobs();
-  const { fetchImpl } = kittlFetch(manifest([...Array(20)].map((_, i) => i + 1)));
+  const total = 2 * KS.MAX_ADDS + 4;
+  const { fetchImpl } = kittlFetch(manifest([...Array(total)].map((_, i) => i + 1)));
   const first = await KS.syncKittlLibrary({ blobs, fetchImpl });
-  assert.deepEqual([first.added, first.waiting], [KS.MAX_ADDS, 20 - KS.MAX_ADDS]);
+  assert.deepEqual([first.added, first.waiting], [KS.MAX_ADDS, total - KS.MAX_ADDS]);
+  assert.ok(KS.MAX_ADDS + 1 <= 45, "the list plus a run's downloads stay inside the free plan's 50 subrequests");
   await KS.syncKittlLibrary({ blobs, fetchImpl });
   const third = await KS.syncKittlLibrary({ blobs, fetchImpl });
-  assert.deepEqual([third.added, third.waiting], [20 - 2 * KS.MAX_ADDS, 0]);
-  assert.equal(blobs.m.size, 20);
+  assert.deepEqual([third.added, third.waiting], [total - 2 * KS.MAX_ADDS, 0]);
+  assert.equal(blobs.m.size, total);
 });
 
-test("kittl sync: the hourly cron saves its result and /api/library-sync shows the counts without the key", async () => {
+test("kittl sync: the nightly cron saves its result and /api/library-sync shows the counts without the key", async () => {
   const kv = fakeKV();
   const env = { IMAGES: kv };
   await libItem(kvBlobStore(kv), 1);
@@ -3182,6 +3185,182 @@ test("kittl cron: saves a fresh public list copy, so the shirt apps don't need a
   kv.list = async () => { throw new Error("KV list() limit exceeded for the day."); };
   const res = await handleImages(imgReq("/api/images?public=1"), { blobs: kvBlobStore(kv), env: envOf() });
   assert.equal((await res.json()).items.length, 2);
+});
+
+// ---------- nightly Kittl sync, Sync now, hourly upkeep ----------
+const at = (iso) => Date.parse(iso);
+const manifestReads = (calls) => calls.filter((u) => u === KS.MANIFEST_URL).length;
+
+test("crons: the Kittl sync runs only on the nightly 04:45 cron; the hourly :45 cron only renews the public list and prunes", async () => {
+  const W3 = await import("../worker/app.mjs");
+  const entry = (await import("../worker/index.mjs")).default;
+  const kv = fakeKV(), RESULTS = fakeResults();
+  const env = { IMAGES: kv, RESULTS };
+  await libItem(kvBlobStore(kv), 1);
+  const { fetchImpl, calls } = kittlFetch(manifest([1, 2]));
+  const lists = () => kv.ops.filter(([op, k]) => op === "list" && k === "image:").length;
+  // Both crons fire at 04:45 UTC: the sync must run exactly once, and the old answers are pruned once.
+  await RESULTS.put("results/old-0000001", new ArrayBuffer(1));
+  RESULTS.m.get("results/old-0000001").uploaded = new Date(Date.now() - 2 * 864e5);
+  await RESULTS.put("digest/2026-11-01.json", "{}");
+  RESULTS.m.get("digest/2026-11-01.json").uploaded = new Date(Date.now() - 5 * 864e5);
+  const run = async (cron, iso) => {
+    const waits = [];
+    entry.scheduled({ cron, scheduledTime: at(iso) }, env, { waitUntil: (p) => waits.push(p) });
+    return Promise.all(waits);
+  };
+  await withFetch(() => Promise.all([run(W3.KITTL_CRON, "2026-11-08T04:45:00Z"), run(W3.UPKEEP_CRON, "2026-11-08T04:45:00Z")]), fetchImpl);
+  assert.equal(manifestReads(calls), 1, "one sync at 04:45, not two");
+  assert.equal(JSON.parse(new TextDecoder().decode(kv.m.get(KS.STATE_KEY).data)).trigger, "nightly");
+  assert.equal(RESULTS.m.has("results/old-0000001"), false, "old queue answers are pruned on the hourly cron");
+  assert.equal(RESULTS.m.has("digest/2026-11-01.json"), true, "pruning never touches the digest");
+  assert.equal(lists(), 2, "the sync lists once and saves one fresh public list; the 04:45 upkeep adds nothing");
+  // Every other hour: no Kittl list read, and with a fresh public copy no KV list either.
+  await withFetch(async () => {
+    for (const h of ["05", "06", "12", "23"]) await run(W3.UPKEEP_CRON, `2026-11-08T${h}:45:00Z`);
+  }, fetchImpl);
+  assert.equal(manifestReads(calls), 1, "the hourly cron never syncs");
+  assert.equal(lists(), 2, "a fresh copy is kept as it is (one KV read, no list)");
+  // A library change dropped the copy: the next hourly run saves a new one.
+  await libItem(kvBlobStore(kv), 3);
+  assert.equal(kv.m.has("snapshot:public-images"), false);
+  assert.deepEqual(await W3.scheduledUpkeep(env, at("2026-11-08T07:45:00Z")), { snapshot: "renewed" });
+  assert.equal(JSON.parse(new TextDecoder().decode(kv.m.get("snapshot:public-images").data)).items.length, 3);
+  // Near the 6-hour limit it's renewed before a shirt app visit would have to list.
+  const I2 = await import("../lib/images.mjs");
+  assert.equal(await I2.renewPublicSnapshot(kvBlobStore(kv), Date.now() + I2.SNAPSHOT_RENEW_MS - 60e3), "kept");
+  assert.equal(await I2.renewPublicSnapshot(kvBlobStore(kv), Date.now() + I2.SNAPSHOT_RENEW_MS + 60e3), "renewed");
+  // The 15-minute cron is the price sync, never the Kittl sync.
+  await withFetch(() => W3.handleScheduled({ IMAGES: kv }, "*/15 * * * *"), fetchImpl);
+  assert.equal(manifestReads(calls), 1);
+});
+
+test("library sync now: POST needs the key, runs at once, and a second press within a minute returns the last result", async () => {
+  const W3 = await import("../worker/app.mjs");
+  const Q = await import("../worker/queue.mjs");
+  const kv = fakeKV(), RESULTS = fakeResults();
+  const env = { ...ENV, IMAGES: kv, RESULTS };
+  await libItem(kvBlobStore(kv), 1);
+  const { fetchImpl, calls } = kittlFetch(manifest([1, 2]));
+  const post = (headers = KEYH, q = "") => W3.handleRequest(new Request(`https://console.example/api/library-sync${q}`, { method: "POST", headers }), env);
+  await withFetch(async () => {
+    assert.equal((await post({})).status, 401, "Sync now needs the console key");
+    assert.equal((await W3.handleRequest(new Request("https://console.example/api/library-sync", { method: "DELETE", headers: KEYH }), env)).status, 405);
+    assert.equal(manifestReads(calls), 0);
+    const first = await post(KEYH, "?store=ed");
+    assert.equal(first.status, 200);
+    const a = await first.json();
+    assert.deepEqual([a.ok, a.added, a.inKittl, a.failed, a.trigger, a.stale, a.debounced], [true, 1, 2, 0, "manual", false, undefined]);
+    assert.ok(kv.m.has("snapshot:public-images"), "Sync now saves a fresh public list too");
+    const again = await (await post(KEYH, "?store=c3d")).json();
+    assert.equal(again.debounced, true);
+    assert.equal(again.at, a.at, "the last result comes back as it was");
+    assert.equal(manifestReads(calls), 1, "no second run within a minute");
+    // The same status as the public GET.
+    const got = await (await W3.handleRequest(new Request("https://console.example/api/library-sync"), env)).json();
+    assert.deepEqual([got.added, got.failed, got.problems, got.trigger], [1, 0, [], "manual"]);
+    // Over a minute later it runs again.
+    const old = JSON.parse(new TextDecoder().decode(kv.m.get(KS.STATE_KEY).data));
+    old.at = new Date(Date.now() - 61e3).toISOString();
+    await kv.put(KS.STATE_KEY, JSON.stringify(old));
+    const third = await W3.librarySyncNow(env, fetchImpl);
+    assert.equal(third.debounced, undefined);
+    assert.equal(manifestReads(calls), 2);
+    // Through the console's queue: the engine signs it with its own key.
+    old.at = new Date(Date.now() - 61e3).toISOString();
+    await kv.put(KS.STATE_KEY, JSON.stringify(old));
+    const r = await Q.runAction({ id: "sync-now-0001", method: "POST", path: "/api/library-sync" }, env);
+    assert.equal(r.status, 200);
+    assert.equal(JSON.parse(new TextDecoder().decode(RESULTS.m.get("results/sync-now-0001").bytes)).trigger, "manual");
+    assert.equal(manifestReads(calls), 3);
+  }, fetchImpl);
+  assert.equal(W3.syncStatus({ ok: true, at: new Date(Date.now() - 27 * 3600e3).toISOString(), failed: [] }).stale, true, "a missed night shows as stale");
+});
+
+test("digest: built per store with missing data, saved to R2 for 30 days, read with the key", async () => {
+  const W3 = await import("../worker/app.mjs");
+  const D = await import("../lib/digest.mjs");
+  const now = new Date("2026-11-08T11:31:00Z");
+  // Nothing set up at all: every part is empty or an error string, and nothing throws.
+  const empty = await D.buildDigest({ env: envOf({ C3D_SHOPIFY_DOMAIN: undefined, ED_SHOPIFY_DOMAIN: undefined }), fetchImpl: async () => { throw new Error("offline"); }, now });
+  assert.deepEqual(Object.keys(empty.stores), ["c3d", "ed"]);
+  assert.equal(empty.date, "2026-11-08");
+  for (const s of ["c3d", "ed"]) {
+    const d = empty.stores[s];
+    assert.deepEqual([d.siteCheck, d.ranks, d.autofix.made, d.autofix.undone, d.autofix.run], [null, null, 0, 0, null]);
+    assert.match(d.shop.error, /isn't connected yet/);
+  }
+  assert.deepEqual([empty.stores.ed.pricing, empty.stores.ed.library], [null, null]);
+  assert.equal("pricing" in empty.stores.c3d || "library" in empty.stores.c3d, false, "ED's price and library state stay out of Charleston 3D");
+
+  // With data: today's check, the last 24 hours of automatic changes, the rank snapshot, the week and ED's syncs.
+  const mk = fakeKV(), pk = fakeKV(), ik = fakeKV();
+  await mk.put("history:c3d", JSON.stringify([{ date: "2026-11-07", scores: { overall: 80 } }, { date: "2026-11-08", at: "2026-11-08T11:00:00Z", scores: { overall: 86, seo: 90 }, fails: ["llms-txt"], warns: ["og-image"] }]));
+  await mk.put("changes:c3d", JSON.stringify([
+    { at: "2026-11-08T11:30:10Z", source: "auto", kind: "seo", title: "Rainbow Row Ornament" },
+    { at: "2026-11-08T11:30:12Z", source: "auto", kind: "revert", title: "Palmetto Coaster" },
+    { at: "2026-11-08T09:00:00Z", source: "manual", kind: "seo", title: "Hand edit" },
+    { at: "2026-11-05T11:30:00Z", source: "auto", kind: "alt", title: "Old fix" },
+  ]));
+  await mk.put("ranks:c3d", JSON.stringify([{ date: "2026-11-08", k: { "3d printing charleston": [2.4, 5, 90], "custom 3d prints": [14, 1, 40], "laser engraving sc": [null, 0, 0] } }]));
+  await mk.put("changes:ed", "not json");
+  await pk.put("pricing:state", JSON.stringify({ phase: "idle", source: "sheet", hash: "x", finishedAt: "2026-11-08T11:15:00Z", report: { products: 23, variants: 2399, changed: 4, unchanged: 2395, skipped: { no_size: 1 }, examples: [{ title: "x" }] }, error: "Shopify refused", errorAt: "2026-11-08T10:00:00Z" }));
+  await ik.put(KS.STATE_KEY, JSON.stringify({ ok: true, at: "2026-11-08T04:45:01Z", inKittl: 731, added: 3, removed: 1, waiting: 0, failed: ["a: download 404"], warning: null, trigger: "nightly" }));
+  const week = async (env, f, store) => { if (store === "ed") throw new Error("Add the read_reports scope"); return { days: 7, sessions: 120, orders: 3, sales: 84.5 }; };
+  const full = await D.buildDigest({ env: envOf(), fetchImpl: null, marketingKv: mk, pricingKv: pk, imagesKv: ik, autofix: { c3d: { applied: 1, failed: 0, reviewed: 1, remaining: 5 }, ed: { error: "access_denied" } }, now, week });
+  const c = full.stores.c3d, e = full.stores.ed;
+  assert.deepEqual([c.siteCheck.today, c.siteCheck.scores.overall, c.siteCheck.fails, c.siteCheck.warns], [true, 86, ["llms-txt"], ["og-image"]]);
+  assert.deepEqual([c.autofix.made, c.autofix.undone, c.autofix.items.map((i) => i.title)], [1, 1, ["Rainbow Row Ornament", "Palmetto Coaster"]]);
+  assert.deepEqual(c.autofix.run, { applied: 1, failed: 0, reviewed: 1, remaining: 5 });
+  assert.deepEqual([c.ranks.keywords, c.ranks.top3, c.ranks.top20, c.ranks.none, c.ranks.avgPosition, c.ranks.clicks], [3, 1, 1, 1, 8.2, 6]);
+  assert.deepEqual(c.shop, { days: 7, sessions: 120, orders: 3, sales: 84.5 });
+  assert.deepEqual([e.siteCheck, e.autofix.made, e.autofix.run, e.ranks], [null, 0, { error: "access_denied" }, null]);
+  assert.match(e.shop.error, /read_reports/);
+  assert.deepEqual([e.pricing.phase, e.pricing.source, e.pricing.report.variants, e.pricing.report.changed, e.pricing.error, e.pricing.errorAt], ["idle", "sheet", 2399, 4, "Shopify refused", "2026-11-08T10:00:00Z"]);
+  assert.equal("examples" in e.pricing.report, false, "counts only");
+  assert.deepEqual([e.library.ok, e.library.added, e.library.failed, e.library.trigger], [true, 3, 1, "nightly"]);
+  assert.equal(JSON.stringify(full).includes(ENV.CONSOLE_KEY) || JSON.stringify(full).includes(TOKEN), false, "no secrets");
+
+  // The week's totals from the store's own reports.
+  const ql = async (u, init) => {
+    const q = JSON.parse(init.body).variables.q;
+    const cols = q.startsWith("FROM sales") ? ["day", "orders", "total_sales"] : ["day", "sessions"];
+    const rows = q.startsWith("FROM sales") ? [["2026-11-07", 2, "40.5"], ["2026-11-08", 1, "19.99"]] : [["2026-11-07", 30], ["2026-11-08", 12]];
+    return new Response(JSON.stringify({ data: { shopifyqlQuery: { parseErrors: [], tableData: { columns: cols.map((name) => ({ name, dataType: "x" })), rows } } } }), { status: 200 });
+  };
+  assert.deepEqual(await D.shopWeek(envOf(), ql, "c3d"), { days: 7, sessions: 42, orders: 3, sales: 60.49 });
+
+  // Saved as latest and as the day's file; day files over 30 days old go, latest and newer days stay.
+  const RESULTS = fakeResults();
+  await RESULTS.put("digest/2026-09-30.json", "{}");
+  await RESULTS.put("digest/2026-10-20.json", "{}");
+  await RESULTS.put("results/keep-0001", "{}");
+  const saved = await D.saveDigest(RESULTS, full, now);
+  assert.deepEqual(saved, { key: "digest/2026-11-08.json", removed: 1 });
+  assert.deepEqual([...RESULTS.m.keys()].sort(), ["digest/2026-10-20.json", "digest/2026-11-08.json", "digest/latest.json", "results/keep-0001"]);
+  assert.equal(RESULTS.m.get("digest/latest.json").httpMetadata.contentType, "application/json");
+
+  // GET /api/digest: the key, then the latest (or a day's) digest.
+  const env = { ...ENV, IMAGES: fakeKV(), RESULTS };
+  const get = (q = "", headers = KEYH) => W3.handleRequest(new Request(`https://console.example/api/digest${q}`, { headers }), env);
+  assert.equal((await get("", {})).status, 401);
+  const latest = await get();
+  assert.equal(latest.status, 200);
+  assert.equal(latest.headers.get("content-type"), "application/json; charset=utf-8");
+  assert.equal((await latest.json()).stores.c3d.siteCheck.scores.overall, 86);
+  assert.equal((await get("?date=2026-11-08")).status, 200);
+  assert.equal((await get("?date=2026-11-01")).status, 404);
+  assert.equal((await get("?date=../../x")).status, 400);
+  assert.equal((await W3.handleRequest(new Request("https://console.example/api/digest", { headers: KEYH }), { ...ENV, IMAGES: fakeKV(), RESULTS: fakeResults() })).status, 404, "before the first digest");
+  const Q = await import("../worker/queue.mjs");
+  assert.equal((await Q.runAction({ id: "digest-read-01", method: "GET", path: "/api/digest" }, env)).status, 200, "the console reads it through the queue");
+
+  // The cron's own step: written even when every store read fails, and never throws.
+  const R2 = fakeResults();
+  const out = await W3.scheduledDigest({ IMAGES: fakeKV(), RESULTS: R2 }, null, { fetchImpl: async () => { throw new Error("offline"); }, now });
+  assert.equal(out.date, "2026-11-08");
+  assert.ok(R2.m.has("digest/latest.json") && R2.m.has("digest/2026-11-08.json"));
+  assert.equal(await W3.scheduledDigest({ IMAGES: fakeKV() }, null), null, "no bucket, no digest");
 });
 
 // ---------- rank tracker ----------

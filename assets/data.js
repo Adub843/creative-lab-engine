@@ -169,7 +169,7 @@ export const TOPOLOGY = [
       does: "IMAGES (design library), PRICING (price sync state), MARKETING (scores, change log, keywords).", to: [],
       links: [{ label: "KV in Cloudflare", url: "https://dash.cloudflare.com/?to=/:account/workers/kv/namespaces" }] },
     { id: "crons", name: "Scheduled jobs", where: "Worker cron triggers (UTC)", brand: "other",
-      does: "11:00 daily health check of both sites. 11:30 daily safe SEO fixes. Every 15 minutes the shirt price sync steps on. Hourly at :45 the image library follows the Kittl library.",
+      does: "11:00 daily health check of both sites. 11:30 daily safe SEO fixes. Every 15 minutes the shirt price sync steps on. Nightly at 11:45 PM Eastern the image library follows the Kittl library (or on Sync now). 11:30 the daily digest is saved.",
       to: [["console", "runs inside the Worker"]], links: [] },
   ] },
   { layer: "Code and deploys (GitHub)", nodes: [
@@ -191,7 +191,7 @@ export const TOPOLOGY = [
   ] },
   { layer: "Outside tools", nodes: [
     { id: "kittl", name: "Kittl", where: "Design library (about 5,190 images)", brand: "ed",
-      does: "Where shirt art is made. The hourly sync copies new library art into the console's image library and removes deleted art.", to: [["kv", "hourly sync to IMAGES"]],
+      does: "Where shirt art is made. The nightly sync copies new library art into the console's image library and removes deleted art.", to: [["kv", "nightly sync to IMAGES"]],
       links: [{ label: "Open Kittl", url: "https://www.kittl.com" }] },
     { id: "sheet", name: "Shirt price sheet", where: "Google Sheets", brand: "ed",
       does: "Blank cost per brand, style and size. The 15-minute sync reprices every Elevated Designs shirt from it.", to: [["console", "read by the price sync"]],
