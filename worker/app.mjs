@@ -170,21 +170,40 @@ export async function handleRequest(req, env) {
   return out;
 }
 
-// The crons (wrangler.toml [triggers]): the daily site check for the Marketing page, half an hour
-// later the rank snapshot and the automatic SEO fixes (a run of their own, so each gets the full subrequest allowance),
-// and every 15 minutes one step of the shirt price sync (lib/pricing.mjs).
+// The schedule. The Workers Free plan allows only 5 cron triggers per account and other workers
+// already use most of them, so the console has ONE cron, every 15 minutes, and picks the job from
+// the time it fired (UTC). Each job keeps its own run, so it gets the full subrequest allowance:
+//   11:00 daily      the site check for the Marketing page
+//   11:30 daily      today's rank snapshot, then the automatic SEO fixes
+//   :45 every hour   the image library follows Aaron's Kittl library (lib/kittl-sync.mjs)
+//   every other tick one step of the shirt price sync (lib/pricing.mjs)
+// The old per-job cron strings still work, so a deploy with the four separate crons runs the same jobs.
+export const SYNC_CRON = "*/15 * * * *";
 export const AUDIT_CRON = "0 11 * * *";
 export const AUTOFIX_CRON = "30 11 * * *";
-// Hourly, at :45: the image library follows Aaron's Kittl library (lib/kittl-sync.mjs).
 export const KITTL_CRON = "45 * * * *";
-export async function handleScheduled(env, cron) {
-  if (!cron || cron === AUDIT_CRON) return runScheduledAudits(envReader(env), (input, init) => fetch(input, init), marketingKv(env));
-  if (cron === AUTOFIX_CRON) {
+export function scheduledJob(cron, time) {
+  if (!cron || cron === AUDIT_CRON) return "audit";
+  if (cron === AUTOFIX_CRON) return "autofix";
+  if (cron === KITTL_CRON) return "kittl";
+  if (cron !== SYNC_CRON || time == null) return "pricing";
+  const d = new Date(time);
+  if (Number.isNaN(d.getTime())) return "pricing";
+  const h = d.getUTCHours(), m = d.getUTCMinutes();
+  if (h === 11 && m < 15) return "audit";
+  if (h === 11 && m >= 30 && m < 45) return "autofix";
+  if (m >= 45) return "kittl";
+  return "pricing";
+}
+export async function handleScheduled(env, cron, time) {
+  const job = scheduledJob(cron, time);
+  if (job === "audit") return runScheduledAudits(envReader(env), (input, init) => fetch(input, init), marketingKv(env));
+  if (job === "autofix") {
     // Today's rank snapshot first (a few requests), then the fixes.
     await runScheduledSnapshots(envReader(env), (input, init) => fetch(input, init), marketingKv(env)).catch(() => null);
     return runScheduledFixes(envReader(env), (input, init) => fetch(input, init), marketingKv(env));
   }
-  if (cron === KITTL_CRON) return scheduledKittlSync(env);
+  if (job === "kittl") return scheduledKittlSync(env);
   try {
     return await scheduledPricing({ env: envReader(env), kv: env?.PRICING ?? null, fetchImpl: (input, init) => fetch(input, init) });
   } catch (e) {

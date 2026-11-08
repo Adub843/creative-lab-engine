@@ -2706,16 +2706,31 @@ test("worker: /api/marketing runs through the Worker with the MARKETING KV, and 
   }, f.fetch);
 });
 
-test("wrangler.toml: MARKETING and PRICING KV bindings, the daily audit cron, the price sync cron and the Kittl sync cron", async () => {
+test("wrangler.toml: MARKETING and PRICING KV bindings, and one 15-minute cron that runs the audit, fixes, Kittl sync and price sync", async () => {
   const fs = await import("node:fs");
   const toml = fs.readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   assert.match(toml, /\[\[kv_namespaces\]\]\s*\nbinding = "MARKETING"/);
   assert.match(toml, /\[\[kv_namespaces\]\]\s*\nbinding = "PRICING"/);
-  assert.match(toml, /\[triggers\]\s*\ncrons = \["0 11 \* \* \*", "30 11 \* \* \*", "\*\/15 \* \* \* \*", "45 \* \* \* \*"\]/);
+  // One cron only: the Workers Free plan allows 5 per account, shared with Aaron's other workers.
+  assert.match(toml, /\[triggers\]\s*\ncrons = \["\*\/15 \* \* \* \*"\]/);
   const W2 = await import("../worker/app.mjs");
-  assert.equal(W2.AUDIT_CRON, "0 11 * * *");
-  assert.equal(W2.AUTOFIX_CRON, "30 11 * * *");
-  assert.equal(W2.KITTL_CRON, "45 * * * *");
+  assert.equal(W2.SYNC_CRON, "*/15 * * * *");
+  const at = (hhmm) => Date.parse(`2026-11-07T${hhmm}:00Z`);
+  const job = (hhmm) => W2.scheduledJob(W2.SYNC_CRON, at(hhmm));
+  assert.equal(job("11:00"), "audit");
+  assert.equal(job("11:30"), "autofix");
+  assert.equal(job("11:45"), "kittl");
+  assert.equal(job("03:45"), "kittl");
+  for (const t of ["11:15", "00:00", "03:15", "10:30", "12:00", "23:30"]) assert.equal(job(t), "pricing", t);
+  // Every job still runs: once a day for the audit and fixes, 24 times a day for Kittl, the rest for prices.
+  const day = Array.from({ length: 96 }, (_, i) => job(`${String(Math.floor(i / 4)).padStart(2, "0")}:${String((i % 4) * 15).padStart(2, "0")}`));
+  assert.deepEqual([day.filter((j) => j === "audit").length, day.filter((j) => j === "autofix").length, day.filter((j) => j === "kittl").length, day.filter((j) => j === "pricing").length], [1, 1, 24, 70]);
+  // The old separate crons still map to the same jobs, and no cron (a manual run) is the audit.
+  assert.equal(W2.scheduledJob(W2.AUDIT_CRON), "audit");
+  assert.equal(W2.scheduledJob(W2.AUTOFIX_CRON), "autofix");
+  assert.equal(W2.scheduledJob(W2.KITTL_CRON), "kittl");
+  assert.equal(W2.scheduledJob(undefined), "audit");
+  assert.equal(W2.scheduledJob(W2.SYNC_CRON), "pricing");
 });
 
 // ---------- promotions ----------
