@@ -50,6 +50,8 @@ function fakeShopify(opts = {}) {
       return new Response(JSON.stringify({ access_token: "shpat_FROM_CLIENT_CREDENTIALS", scope: "read_products", expires_in: 86399 }), { status: 200 });
     }
     if (u.startsWith(STAGED_URL)) {
+      // Workers' fetch throws on redirect: "error"; only "follow" and "manual" work there.
+      assert.ok(init.redirect === undefined || ["follow", "manual"].includes(init.redirect), `redirect "${init.redirect}" isn't supported by Workers`);
       const form = init.body;
       const file = form.get("file");
       calls.push({ upload: { fields: Object.fromEntries([...form.entries()].filter(([k]) => k !== "file")), size: file.size, type: file.type, name: file.name } });
@@ -3828,4 +3830,45 @@ test("c3d listing photo: stages the bytes in Shopify's upload storage", async ()
   assert.equal(sh.calls.find((c) => c.upload).upload.size, png.byteLength);
   assert.equal((await handleC3dListings(photoReq(png, "image/svg+xml"), { env: envOf(), fetch: sh.fetch }, "photo")).status, 415);
   assert.equal((await handleC3dListings(photoReq(new Uint8Array()), { env: envOf(), fetch: sh.fetch }, "photo")).status, 400);
+});
+
+const PHOTOS_NODE = (urls) => ({ id: "gid://shopify/Product/777", handle: "santas-magic-key", title: "Santa's Magic Key", tags: ["item:andy-20261017-santakey"],
+  media: { nodes: urls.map((url, i) => ({ id: `gid://shopify/MediaImage/${i}`, status: "READY", image: { url } })) } });
+
+test("c3d listing photos: adds a staged photo to the item's product and answers its photo links", async () => {
+  let added = null;
+  const sh = fakeShopify({ override: {
+    ConsoleC3dPhotos: (v, data) => data({ products: { nodes: [PHOTOS_NODE(added ? ["https://cdn.shopify.com/a.jpg", "https://cdn.shopify.com/b.jpg"] : ["https://cdn.shopify.com/a.jpg"])] } }),
+    ConsoleC3dAddPhotos: (v, data) => { added = v; return data({ productUpdate: { product: { id: v.product.id }, userErrors: [] } }); },
+  } });
+  const only = await handleC3dListings(post({ store: "c3d", ref: "andy-20261017-santakey" }), { env: envOf(), fetch: sh.fetch }, "photos");
+  assert.equal(only.status, 200, JSON.stringify(only.body));
+  assert.deepEqual(only.body.images, ["https://cdn.shopify.com/a.jpg"]);
+  assert.equal(added, null);
+  const res = await handleC3dListings(post({ store: "c3d", ref: "andy-20261017-santakey", photos: [{ resourceUrl: `${STAGED_URL}tmp/123/life.png`, alt: "On a porch table" }] }), { env: envOf(), fetch: sh.fetch }, "photos");
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.added, 1);
+  assert.equal(res.body.images.length, 2);
+  assert.deepEqual(added.media, [{ originalSource: `${STAGED_URL}tmp/123/life.png`, mediaContentType: "IMAGE", alt: "On a porch table" }]);
+  assert.equal(added.product.id, "gid://shopify/Product/777");
+  assert.ok(sh.calls.filter((c) => c.op).every((c) => c.domain === "charleston3d.myshopify.com"), "only the C3D store");
+});
+
+test("c3d listing photos: refuses foreign hosts, the ED store and items not listed yet", async () => {
+  const sh = fakeShopify({ override: { ConsoleC3dPhotos: (v, data) => data({ products: { nodes: [] } }) } });
+  const run = (body) => handleC3dListings(post(body), { env: envOf(), fetch: sh.fetch }, "photos");
+  assert.equal((await run({ store: "ed", ref: "andy-20261017-santakey" })).body.code, "wrong_store");
+  assert.equal((await run({ store: "c3d", ref: "andy-20261017-santakey", photos: [{ resourceUrl: "https://evil.example.com/x.png" }] })).status, 400);
+  assert.equal((await run({ store: "c3d", ref: "andy-20261017-santakey", photos: [{ resourceUrl: "https://kittl.com.evil.example/x.png" }] })).status, 400);
+  assert.equal((await run({ store: "c3d", ref: "andy-20261017-santakey", photos: [{ resourceUrl: "http://cache.kittl.com/x.png" }] })).status, 400);
+  assert.equal((await run({ store: "c3d", ref: "andy-20261017-santakey", photos: [{ resourceUrl: "https://cache.kittl.com/x.png" }] })).body.code, "not_listed");
+  assert.equal((await run({ store: "c3d", ref: "andy-20261017-santakey" })).body.code, "not_listed");
+  assert.ok(!sh.calls.some((c) => c.op === "ConsoleC3dAddPhotos"));
+});
+
+test("c3d listing photo: a network failure says why", async () => {
+  const sh = fakeShopify({ upload: "throw" });
+  const res = await handleC3dListings(photoReq(new Uint8Array([0x89, 0x50, 0x4e, 0x47])), { env: envOf(), fetch: sh.fetch }, "photo");
+  assert.equal(res.status, 502);
+  assert.match(res.body.error, /socket hang up/);
 });

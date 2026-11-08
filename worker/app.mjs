@@ -131,7 +131,7 @@ export async function handleRequest(req, env) {
       return await listings(req, env, { readImage });
     }
     // Charleston 3D listings from the console's 3D files picker: photos first (raw bytes), then the listing.
-    if (pathname === "/api/c3d-listings" || pathname === "/api/c3d-listings/photo") {
+    if (pathname === "/api/c3d-listings" || pathname === "/api/c3d-listings/photo" || pathname === "/api/c3d-listings/photos") {
       const url = new URL(req.url);
       const out = await handleC3dListings({
         method: req.method, query: url.searchParams, header: (k) => req.headers.get(k),
@@ -142,7 +142,7 @@ export async function handleRequest(req, env) {
           if (buf.byteLength > MAX_PHOTO_BYTES) throw new HttpError(413, "too_large", "The photo is larger than 20 MB.");
           return buf;
         },
-      }, { env: envReader(env), fetch: (input, init) => fetch(input, init) }, pathname.endsWith("/photo") ? "photo" : "");
+      }, { env: envReader(env), fetch: (input, init) => fetch(input, init) }, pathname.slice("/api/c3d-listings/".length));
       return json(out.body, out.status);
     }
     if (pathname === "/api/pricing") return await pricing(req, env, { kv: env?.PRICING ?? null });
