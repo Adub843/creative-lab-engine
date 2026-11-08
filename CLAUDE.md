@@ -186,4 +186,5 @@ The skills live in project files `agent-skills-catalog/skills/` and on the Deskt
 - Before deploying, make sure the branch contains every merged PR (#5, #6, #7, #8). `npm run check` and `npm test` must pass.
 - The two brands never share a request: every call names its store (`c3d` or `ed`). The price sync touches only products tagged "Elevated Designs".
 - Admin API is pinned to 2025-10. Validate every GraphQL change with `scripts/schema`.
-- Every page has a "Go to" menu in the top bar and a Design Studio link in the sidebar: the Design Studio (https://epix3d.com), both shops, both apps, the accounts map and the Master Links sheet. The list is `GO_TO` in `assets/data.js`; keep it in step with the studio's own Go to menu.
+- The console is the master hub for art and shirts (7 Nov 2026): the Art library (both stores, brands `c3d`/`ed`/`epix3d`), the E: drive page (`lib/drive.mjs`, PC server in `drive-server/`, tunnel at `DRIVE_ORIGIN`) and the Shirt designer came over from the Design Studio. epix3d.com is now a separate 3D maker site (repo Adub843/design-studio): don't link art or shirt work to it.
+- Every page has a "Go to" menu in the top bar: both shops, both apps, the EPIX3D 3D maker (https://epix3d.com), the accounts map and the Master Links sheet. The list is `GO_TO` in `assets/data.js`.

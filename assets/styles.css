@@ -751,3 +751,34 @@ textarea.field { resize: vertical; font-family: var(--f-body); }
 .price-group th { font-family: inherit; font-size: 14px; text-transform: none; letter-spacing: 0; color: var(--fg); background: var(--sunk); padding-top: 10px; }
 /* On a phone: size, cost, and the two selling prices; the rest is on a wider screen or in the sheet */
 @media (max-width: 640px) { .price-tbl .opt { display: none; } .price-tbl th, .price-tbl td { padding: 7px 6px; } }
+/* Art library: brand switch, numbers and two-up fields (moved here from the Design Studio, 2026-11-07) */
+.dl-two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.dl-epix { background: var(--sunk); color: var(--fg); border: 1px solid var(--line); }
+#dl-brands { justify-self: start; }
+#dl-brands .seg-btn[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+@media (max-width: 560px) {
+  .dl-two { grid-template-columns: 1fr; }
+  .dl-top-acts { display: grid; grid-template-columns: minmax(0, 1fr) auto; width: 100%; }
+  .dl-top-acts select.field { width: 100%; min-width: 0; }
+  .dl-top-acts .btn { justify-content: center; }
+}
+
+/* E: drive */
+.dv-ext { display: grid; place-items: center; width: 64%; aspect-ratio: 1; border-radius: 10px; border: 1px solid var(--line); background: var(--surface);
+  font-family: var(--f-mono); font-size: 13px; font-weight: 500; letter-spacing: .04em; color: var(--muted); }
+.dv-ext.big { width: 42%; font-size: 18px; }
+.dv-folder { display: block !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-path { font-family: var(--f-mono); font-size: 12.5px; margin: 0; }
+.dv-pager { justify-content: space-between; align-items: center; }
+
+/* Home: start a design on a real shirt photo */
+.starts { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.start { display: grid; gap: 6px; padding: 6px 6px 10px; font: inherit; font-size: 13px; font-weight: 500; color: var(--fg); background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--r); cursor: pointer; text-align: center; }
+.start:hover { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.start:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.start-pic { position: relative; width: 100%; aspect-ratio: 1; border-radius: 7px; overflow: hidden; background: #f6f6f4; isolation: isolate; }
+.start-pic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.start-shade { mix-blend-mode: multiply; }
+.start-base { mix-blend-mode: plus-lighter; }
+@media (max-width: 760px) { .starts { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

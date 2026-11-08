@@ -14,11 +14,12 @@
 // Secrets (set with `npx wrangler secret put NAME`, never in code): CONSOLE_KEY, the Shopify
 // domains and tokens (C3D_*, ED_*), and optionally INDEXNOW_KEY, ED_HANDLING_DAYS, *_SITE_URL,
 // MESHY_API_KEY (the 3D maker, lib/meshy.mjs). Variable (public): ED_CUSTOMER_CLIENT_ID (store sign-in
-// for the shirt app, lib/members.mjs).
+// for the shirt app, lib/members.mjs), DRIVE_ORIGIN (the E: drive library's tunnel on Aaron's PC, lib/drive.mjs).
 import { handleProducts, HttpError } from "../lib/shopify.mjs";
 import { handleInsights } from "../lib/insights.mjs";
 import { handleListings, libraryReader } from "../lib/listings.mjs";
 import { handleImages } from "../lib/images.mjs";
+import { handleDrive } from "../lib/drive.mjs";
 import { handleMember } from "../lib/members.mjs";
 import { handleFiles } from "../lib/files.mjs";
 import { r2BlobStore, combinedStore } from "../lib/r2-store.mjs";
@@ -145,6 +146,9 @@ export async function handleRequest(req, env) {
       return await handleMember(req, { blobs: imageStore(env), env: envReader(env), fetch: (input, init) => fetch(input, init) });
     if (pathname === "/api/images" || pathname.startsWith("/api/images/"))
       return await handleImages(req, { blobs: imageStore(env), env: envReader(env) });
+    // The E: drive library: files stay on Aaron's PC and come through the Cloudflare Tunnel at DRIVE_ORIGIN.
+    if (pathname === "/api/drive" || pathname.startsWith("/api/drive/"))
+      return await handleDrive(req, { env: envReader(env), fetchImpl: (input, init) => fetch(input, init) });
     // Charleston 3D's 3D files: in the FILES R2 bucket once it's bound (older ones stay readable in KV),
     // otherwise in the IMAGES KV namespace under their own prefix. Never in the image list.
     if (pathname === "/api/files" || pathname.startsWith("/api/files/")) {

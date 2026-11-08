@@ -30,11 +30,16 @@ export const TOOLS = [
   { id: "maker3d", group: "make", store: "c3d", name: "3D maker", ico: "◈", page: "maker3d",
     sub: "Photos or a few words in, a printable 3D model out (Meshy)" },
 
-  // Library
-  { id: "library", group: "library", store: "ed", name: "Design library", ico: "▦", page: "designs",
-    sub: "Every Elevated Designs image, with categories; ticked ones feed the shirt app" },
+  // Library: the art library and the E: drive came over from the Design Studio on 2026-11-07. Each store's
+  // Art library shows only its own brand's art (Elevated Designs includes its EPIX3D label).
+  { id: "library", group: "library", store: "ed", name: "Art library", ico: "▦", page: "designs",
+    sub: "Every Elevated Designs and EPIX3D image, with categories and brands; ticked ones feed the shirt app" },
+  { id: "artc3d", group: "library", store: "c3d", name: "Art library", ico: "▦", page: "designs",
+    sub: "Charleston 3D's logos, photos and art, private to the team" },
   { id: "files", group: "library", store: "c3d", name: "3D file library", ico: "▦", page: "files",
     sub: "Every print file (STL, 3MF, OBJ, STEP) and photo, with a preview of each model" },
+  { id: "drive", group: "library", name: "E: drive", ico: "◫", page: "drive",
+    sub: "Every design file on the E: drive, with previews, while Aaron's PC is on" },
 
   // Stats & marketing
   { id: "insights", group: "grow", name: "Insights", ico: "↗", page: "insights", sub: "Sales, visits and a 30-day forecast" },

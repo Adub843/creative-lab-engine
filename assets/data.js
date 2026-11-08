@@ -25,18 +25,17 @@ export const BRANDS = {
   other: { name: "Other projects", tagline: "Video, content and personal apps" },
 };
 
-// The Design Studio and everywhere else the team works, one click from every page: the Go to menu in
-// the top bar, the Design Studio link in the sidebar and the jump palette. Keep it in step with the
-// studio's own Go to menu.
-export const STUDIO_URL = "https://epix3d.com";
+// Everywhere else the team works, one click from every page: the Go to menu in the top bar and the jump palette.
+// 7 Nov 2026: the Design Studio was folded into this console (Art library, E: drive and Shirt designer are pages
+// here), and epix3d.com became a separate 3D maker site, so it's listed with the sites.
+export const EPIX3D_URL = "https://epix3d.com";
 export const GO_TO = [
-  { group: "Back office", links: [
-    { label: "Design Studio", note: "Art for every brand and the shirt designer", url: STUDIO_URL }] },
   { group: "Sites", links: [
     { label: "Charleston 3D shop", note: "charleston3d.com", url: "https://charleston3d.com" },
     { label: "Charleston 3D order app", note: "app.charleston3d.com", url: "https://app.charleston3d.com" },
     { label: "Elevated Designs shop", note: "elevatedshirts.com", url: "https://elevatedshirts.com" },
-    { label: "Elevated Designs shirt app", note: "design.elevatedshirts.com", url: "https://design.elevatedshirts.com" }] },
+    { label: "Elevated Designs shirt app", note: "design.elevatedshirts.com", url: "https://design.elevatedshirts.com" },
+    { label: "EPIX3D 3D maker", note: "epix3d.com", url: EPIX3D_URL }] },
   { group: "Reference", links: [
     { label: "Accounts and connections", note: "Every account and what connects to what", url: "https://claude.ai/artifact/Xek7W6RMuhNjUHaPmoRtuY" },
     { label: "Master links", note: "Every link in one sheet", url: "https://docs.google.com/spreadsheets/d/11SqwifuaDQjHgIGcuaZNRkdkG7JxfQacmT-7sEAH7Y4/edit" }] },
@@ -89,11 +88,14 @@ export const SERVICES = [
     does: "The single home for Elevated Designs' own Shopify theme.",
     note: "Not connected to the store yet, so theme changes are uploaded by hand. Connect it in Shopify (Online Store, Themes, Add theme, Connect from GitHub) to deploy on every commit.",
     links: [{ label: "Open repository", url: "https://github.com/Adub843/elevated-designs-site" }] },
-  { id: "studio", name: "Design Studio", brand: "ed", kind: "Web app · Cloudflare Worker", status: "live",
-    does: "The art library and shirt designer for every brand, each with its own library, at epix3d.com. It shares this console's image library, so a design saved there shows up here and in the shirt apps. Its key is the same as this console's.",
-    source: "GitHub: Adub843/design-studio (deployed by hand from the PC). epix3d.com's DNS is on Cloudflare; the domain is registered at Wix. Backup address: design-studio.business-console.workers.dev",
-    links: [{ label: "Open Design Studio", url: "https://epix3d.com" }, { label: "Design library in this console", url: "#designs/ed" }, { label: "Shirt designer in this console", url: "#studio/ed" },
-      { label: "Open repository", url: "https://github.com/Adub843/design-studio" }] },
+  { id: "studio", name: "Art library and shirt designer", brand: "ed", kind: "In this console · Elevated Designs", status: "live",
+    does: "Every brand's art in one online library (Elevated Designs with its EPIX3D label here, Charleston 3D on its own side), the E: drive browser, and the shirt designer on real shirt photos. Ticked art feeds the shirt app at design.elevatedshirts.com; saved designs are listed from List a design. Moved here from the Design Studio on 7 Nov 2026.",
+    source: "GitHub: Adub843/Business-console (assets/design-library.js, assets/drive.js, assets/studio.js; lib/images.mjs and lib/drive.mjs). The E: drive server is drive-server/ on Aaron's PC, reached through the Cloudflare Tunnel at library.epix3d.com.",
+    links: [{ label: "Art library", url: "#designs/ed" }, { label: "Shirt designer", url: "#studio/ed" }, { label: "E: drive", url: "#drive/ed" }] },
+  { id: "epix3d", name: "epix3d.com", brand: "other", kind: "Website · Cloudflare Worker", status: "live",
+    does: "EPIX3D's 3D maker site, separate from this console. It has nothing to do with shirts: no shirt designer and no shirt art.",
+    source: "GitHub: Adub843/design-studio (deployed by hand from the PC). DNS on Cloudflare; the domain is registered at Wix (auto-renew off, expires 2 Jun 2027).",
+    links: [{ label: "Open epix3d.com", url: EPIX3D_URL }, { label: "Open repository", url: "https://github.com/Adub843/design-studio" }] },
   { id: "publish", name: "Products and Insights", brand: "other", kind: "In this console · both stores", status: "live",
     does: "Switch products on or off each store's Shopify site, choose which Charleston 3D products are customizable (the theme then asks for a name to print), list a library design on Elevated Designs in one click, and see sales, visits, a 30-day forecast and next steps for each store.",
     links: [{ label: "Products", url: "#products" }, { label: "List a design (Elevated Designs)", url: "#products/ed/list" }, { label: "Insights", url: "#insights" }] },
@@ -149,8 +151,11 @@ export const TOPOLOGY = [
       does: "Shirts in auto-updating collections, with SEO and AI-crawler support built in.", to: [["store-ed", "catalog, cart, checkout"]],
       links: [{ label: "Open site", url: BRANDS.ed.site }] },
     { id: "app-ed", name: "Shirt design app", where: "GitHub Pages", brand: "ed",
-      does: "design.elevatedshirts.com: people design a shirt and share it; orders pay through the Elevated Designs checkout.", to: [["store-ed", "cart permalink, checkout"]],
+      does: "design.elevatedshirts.com: people design a shirt and share it; orders pay through the Elevated Designs checkout. Its art comes from this console's Art library and E: drive.", to: [["store-ed", "cart permalink, checkout"], ["console", "art: /api/images and /api/drive/public"]],
       links: [{ label: "Open app", url: BRANDS.ed.app }] },
+    { id: "site-epix3d", name: "EPIX3D 3D maker", where: "epix3d.com, its own Cloudflare Worker", brand: "other",
+      does: "A separate 3D maker site. Not part of this console and has nothing to do with shirts.", to: [],
+      links: [{ label: "Open site", url: EPIX3D_URL }] },
   ] },
   { layer: "Stores (all payments)", nodes: [
     { id: "store-c3d", name: "Charleston3D store", where: "Shopify Basic", brand: "c3d",
@@ -163,10 +168,13 @@ export const TOPOLOGY = [
   { layer: "Back office (Cloudflare)", nodes: [
     { id: "console", name: "Business Console", where: "Cloudflare Worker, free plan", brand: "other",
       does: "This console. Behind CONSOLE_KEY. Publishes products, lists designs, prices, insights and marketing for both stores, each store on its own.",
-      to: [["store-c3d", "Admin API"], ["store-ed", "Admin API"], ["kv", "reads and writes"], ["search", "Search Console, GA4, Bing, IndexNow"]],
+      to: [["store-c3d", "Admin API"], ["store-ed", "Admin API"], ["kv", "reads and writes"], ["edrive", "E: drive, signed requests"], ["search", "Search Console, GA4, Bing, IndexNow"]],
       links: [{ label: "Open console", url: CONSOLE_URL }, { label: "Cloudflare dashboard", url: "https://dash.cloudflare.com" }] },
+    { id: "edrive", name: "E: drive library", where: "Aaron's PC, Cloudflare Tunnel library.epix3d.com", brand: "other",
+      does: "Every design file on the E: drive (and Kittl), searched and previewed in the console's E: drive page while the PC is on. Read only; every request is signed with the console key. The tunnel name is from the Design Studio days and can move to a console hostname.",
+      to: [], links: [{ label: "E: drive page", url: "#drive" }] },
     { id: "kv", name: "Workers KV", where: "Same Cloudflare account", brand: "other",
-      does: "IMAGES (design library), PRICING (price sync state), MARKETING (scores, change log, keywords).", to: [],
+      does: "IMAGES (Art library for every brand), PRICING (price sync state), MARKETING (scores, change log, keywords).", to: [],
       links: [{ label: "KV in Cloudflare", url: "https://dash.cloudflare.com/?to=/:account/workers/kv/namespaces" }] },
     { id: "crons", name: "Scheduled jobs", where: "Worker cron triggers (UTC)", brand: "other",
       does: "11:00 daily health check of both sites. 11:30 daily safe SEO fixes. Every 15 minutes the shirt price sync steps on. Hourly at :45 the image library follows the Kittl library.",

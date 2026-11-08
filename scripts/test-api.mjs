@@ -1538,7 +1538,10 @@ test("build: dist/ holds only index.html, assets/ and tools/, and wrangler.toml 
   assert.match(toml, /^run_worker_first = true$/m, "API routes and security headers go through the Worker");
   assert.match(toml, /compatibility_flags = \["nodejs_compat"\]/);
   assert.match(toml, /\[\[kv_namespaces\]\]\s+binding = "IMAGES"/);
-  assert.ok(!/\[vars\]|shpat_|CONSOLE_KEY\s*=|_TOKEN\s*=|_SECRET\s*=/.test(toml), "no vars, no secrets in wrangler.toml");
+  assert.ok(!/shpat_|CONSOLE_KEY\s*=|_TOKEN\s*=|_SECRET\s*=|_KEY\s*=/.test(toml), "no secrets in wrangler.toml");
+  // The one plain variable: the E: drive library's tunnel address (an address, not a secret).
+  const vars = toml.match(/^\[vars\]\r?\n([\s\S]*?)(?=^\[)/m)?.[1] ?? "";
+  assert.deepEqual(vars.split(/\r?\n/).filter((l) => l.trim() && !l.startsWith("#")), ['DRIVE_ORIGIN = "https://library.epix3d.com"'], "only DRIVE_ORIGIN is a var");
   assert.deepEqual([...toml.matchAll(/bucket_name\s*=\s*"([^"]+)"/g)].map((m) => m[1]), ["c3d-files"], "one R2 bucket: Charleston 3D's print files");
   // Nothing in this project runs on Netlify: no config, functions, packages, code or docs for it.
   for (const gone of ["netlify.toml", "netlify", "lib/netlify.mjs"]) assert.ok(!fs.existsSync(path.join(root, gone)), `${gone} is gone`);
@@ -1624,7 +1627,7 @@ test("worker: image library on Workers KV keeps the same API (list, file, upload
     const up = await W.handleRequest(wreq("/api/images", { method: "POST", headers: { "content-type": "image/png", "x-filename": `d${i}.png`, "x-tags": "palmetto", ...KEYH }, body: PNG }), env);
     assert.equal(up.status, 201);
     const { item } = await up.json();
-    assert.deepEqual(Object.keys(item).sort(), ["added", "key", "name", "public", "size", "tags", "type", "url"]);
+    assert.deepEqual(Object.keys(item).sort(), ["added", "brand", "key", "name", "public", "size", "tags", "type", "url"]);
     keys.push(item.key); urls.push(item.url);
   }
   assert.ok([...kv.m.keys()].every((k) => k.startsWith("image:")), "stored under the image: prefix");
@@ -3648,4 +3651,217 @@ test("worker: /api/handoffs uses the MARKETING KV", async () => {
   assert.equal(r.status, 201);
   assert.ok(kv.m.has("handoffs"));
   assert.equal((await W.handleRequest(wreq("/api/handoffs"), env)).status, 401);
+});
+
+// ---------- brands on the image library (moved here from the Design Studio, 2026-11-07) ----------
+const brandCtx = () => ({ blobs: fakeBlobs(), env: envOf() });
+const brandPost = (ctx, h = {}) => handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", "x-filename": "art.png", ...KEYH, ...h }, body: PNG }), ctx);
+
+test("brands: old images count as Elevated Designs, or Charleston 3D when their category says so", () => {
+  assert.equal(I.brandOf({}), "ed"); assert.equal(I.brandOf(null), "ed"); assert.equal(I.brandOf({ brand: "nope" }), "ed");
+  assert.equal(I.brandOf({ brand: "c3d" }), "c3d"); assert.equal(I.brandOf({ brand: "epix3d" }), "epix3d");
+  assert.equal(I.brandOf({ category: "Charleston 3D logos" }), "c3d");
+  assert.equal(I.brandOf({ brand: "ed", category: "Charleston3D" }), "ed", "a brand that was set wins");
+  assert.equal(I.canBePublic("c3d"), false); assert.equal(I.canBePublic("ed"), true); assert.equal(I.canBePublic("epix3d"), true);
+});
+
+test("brands: uploads need the key and keep their brand; Charleston 3D art is never public", async () => {
+  const ctx = brandCtx();
+  assert.equal((await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", "x-brand": "ed" }, body: PNG }), ctx)).status, 401);
+  for (const b of ["c3d", "ed", "epix3d"]) {
+    const r = await brandPost(ctx, { "x-brand": b, "x-public": "1", "x-access": "pro" });
+    assert.equal(r.status, 201);
+    const { item } = await r.json();
+    assert.equal(item.brand, b);
+    assert.equal(item.public, b !== "c3d", `${b} public`);
+    assert.equal(item.access, b === "c3d" ? undefined : "pro", "C3D art can't be unlocked in the shirt app either");
+  }
+  assert.equal((await (await brandPost(ctx, { "x-brand": "bogus" })).json()).item.brand, "ed");
+  assert.equal((await (await brandPost(ctx)).json()).item.brand, "ed", "no brand: Elevated Designs");
+});
+
+test("brands: the public feed hides private and Charleston 3D art (even old public ones) and filters by brand", async () => {
+  const ctx = brandCtx();
+  await brandPost(ctx, { "x-brand": "ed", "x-public": "1", "x-filename": "ed.png" });
+  await brandPost(ctx, { "x-brand": "epix3d", "x-public": "1", "x-filename": "epix.png" });
+  await brandPost(ctx, { "x-brand": "c3d", "x-public": "1", "x-filename": "c3d.png" });
+  await brandPost(ctx, { "x-brand": "ed", "x-filename": "private.png" });
+  // made public before brands existed, filed under a Charleston 3D category
+  const old = (await (await brandPost(ctx, { "x-filename": "old-c3d.png", "x-public": "1" })).json()).item;
+  const m = ctx.blobs.m.get(`image:${old.key}`).metadata; delete m.brand; m.category = "Charleston 3D";
+  const feed = async (q = "") => (await (await handleImages(imgReq(`/api/images?public=1${q}`, { headers: { origin: "https://design.elevatedshirts.com" } }), ctx)).json()).items;
+  assert.deepEqual((await feed()).map((i) => i.name).sort(), ["ed.png", "epix.png"]);
+  assert.deepEqual(Object.keys((await feed())[0]).sort(), ["added", "brand", "key", "name", "tags", "type"],
+    "the fields the studio's feed had (category and kind too when set), nothing more");
+  assert.deepEqual((await feed("&brand=ed")).map((i) => i.name), ["ed.png"]);
+  assert.deepEqual((await feed("&brand=epix3d")).map((i) => i.name), ["epix.png"]);
+  assert.deepEqual(await feed("&brand=c3d"), [], "asking for Charleston 3D gets nothing");
+  assert.equal((await handleImages(imgReq("/api/images?public=1&brand=nope"), ctx)).status, 400);
+  const keyed = (await (await handleImages(imgReq("/api/images", { headers: KEYH }), ctx)).json()).items;
+  assert.equal(keyed.find((i) => i.key === old.key).brand, "c3d", "the keyed list names every image's brand");
+  assert.ok(keyed.every((i) => ["c3d", "ed", "epix3d"].includes(i.brand)));
+  const pr = await brandPost(ctx, { "x-brand": "ed", "x-filename": "members.png", "x-access": "members" });
+  const c3dLocked = (await (await brandPost(ctx, { "x-filename": "c3d-members.png", "x-access": "members" })).json()).item;
+  const mm = ctx.blobs.m.get(`image:${c3dLocked.key}`).metadata; delete mm.brand; mm.category = "Charleston 3D";
+  const members = await I.imagesForTags(ctx.blobs, [], ctx.env, "https://console.example");
+  assert.deepEqual(members.map((i) => i.name), ["members.png"], "signed-in customers never get Charleston 3D art either");
+  assert.equal(pr.status, 201);
+});
+
+test("brands: PATCH moves an image between brands, and moving to Charleston 3D turns public and access off", async () => {
+  const ctx = brandCtx();
+  const { item } = await (await brandPost(ctx, { "x-brand": "ed", "x-public": "1", "x-access": "pro" })).json();
+  const patch = (body, h = KEYH) => handleImages(imgReq(`/api/images/${item.key}`, { method: "PATCH", headers: { "content-type": "application/json", ...h }, body: JSON.stringify(body) }), ctx);
+  let out = (await (await patch({ name: "Renamed", tags: "a, b", category: "Holidays", brand: "epix3d" })).json()).item;
+  assert.deepEqual([out.name, out.tags, out.category, out.brand, out.public, out.access], ["Renamed", "a, b", "Holidays", "epix3d", true, "pro"]);
+  out = (await (await patch({ brand: "c3d" })).json()).item;
+  assert.deepEqual([out.brand, out.public, out.access], ["c3d", false, undefined]);
+  out = (await (await patch({ public: true })).json()).item;
+  assert.equal(out.public, false, "Charleston 3D art can't be made public");
+  assert.equal((await patch({ brand: "nope" })).status, 400);
+  assert.equal((await patch({ brand: "ed" }, {})).status, 401, "moving needs the key");
+  assert.equal(ctx.blobs.m.get(`image:${item.key}`).metadata.brand, "c3d", "a refused change leaves it as it was");
+});
+
+// ---------- the E: drive library (lib/drive.mjs), checked against the PC side's own signature check ----------
+const { handleDrive } = await import("../lib/drive.mjs");
+const { verifySig, driveSig: driveSigFor, classify, shirtSearch } = await import("../drive-server/lib.mjs");
+const DKEY = ENV.CONSOLE_KEY;
+const DID = "0123456789abcdef0123";
+function fakePC(seen) {
+  return async (u, init) => {
+    const url = new URL(u);
+    seen.push({ host: url.host, path: url.pathname + url.search, ok: verifySig(DKEY, init.headers["x-drive-exp"], init.headers["x-drive-sig"], url.pathname + url.search) });
+    if (url.pathname === "/public") return Response.json({ page: 0, per: 500, total: 2, items: [{ id: DID, name: "skull.png", folder: "DTF Ready Prints", ext: ".png", kind: "dtf", rel: "E:\\secret" }, { id: "../etc", name: "bad" }] });
+    if (url.pathname === "/search") return Response.json({ total: 1, items: [{ id: DID, name: "skull.svg", thumb: true, src: "e", brand: "ed" }] });
+    if (url.pathname === "/stats") return Response.json({ kinds: [{ brand: "ed", kind: "svg", n: 3 }], index: "index-1.db" });
+    if (url.pathname.startsWith("/thumb/")) return new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/webp" } });
+    return new Response("x", { headers: { "content-type": "model/stl", "content-disposition": "attachment; filename=a.stl" } });
+  };
+}
+const driveEnv = (extra = {}) => envOf({ DRIVE_ORIGIN: "https://library.test", ...extra });
+const dcall = (p, init = {}, opts = {}) => handleDrive(new Request(`https://console.example${p}`, init), { env: driveEnv(), ...opts });
+
+test("drive: search and stats need the console key, and every request to the PC is signed", async () => {
+  const seen = [];
+  assert.equal((await dcall("/api/drive/search?q=skull", {}, { fetchImpl: fakePC(seen) })).status, 401);
+  assert.equal((await dcall("/api/drive/stats", { headers: { "x-console-key": "wrong-key-wrong-key-1" } }, { fetchImpl: fakePC(seen) })).status, 401);
+  assert.equal(seen.length, 0, "nothing reaches the PC without the key");
+  const res = await dcall("/api/drive/search?q=skull&brand=ed&evil=1", { headers: KEYH }, { fetchImpl: fakePC(seen) });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.deepEqual([seen[0].host, seen[0].path, seen[0].ok], ["library.test", "/search?q=skull&brand=ed", true], "only known fields go on, signed");
+  assert.match(body.items[0].thumbUrl, new RegExp(`^/api/drive/thumb/${DID}\\?exp=\\d+&sig=`));
+  assert.match(body.items[0].fileUrl, /^\/api\/drive\/file\//);
+  const st = await dcall("/api/drive/stats", { headers: KEYH }, { fetchImpl: fakePC(seen) });
+  assert.equal(st.status, 200); assert.equal((await st.json()).kinds[0].n, 3);
+  assert.equal(st.headers.get("cache-control"), "no-store");
+});
+
+test("drive: signed links load previews and files without the key; forged, old or swapped links don't", async () => {
+  const seen = [];
+  const { thumbUrl, fileUrl } = (await (await dcall("/api/drive/search", { headers: KEYH }, { fetchImpl: fakePC(seen) })).json()).items[0];
+  const t = await dcall(thumbUrl, {}, { fetchImpl: fakePC(seen) });
+  assert.equal(t.status, 200); assert.equal(t.headers.get("content-type"), "image/webp");
+  assert.equal(t.headers.get("x-content-type-options"), "nosniff");
+  const f = await dcall(fileUrl, {}, { fetchImpl: fakePC(seen) });
+  assert.equal(f.status, 200); assert.match(f.headers.get("content-disposition"), /attachment/);
+  assert.ok(seen.every((s) => s.ok));
+  assert.equal((await dcall(thumbUrl.replace(/sig=.*/, "sig=forged"), {}, { fetchImpl: fakePC(seen) })).status, 404);
+  assert.equal((await dcall(thumbUrl, {}, { fetchImpl: fakePC(seen), now: Date.now() + 2 * 3600_000 })).status, 404, "expired");
+  assert.equal((await dcall(fileUrl.replace("/file/", "/thumb/"), {}, { fetchImpl: fakePC(seen) })).status, 404, "a file link isn't a preview link");
+  assert.equal((await handleDrive(new Request(`https://console.example${thumbUrl}`), { env: envOf({ DRIVE_ORIGIN: "https://library.test", CONSOLE_KEY: "a-different-long-random-console-key-123" }), fetchImpl: fakePC(seen) })).status, 404,
+    "links stop working when the console key changes");
+  assert.equal((await dcall("/api/drive/thumb/..%2f..%2fwindows", { headers: KEYH }, { fetchImpl: fakePC(seen) })).status, 404);
+  assert.equal((await dcall("/api/drive/elsewhere", { headers: KEYH }, { fetchImpl: fakePC(seen) })).status, 404);
+});
+
+test("drive: a switched-off PC reads as offline; errors are handled; it's read only; no DRIVE_ORIGIN is 503", async () => {
+  const r = await dcall("/api/drive/search", { headers: KEYH }, { fetchImpl: async () => new Response("bad gateway", { status: 530 }) });
+  assert.equal(r.status, 503); assert.equal((await r.json()).code, "pc_offline");
+  const thrown = await dcall("/api/drive/stats", { headers: KEYH }, { fetchImpl: async () => { throw new Error("dns"); } });
+  assert.equal(thrown.status, 503); assert.equal((await thrown.json()).code, "pc_offline");
+  const html500 = await dcall("/api/drive/search", { headers: KEYH }, { fetchImpl: async () => new Response("<html>", { status: 500, headers: { "content-type": "text/html" } }) });
+  assert.equal((await html500.json()).code, "pc_offline");
+  const refused = await dcall("/api/drive/search", { headers: KEYH }, { fetchImpl: async () => Response.json({ error: "Bad signature" }, { status: 401 }) });
+  assert.equal(refused.status, 502, "the PC refusing the console's signature is a server problem, not a wrong key");
+  assert.equal((await dcall("/api/drive/search", { method: "POST", headers: KEYH })).status, 405);
+  const unset = await handleDrive(new Request("https://console.example/api/drive/search", { headers: KEYH }), { env: envOf() });
+  assert.equal(unset.status, 503); assert.equal((await unset.json()).code, "drive_not_set_up");
+});
+
+test("drive: the shirt app's public list needs no key, has absolute signed links on the console's address and CORS for the app only", async () => {
+  const seen = [];
+  const app = { origin: "https://design.elevatedshirts.com" };
+  const res = await dcall("/api/drive/public?q=skull&brand=c3d&per=50", { headers: app }, { fetchImpl: fakePC(seen) });
+  assert.equal(res.status, 200);
+  assert.equal(seen[0].path, "/public?q=skull&per=50", "the brand can't be chosen from outside");
+  assert.equal(seen[0].ok, true);
+  assert.equal(res.headers.get("access-control-allow-origin"), "https://design.elevatedshirts.com");
+  const body = await res.json();
+  assert.deepEqual(Object.keys(body).sort(), ["items", "page", "per", "total"], "the same shape the studio sent");
+  assert.equal(body.items.length, 1, "bad ids are dropped");
+  assert.deepEqual(Object.keys(body.items[0]).sort(), ["ext", "fileUrl", "folder", "id", "kind", "name", "thumbUrl"], "nothing about the PC's paths");
+  assert.match(body.items[0].thumbUrl, new RegExp(`^https://console\\.example/api/drive/thumb/${DID}\\?exp=\\d+&sig=`));
+  const fu = new URL(body.items[0].fileUrl);
+  const t = await dcall(fu.pathname + fu.search, { headers: app }, { fetchImpl: fakePC(seen) });
+  assert.equal(t.status, 200);
+  assert.equal(t.headers.get("access-control-allow-origin"), "https://design.elevatedshirts.com", "the app can read the file to print it");
+  for (const o of ["https://evil.example", "https://epix3d.com"])
+    assert.equal((await dcall("/api/drive/public", { headers: { origin: o } }, { fetchImpl: fakePC(seen) })).headers.get("access-control-allow-origin"), null, o);
+  const search = await dcall("/api/drive/search", { headers: app }, { fetchImpl: fakePC(seen) });
+  assert.equal(search.status, 401, "the full search still needs the key");
+  assert.equal(search.headers.get("access-control-allow-origin"), null);
+  const off = await dcall("/api/drive/public", { headers: app }, { fetchImpl: async () => new Response("", { status: 530 }) });
+  assert.equal(off.status, 503);
+  assert.equal(off.headers.get("access-control-allow-origin"), "https://design.elevatedshirts.com", "the app can tell the PC is off");
+  const extra = await handleDrive(new Request("https://console.example/api/drive/public", { headers: { origin: "https://shirts.example.com" } }),
+    { env: envOf({ DRIVE_ORIGIN: "https://library.test", BUILDER_ORIGINS: "https://shirts.example.com" }), fetchImpl: fakePC(seen) });
+  assert.equal(extra.headers.get("access-control-allow-origin"), "https://shirts.example.com", "BUILDER_ORIGINS works here too");
+});
+
+test("drive server: the shirt app only gets Elevated Designs pictures from the chosen E: folders", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const db = new DatabaseSync(":memory:");
+  db.exec("CREATE TABLE items (id TEXT PRIMARY KEY, src TEXT, root INTEGER, rel TEXT, name TEXT, folder TEXT, ext TEXT, brand TEXT, kind TEXT)");
+  const add = db.prepare("INSERT INTO items VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+  const rows = [["a", 0, "DTF Ready Prints\\skull.png", ".png", "ed", "dtf"], ["b", 0, "Fraud Account\\id.png", ".png", "ed", "image"],
+    ["c", 0, "SVG FILES\\boats\\anchor.svg", ".svg", "ed", "svg"], ["d", 0, "SVG FILES\\boats\\anchor.ai", ".ai", "ed", "source"],
+    ["e", 0, "Design Images_old\\p.png", ".png", "ed", "image"], ["f", 1, "DTF Ready Prints\\lab.png", ".png", "ed", "image"],
+    ["g", 0, "DTF Ready Prints\\boat.png", ".png", "c3d", "image"], ["h", 0, "loose.png", ".png", "ed", "image"]];
+  for (const [id, root, rel, ext, brand, kind] of rows) add.run(id, root ? "lab" : "e", root, rel, rel.split("\\").at(-1), rel.split("\\").slice(0, -1).join("\\"), ext, brand, kind);
+  const roots = [{ src: "e" }, { src: "lab" }];
+  const got = (q = "") => shirtSearch(db, roots, ["Design Images", "DTF Ready Prints", "SVG FILES"], new URLSearchParams(q)).items.map((i) => i.id);
+  assert.deepEqual(got(), ["a", "c"], "only pictures, only Elevated Designs, only inside the chosen folders on E:");
+  assert.deepEqual(got("q=anchor"), ["c"]);
+  assert.deepEqual(got("q=100%25"), [], "search text can't widen the match");
+  assert.deepEqual(shirtSearch(db, roots, [], new URLSearchParams()).items, [], "no folders chosen: nothing is public");
+});
+
+test("drive server: the PC rejects unsigned, forged, replayed-path and stale requests, and sorts files by brand", () => {
+  const exp = String(Math.floor(Date.now() / 1000));
+  const sig = driveSigFor(DKEY, exp, "/search?q=a");
+  assert.equal(verifySig(DKEY, exp, sig, "/search?q=a"), true);
+  assert.equal(verifySig(DKEY, exp, sig, "/file/0123456789abcdef0123"), false);
+  assert.equal(verifySig("another-key-123456789", exp, sig, "/search?q=a"), false);
+  assert.equal(verifySig(DKEY, String(Number(exp) - 3600), driveSigFor(DKEY, String(Number(exp) - 3600), "/stats"), "/stats"), false);
+  assert.equal(verifySig(DKEY, exp, undefined, "/stats"), false);
+  assert.deepEqual([classify("Print files\\boat\\hull.stl").brand, classify("Print files\\boat\\hull.stl").kind], ["c3d", "3d"]);
+  assert.deepEqual([classify("DTF Ready Prints\\skull.png").brand, classify("DTF Ready Prints\\skull.png").kind], ["ed", "dtf"]);
+  assert.equal(classify("SVG FILES\\a\\b.svg").kind, "svg");
+});
+
+test("worker: /api/drive reaches the drive library with DRIVE_ORIGIN from env, and unknown paths stay JSON 404s", async () => {
+  const seen = [];
+  await withFetch(async () => {
+    const env = workerEnv({ DRIVE_ORIGIN: "https://library.test" });
+    assert.equal((await W.handleRequest(wreq("/api/drive/search"), env)).status, 401);
+    const r = await W.handleRequest(wreq("/api/drive/search?q=a", { headers: KEYH }), env);
+    assert.equal(r.status, 200);
+    assert.deepEqual([seen[0].host, seen[0].ok], ["library.test", true]);
+    const pub = await W.handleRequest(wreq("/api/drive/public", { headers: { origin: "https://design.elevatedshirts.com" } }), env);
+    assert.equal(pub.headers.get("access-control-allow-origin"), "https://design.elevatedshirts.com");
+    assert.equal((await W.handleRequest(wreq("/api/drivex"), env)).status, 404);
+    assert.deepEqual(env.ASSETS.calls, [], "never falls through to the files");
+  }, fakePC(seen));
 });
