@@ -382,14 +382,14 @@ export async function renderStudio() {
     if (!(await askForKey("Private library images need the console key (the CONSOLE_KEY value set for this console)."))) return;
     await refresh();
   };
-  // When the hourly Kittl library sync last ran (counts only, no key needed).
+  // When the nightly Kittl library sync last ran (counts only, no key needed).
   const showSync = async () => {
     try {
       const s = await (await fetch("/api/library-sync", { headers: { accept: "application/json" } })).json();
       if (!s?.at && !s?.finishedAt && !s?.ranAt) { syncLine.textContent = s?.error ? `Kittl sync: ${s.error}` : ""; return; }
       const when = new Date(s.finishedAt ?? s.ranAt ?? s.at);
       const n = (v) => Array.isArray(v) ? v.length : (v ?? 0);
-      syncLine.textContent = `Kittl sync ${when.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}: ${n(s.added)} added, ${n(s.removed)} removed${s.failed ? `, ${s.failed} couldn't copy` : ""}. Runs every hour.`;
+      syncLine.textContent = `Kittl sync ${when.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}: ${n(s.added)} added, ${n(s.removed)} removed${s.failed ? `, ${s.failed} couldn't copy` : ""}. Runs nightly at 11:45 PM Eastern.`;
     } catch { syncLine.textContent = ""; }
   };
 

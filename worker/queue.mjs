@@ -12,7 +12,8 @@
 //   4. the console reads results/<id> and shows it.
 //
 // Only someone who can write to Aaron's Cloudflare account can push a message, so the key never
-// leaves the engine. Results and uploads are removed after a day (pruneResults, on the hourly cron).
+// leaves the engine. Results and uploads are removed after a day (pruneResults, on the hourly upkeep cron);
+// the daily digest (digest/, lib/digest.mjs) is kept separately for 30 days and never pruned here.
 import { handleRequest } from "./app.mjs";
 
 export const RESULT_PREFIX = "results/";

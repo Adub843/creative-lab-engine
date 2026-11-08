@@ -14,11 +14,11 @@
 // domains and tokens (C3D_*, ED_*), and optionally INDEXNOW_KEY, ED_HANDLING_DAYS, *_SITE_URL,
 // MESHY_API_KEY (the 3D maker, lib/meshy.mjs). Variable (public): ED_CUSTOMER_CLIENT_ID (store sign-in
 // for the shirt app, lib/members.mjs).
-import { handleProducts, HttpError } from "../lib/shopify.mjs";
+import { handleProducts, HttpError, requireKey } from "../lib/shopify.mjs";
 import { handleInsights } from "../lib/insights.mjs";
 import { handleListings, libraryReader } from "../lib/listings.mjs";
 import { handleC3dListings, MAX_PHOTO_BYTES } from "../lib/c3d-listings.mjs";
-import { handleImages, refreshPublicSnapshot } from "../lib/images.mjs";
+import { handleImages, refreshPublicSnapshot, renewPublicSnapshot } from "../lib/images.mjs";
 import { handleMember } from "../lib/members.mjs";
 import { handleFiles } from "../lib/files.mjs";
 import { r2BlobStore, combinedStore } from "../lib/r2-store.mjs";
@@ -30,7 +30,9 @@ import { handlePromotions } from "../lib/promotions.mjs";
 import { handleTeam } from "../lib/team.mjs";
 import { handlePicture } from "../lib/picture.mjs";
 import { runScheduledSnapshots } from "../lib/tracker.mjs";
-import { syncKittlLibrary, STATE_KEY as KITTL_STATE_KEY } from "../lib/kittl-sync.mjs";
+import { syncKittlLibrary, STATE_KEY as KITTL_STATE_KEY, SYNC_DEBOUNCE_MS } from "../lib/kittl-sync.mjs";
+import { buildDigest, saveDigest, digestKey, isDigestDate, DIGEST_LATEST } from "../lib/digest.mjs";
+import { handleScorecard } from "../lib/scorecard.mjs";
 
 // The app pages: only its own scripts, Shopify's CDN for product photos, never framed.
 export const SITE_HEADERS = {
@@ -108,6 +110,7 @@ const pricing = jsonRoute(handlePricing);
 const marketing = jsonRoute(handleMarketing);
 const promotions = jsonRoute(handlePromotions);
 const team = jsonRoute(handleTeam);
+const scorecard = jsonRoute(handleScorecard);
 const marketingKv = (env) => (env?.MARKETING && typeof env.MARKETING.get === "function" ? env.MARKETING : null);
 
 // Previews are small, so they stay in KV either way.
@@ -145,6 +148,8 @@ export async function handleRequest(req, env) {
       }, { env: envReader(env), fetch: (input, init) => fetch(input, init) }, pathname.slice("/api/c3d-listings/".length));
       return json(out.body, out.status);
     }
+    // The marketing scorecard (lib/scorecard.mjs): ad spend and limits come from small JSON files in the RESULTS bucket.
+    if (pathname === "/api/scorecard") return await scorecard(req, env, { bucket: env?.RESULTS && typeof env.RESULTS.get === "function" ? env.RESULTS : null });
     if (pathname === "/api/pricing") return await pricing(req, env, { kv: env?.PRICING ?? null });
     // A Shopify product picture for the console (it can't load pictures from other sites itself).
     if (pathname === "/api/picture") {
@@ -152,11 +157,29 @@ export async function handleRequest(req, env) {
       return await handlePicture({ method: req.method, query: url.searchParams, header: (k) => req.headers.get(k) }, { env: envReader(env), fetch: (input, init) => fetch(input, init) });
     }
     // The last Kittl library sync (counts only), so a check doesn't need the console key.
-    if (pathname === "/api/library-sync" && req.method === "GET") {
-      const last = env?.IMAGES ? await env.IMAGES.get(KITTL_STATE_KEY, "json") : null;
-      const { failed = [], ...rest } = last ?? {};
-      // The first few reasons (a Kittl id and what went wrong, nothing private) say why images didn't copy.
-      return json(last ? { ...rest, failed: failed.length, problems: failed.slice(0, 3) } : { ok: false, error: "No sync has run yet." }, 200);
+    // POST (console key) is the console's "Sync now": the sync runs at once and answers with the same counts.
+    // The library is shared by the Elevated Designs shirt apps, so a ?store= is ignored.
+    if (pathname === "/api/library-sync") {
+      if (req.method === "GET") {
+        const last = env?.IMAGES ? await env.IMAGES.get(KITTL_STATE_KEY, "json") : null;
+        return json(last ? syncStatus(last) : { ok: false, error: "No sync has run yet." }, 200);
+      }
+      if (req.method !== "POST") return json({ error: "Use GET or POST." }, 405);
+      requireKey({ header: (k) => req.headers.get(k) }, envReader(env), "Sync now");
+      imageStore(env);
+      const out = await librarySyncNow(env);
+      return json(out ? syncStatus(out) : { ok: false, error: "The library sync failed; see the Worker's logs." }, out ? 200 : 502);
+    }
+    // The daily digest (lib/digest.mjs), written by the 11:30 UTC cron. ?date=YYYY-MM-DD reads an earlier day.
+    if (pathname === "/api/digest") {
+      if (req.method !== "GET") return json({ error: "Use GET." }, 405);
+      requireKey({ header: (k) => req.headers.get(k) }, envReader(env), "The daily digest");
+      if (!env?.RESULTS || typeof env.RESULTS.get !== "function") throw new HttpError(503, "storage_not_set_up", "The digest isn't set up yet: add the RESULTS R2 bucket binding.");
+      const date = new URL(req.url).searchParams.get("date");
+      if (date && !isDigestDate(date)) throw new HttpError(400, "bad_input", "date must look like 2026-11-08.");
+      const obj = await env.RESULTS.get(date ? digestKey(date) : DIGEST_LATEST);
+      if (!obj) return json({ error: date ? `No digest for ${date}.` : "No digest yet: the first one is written at 11:30 UTC." }, 404);
+      return new Response(await obj.arrayBuffer(), { status: 200, headers: API_HEADERS });
     }
     if (pathname === "/api/member" || pathname === "/api/member/config")
       return await handleMember(req, { blobs: imageStore(env), env: envReader(env), fetch: (input, init) => fetch(input, init) });
@@ -191,20 +214,31 @@ export async function handleRequest(req, env) {
 }
 
 // The crons (wrangler.toml [triggers]): the daily site check for the Marketing page, half an hour
-// later the rank snapshot and the automatic SEO fixes (a run of their own, so each gets the full subrequest allowance),
-// and every 15 minutes one step of the shirt price sync (lib/pricing.mjs).
+// later the rank snapshot, the automatic SEO fixes and the daily digest (a run of their own, so each gets the full
+// subrequest allowance), and every 15 minutes one step of the shirt price sync (lib/pricing.mjs).
 export const AUDIT_CRON = "0 11 * * *";
 export const AUTOFIX_CRON = "30 11 * * *";
-// Hourly, at :45: the image library follows Aaron's Kittl library (lib/kittl-sync.mjs).
-export const KITTL_CRON = "45 * * * *";
-export async function handleScheduled(env, cron) {
+// Hourly at :45 (the account has no free cron slot for a separate nightly one, so this cron does both jobs):
+// - the 04:45 UTC run is the nightly Kittl library sync (lib/kittl-sync.mjs), after the 11:30 PM Eastern task
+//   publishes kittl.json. 04:45 UTC is 11:45 PM Eastern in standard time and 12:45 AM during daylight time.
+//   The sync saves a fresh public list itself.
+// - every other hour is upkeep only: the shirt apps' saved public list is renewed when it's missing or near its
+//   age limit. It never runs the Kittl sync.
+// Every run also prunes old queue answers (worker/index.mjs).
+export const UPKEEP_CRON = "45 * * * *";
+export const KITTL_CRON = UPKEEP_CRON;
+export const KITTL_HOUR_UTC = 4;
+export const isKittlRun = (scheduledTime) => new Date(scheduledTime).getUTCHours() === KITTL_HOUR_UTC;
+export async function handleScheduled(env, cron, scheduledTime = Date.now()) {
   if (!cron || cron === AUDIT_CRON) return runScheduledAudits(envReader(env), (input, init) => fetch(input, init), marketingKv(env));
   if (cron === AUTOFIX_CRON) {
-    // Today's rank snapshot first (a few requests), then the fixes.
+    // Today's rank snapshot first (a few requests), then the fixes, then the digest that sums them up.
     await runScheduledSnapshots(envReader(env), (input, init) => fetch(input, init), marketingKv(env)).catch(() => null);
-    return runScheduledFixes(envReader(env), (input, init) => fetch(input, init), marketingKv(env));
+    const fixes = await runScheduledFixes(envReader(env), (input, init) => fetch(input, init), marketingKv(env));
+    await scheduledDigest(env, fixes);
+    return fixes;
   }
-  if (cron === KITTL_CRON) return scheduledKittlSync(env);
+  if (cron === UPKEEP_CRON) return isKittlRun(scheduledTime) ? scheduledKittlSync(env, undefined, "nightly") : scheduledUpkeep(env);
   try {
     return await scheduledPricing({ env: envReader(env), kv: env?.PRICING ?? null, fetchImpl: (input, init) => fetch(input, init) });
   } catch (e) {
@@ -213,15 +247,53 @@ export async function handleScheduled(env, cron) {
   }
 }
 
-export async function scheduledKittlSync(env, fetchImpl = (input, init) => fetch(input, init)) {
+// The /api/library-sync answer: counts, and the first few reasons (a Kittl id and what went wrong, nothing private)
+// images didn't copy. stale: no sync in over a day and a bit, so the nightly run was missed.
+export function syncStatus(last, now = Date.now()) {
+  const { failed = [], ...rest } = last;
+  const at = Date.parse(last.at ?? "");
+  return { ...rest, failed: Array.isArray(failed) ? failed.length : Number(failed) || 0, problems: Array.isArray(failed) ? failed.slice(0, 3) : [],
+    stale: !Number.isFinite(at) || now - at > 26 * 60 * 60 * 1000 };
+}
+
+export async function scheduledKittlSync(env, fetchImpl = (input, init) => fetch(input, init), trigger = "nightly") {
   try {
-    const result = await syncKittlLibrary({ blobs: imageStore(env), fetchImpl });
+    const result = { ...(await syncKittlLibrary({ blobs: imageStore(env), fetchImpl })), trigger };
     await env.IMAGES.put(KITTL_STATE_KEY, JSON.stringify(result));
     // A fresh store, so its saved public list is rebuilt even when the sync itself dropped it.
     try { await refreshPublicSnapshot(imageStore(env)); } catch (e) { console.error("public list copy", e?.message); }
     return result;
   } catch (e) {
     console.error("kittl sync", e?.code ?? e?.name, e?.message);
+    return null;
+  }
+}
+
+// "Sync now": runs the sync (and saves a fresh public list) unless one ran in the last minute; then the last result
+// is returned as it is, marked debounced, so repeated presses cost no extra KV writes or downloads.
+export async function librarySyncNow(env, fetchImpl = (input, init) => fetch(input, init), now = Date.now()) {
+  const last = await env.IMAGES.get(KITTL_STATE_KEY, "json").catch(() => null);
+  const at = Date.parse(last?.at ?? "");
+  if (last && Number.isFinite(at) && now - at >= 0 && now - at < SYNC_DEBOUNCE_MS) return { ...last, debounced: true };
+  return scheduledKittlSync(env, fetchImpl, "manual");
+}
+
+// The hourly upkeep: renew the shirt apps' saved public list when needed (one KV read most hours).
+export async function scheduledUpkeep(env) {
+  try { return { snapshot: await renewPublicSnapshot(imageStore(env)) }; }
+  catch (e) { console.error("public list copy", e?.message); return { snapshot: "failed" }; }
+}
+
+// The daily digest for Stacy (lib/digest.mjs), saved in the RESULTS bucket. A failure is logged and never stops the cron.
+export async function scheduledDigest(env, autofix = null, { fetchImpl = (input, init) => fetch(input, init), now = new Date() } = {}) {
+  if (!env?.RESULTS || typeof env.RESULTS.put !== "function") return null;
+  try {
+    const kv = (b) => (b && typeof b.get === "function" ? b : null);
+    const digest = await buildDigest({ env: envReader(env), fetchImpl, marketingKv: marketingKv(env), pricingKv: kv(env.PRICING), imagesKv: kv(env.IMAGES), bucket: env.RESULTS, autofix, now });
+    await saveDigest(env.RESULTS, digest, now);
+    return digest;
+  } catch (e) {
+    console.error("daily digest", e?.code ?? e?.name, e?.message);
     return null;
   }
 }

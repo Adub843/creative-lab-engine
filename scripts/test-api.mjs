@@ -1206,6 +1206,7 @@ test("listings: happy path stages the image, creates Blank x Color x Size, publi
   assert.equal(res.status, 201, JSON.stringify(res.body));
   assert.equal(res.body.alreadyListed, false);
   assert.equal(res.body.url, "https://elevatedshirts.com/products/lowcountry-sunset-tee");
+  assert.equal(res.body.shareUrl, "https://elevatedshirts.com/products/lowcountry-sunset-tee?utm_source=social&utm_medium=organic&utm_campaign=lowcountry-sunset-tee&utm_content=new-listing");
   assert.equal(res.body.adminUrl, "https://admin.shopify.com/store/elevated-designs/products/555");
   assert.match(res.body.message, /is live on elevatedshirts\.com/);
   assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["OnlineStorePublication", "ConsoleListingLookup", "ConsoleStagedUpload", "ConsoleListingCreate", "ConsolePublish"]);
@@ -2763,7 +2764,8 @@ test("wrangler.toml: MARKETING and PRICING KV bindings, the daily audit cron, th
   const W2 = await import("../worker/app.mjs");
   assert.equal(W2.AUDIT_CRON, "0 11 * * *");
   assert.equal(W2.AUTOFIX_CRON, "30 11 * * *");
-  assert.equal(W2.KITTL_CRON, "45 * * * *");
+  assert.equal(W2.UPKEEP_CRON, "45 * * * *");
+  assert.equal(W2.KITTL_CRON, W2.UPKEEP_CRON, "no cron slot is free, so the nightly sync shares the hourly cron");
 });
 
 // ---------- promotions ----------
@@ -3126,16 +3128,18 @@ test("kittl sync: a mass removal, an empty or broken list, and bad files change 
 
 test("kittl sync: a few copies per run, the rest on the next runs", async () => {
   const blobs = fakeBlobs();
-  const { fetchImpl } = kittlFetch(manifest([...Array(20)].map((_, i) => i + 1)));
+  const total = 2 * KS.MAX_ADDS + 4;
+  const { fetchImpl } = kittlFetch(manifest([...Array(total)].map((_, i) => i + 1)));
   const first = await KS.syncKittlLibrary({ blobs, fetchImpl });
-  assert.deepEqual([first.added, first.waiting], [KS.MAX_ADDS, 20 - KS.MAX_ADDS]);
+  assert.deepEqual([first.added, first.waiting], [KS.MAX_ADDS, total - KS.MAX_ADDS]);
+  assert.ok(KS.MAX_ADDS + 1 <= 45, "the list plus a run's downloads stay inside the free plan's 50 subrequests");
   await KS.syncKittlLibrary({ blobs, fetchImpl });
   const third = await KS.syncKittlLibrary({ blobs, fetchImpl });
-  assert.deepEqual([third.added, third.waiting], [20 - 2 * KS.MAX_ADDS, 0]);
-  assert.equal(blobs.m.size, 20);
+  assert.deepEqual([third.added, third.waiting], [total - 2 * KS.MAX_ADDS, 0]);
+  assert.equal(blobs.m.size, total);
 });
 
-test("kittl sync: the hourly cron saves its result and /api/library-sync shows the counts without the key", async () => {
+test("kittl sync: the nightly cron saves its result and /api/library-sync shows the counts without the key", async () => {
   const kv = fakeKV();
   const env = { IMAGES: kv };
   await libItem(kvBlobStore(kv), 1);
@@ -3182,6 +3186,184 @@ test("kittl cron: saves a fresh public list copy, so the shirt apps don't need a
   kv.list = async () => { throw new Error("KV list() limit exceeded for the day."); };
   const res = await handleImages(imgReq("/api/images?public=1"), { blobs: kvBlobStore(kv), env: envOf() });
   assert.equal((await res.json()).items.length, 2);
+});
+
+// ---------- nightly Kittl sync, Sync now, hourly upkeep ----------
+const at = (iso) => Date.parse(iso);
+const manifestReads = (calls) => calls.filter((u) => u === KS.MANIFEST_URL).length;
+
+test("crons: the hourly :45 cron syncs Kittl only on its 04:45 UTC run; other hours only renew the public list; every run prunes", async () => {
+  const W3 = await import("../worker/app.mjs");
+  const entry = (await import("../worker/index.mjs")).default;
+  const kv = fakeKV(), RESULTS = fakeResults();
+  const env = { IMAGES: kv, RESULTS };
+  await libItem(kvBlobStore(kv), 1);
+  const { fetchImpl, calls } = kittlFetch(manifest([1, 2]));
+  const lists = () => kv.ops.filter(([op, k]) => op === "list" && k === "image:").length;
+  // The 04:45 UTC run: the sync runs exactly once, and old answers are pruned.
+  await RESULTS.put("results/old-0000001", new ArrayBuffer(1));
+  RESULTS.m.get("results/old-0000001").uploaded = new Date(Date.now() - 2 * 864e5);
+  await RESULTS.put("digest/2026-11-01.json", "{}");
+  RESULTS.m.get("digest/2026-11-01.json").uploaded = new Date(Date.now() - 5 * 864e5);
+  const run = async (cron, iso) => {
+    const waits = [];
+    entry.scheduled({ cron, scheduledTime: at(iso) }, env, { waitUntil: (p) => waits.push(p) });
+    return Promise.all(waits);
+  };
+  await withFetch(() => run(W3.UPKEEP_CRON, "2026-11-08T04:45:00Z"), fetchImpl);
+  assert.equal(manifestReads(calls), 1, "one sync at 04:45");
+  assert.equal(JSON.parse(new TextDecoder().decode(kv.m.get(KS.STATE_KEY).data)).trigger, "nightly");
+  assert.equal(RESULTS.m.has("results/old-0000001"), false, "old queue answers are pruned on the hourly cron");
+  assert.equal(RESULTS.m.has("digest/2026-11-01.json"), true, "pruning never touches the digest");
+  assert.equal(lists(), 2, "the sync lists once and saves one fresh public list, nothing more");
+  // Every other hour: no Kittl list read, and with a fresh public copy no KV list either.
+  await withFetch(async () => {
+    for (const h of ["00", "03", "05", "06", "12", "23"]) await run(W3.UPKEEP_CRON, `2026-11-08T${h}:45:00Z`);
+  }, fetchImpl);
+  assert.equal(manifestReads(calls), 1, "the hourly cron never syncs");
+  assert.equal(lists(), 2, "a fresh copy is kept as it is (one KV read, no list)");
+  // A library change dropped the copy: the next hourly run saves a new one.
+  await libItem(kvBlobStore(kv), 3);
+  assert.equal(kv.m.has("snapshot:public-images"), false);
+  assert.deepEqual(await W3.handleScheduled(env, W3.UPKEEP_CRON, at("2026-11-08T07:45:00Z")), { snapshot: "renewed" });
+  assert.equal(manifestReads(calls), 1);
+  assert.deepEqual([W3.isKittlRun(at("2026-11-08T04:45:00Z")), W3.isKittlRun(at("2026-07-08T04:45:00Z")), W3.isKittlRun(at("2026-11-08T05:45:00Z"))], [true, true, false]);
+  assert.equal(JSON.parse(new TextDecoder().decode(kv.m.get("snapshot:public-images").data)).items.length, 3);
+  // Near the 6-hour limit it's renewed before a shirt app visit would have to list.
+  const I2 = await import("../lib/images.mjs");
+  assert.equal(await I2.renewPublicSnapshot(kvBlobStore(kv), Date.now() + I2.SNAPSHOT_RENEW_MS - 60e3), "kept");
+  assert.equal(await I2.renewPublicSnapshot(kvBlobStore(kv), Date.now() + I2.SNAPSHOT_RENEW_MS + 60e3), "renewed");
+  // The 15-minute cron is the price sync, never the Kittl sync.
+  await withFetch(() => W3.handleScheduled({ IMAGES: kv }, "*/15 * * * *"), fetchImpl);
+  assert.equal(manifestReads(calls), 1);
+});
+
+test("library sync now: POST needs the key, runs at once, and a second press within a minute returns the last result", async () => {
+  const W3 = await import("../worker/app.mjs");
+  const Q = await import("../worker/queue.mjs");
+  const kv = fakeKV(), RESULTS = fakeResults();
+  const env = { ...ENV, IMAGES: kv, RESULTS };
+  await libItem(kvBlobStore(kv), 1);
+  const { fetchImpl, calls } = kittlFetch(manifest([1, 2]));
+  const post = (headers = KEYH, q = "") => W3.handleRequest(new Request(`https://console.example/api/library-sync${q}`, { method: "POST", headers }), env);
+  await withFetch(async () => {
+    assert.equal((await post({})).status, 401, "Sync now needs the console key");
+    assert.equal((await W3.handleRequest(new Request("https://console.example/api/library-sync", { method: "DELETE", headers: KEYH }), env)).status, 405);
+    assert.equal(manifestReads(calls), 0);
+    const first = await post(KEYH, "?store=ed");
+    assert.equal(first.status, 200);
+    const a = await first.json();
+    assert.deepEqual([a.ok, a.added, a.inKittl, a.failed, a.trigger, a.stale, a.debounced], [true, 1, 2, 0, "manual", false, undefined]);
+    assert.ok(kv.m.has("snapshot:public-images"), "Sync now saves a fresh public list too");
+    const again = await (await post(KEYH, "?store=c3d")).json();
+    assert.equal(again.debounced, true);
+    assert.equal(again.at, a.at, "the last result comes back as it was");
+    assert.equal(manifestReads(calls), 1, "no second run within a minute");
+    // The same status as the public GET.
+    const got = await (await W3.handleRequest(new Request("https://console.example/api/library-sync"), env)).json();
+    assert.deepEqual([got.added, got.failed, got.problems, got.trigger], [1, 0, [], "manual"]);
+    // Over a minute later it runs again.
+    const old = JSON.parse(new TextDecoder().decode(kv.m.get(KS.STATE_KEY).data));
+    old.at = new Date(Date.now() - 61e3).toISOString();
+    await kv.put(KS.STATE_KEY, JSON.stringify(old));
+    const third = await W3.librarySyncNow(env, fetchImpl);
+    assert.equal(third.debounced, undefined);
+    assert.equal(manifestReads(calls), 2);
+    // Through the console's queue: the engine signs it with its own key.
+    old.at = new Date(Date.now() - 61e3).toISOString();
+    await kv.put(KS.STATE_KEY, JSON.stringify(old));
+    const r = await Q.runAction({ id: "sync-now-0001", method: "POST", path: "/api/library-sync" }, env);
+    assert.equal(r.status, 200);
+    assert.equal(JSON.parse(new TextDecoder().decode(RESULTS.m.get("results/sync-now-0001").bytes)).trigger, "manual");
+    assert.equal(manifestReads(calls), 3);
+  }, fetchImpl);
+  assert.equal(W3.syncStatus({ ok: true, at: new Date(Date.now() - 27 * 3600e3).toISOString(), failed: [] }).stale, true, "a missed night shows as stale");
+});
+
+test("digest: built per store with missing data, saved to R2 for 30 days, read with the key", async () => {
+  const W3 = await import("../worker/app.mjs");
+  const D = await import("../lib/digest.mjs");
+  const now = new Date("2026-11-08T11:31:00Z");
+  // Nothing set up at all: every part is empty or an error string, and nothing throws.
+  const empty = await D.buildDigest({ env: envOf({ C3D_SHOPIFY_DOMAIN: undefined, ED_SHOPIFY_DOMAIN: undefined }), fetchImpl: async () => { throw new Error("offline"); }, now });
+  assert.deepEqual(Object.keys(empty.stores), ["c3d", "ed"]);
+  assert.equal(empty.date, "2026-11-08");
+  for (const s of ["c3d", "ed"]) {
+    const d = empty.stores[s];
+    assert.deepEqual([d.siteCheck, d.ranks, d.autofix.made, d.autofix.undone, d.autofix.run], [null, null, 0, 0, null]);
+    assert.match(d.shop.error, /isn't connected yet/);
+  }
+  assert.deepEqual([empty.stores.ed.pricing, empty.stores.ed.library], [null, null]);
+  assert.equal("pricing" in empty.stores.c3d || "library" in empty.stores.c3d, false, "ED's price and library state stay out of Charleston 3D");
+
+  // With data: today's check, the last 24 hours of automatic changes, the rank snapshot, the week and ED's syncs.
+  const mk = fakeKV(), pk = fakeKV(), ik = fakeKV();
+  await mk.put("history:c3d", JSON.stringify([{ date: "2026-11-07", scores: { overall: 80 } }, { date: "2026-11-08", at: "2026-11-08T11:00:00Z", scores: { overall: 86, seo: 90 }, fails: ["llms-txt"], warns: ["og-image"] }]));
+  await mk.put("changes:c3d", JSON.stringify([
+    { at: "2026-11-08T11:30:10Z", source: "auto", kind: "seo", title: "Rainbow Row Ornament" },
+    { at: "2026-11-08T11:30:12Z", source: "auto", kind: "revert", title: "Palmetto Coaster" },
+    { at: "2026-11-08T09:00:00Z", source: "manual", kind: "seo", title: "Hand edit" },
+    { at: "2026-11-05T11:30:00Z", source: "auto", kind: "alt", title: "Old fix" },
+  ]));
+  await mk.put("ranks:c3d", JSON.stringify([{ date: "2026-11-08", k: { "3d printing charleston": [2.4, 5, 90], "custom 3d prints": [14, 1, 40], "laser engraving sc": [null, 0, 0] } }]));
+  await mk.put("changes:ed", "not json");
+  await pk.put("pricing:state", JSON.stringify({ phase: "idle", source: "sheet", hash: "x", finishedAt: "2026-11-08T11:15:00Z", report: { products: 23, variants: 2399, changed: 4, unchanged: 2395, skipped: { no_size: 1 }, examples: [{ title: "x" }] }, error: "Shopify refused", errorAt: "2026-11-08T10:00:00Z" }));
+  await ik.put(KS.STATE_KEY, JSON.stringify({ ok: true, at: "2026-11-08T04:45:01Z", inKittl: 731, added: 3, removed: 1, waiting: 0, failed: ["a: download 404"], warning: null, trigger: "nightly" }));
+  const week = async (env, f, store) => { if (store === "ed") throw new Error("Add the read_reports scope"); return { days: 7, sessions: 120, orders: 3, sales: 84.5 }; };
+  const full = await D.buildDigest({ env: envOf(), fetchImpl: null, marketingKv: mk, pricingKv: pk, imagesKv: ik, autofix: { c3d: { applied: 1, failed: 0, reviewed: 1, remaining: 5 }, ed: { error: "access_denied" } }, now, week });
+  const c = full.stores.c3d, e = full.stores.ed;
+  assert.deepEqual([c.siteCheck.today, c.siteCheck.scores.overall, c.siteCheck.fails, c.siteCheck.warns], [true, 86, ["llms-txt"], ["og-image"]]);
+  assert.deepEqual([c.autofix.made, c.autofix.undone, c.autofix.items.map((i) => i.title)], [1, 1, ["Rainbow Row Ornament", "Palmetto Coaster"]]);
+  assert.deepEqual(c.autofix.run, { applied: 1, failed: 0, reviewed: 1, remaining: 5 });
+  assert.deepEqual([c.ranks.keywords, c.ranks.top3, c.ranks.top20, c.ranks.none, c.ranks.avgPosition, c.ranks.clicks], [3, 1, 1, 1, 8.2, 6]);
+  assert.deepEqual(c.shop, { days: 7, sessions: 120, orders: 3, sales: 84.5 });
+  assert.deepEqual([e.siteCheck, e.autofix.made, e.autofix.run, e.ranks], [null, 0, { error: "access_denied" }, null]);
+  assert.match(e.shop.error, /read_reports/);
+  assert.deepEqual([e.pricing.phase, e.pricing.source, e.pricing.report.variants, e.pricing.report.changed, e.pricing.error, e.pricing.errorAt], ["idle", "sheet", 2399, 4, "Shopify refused", "2026-11-08T10:00:00Z"]);
+  assert.equal("examples" in e.pricing.report, false, "counts only");
+  assert.deepEqual([e.library.ok, e.library.added, e.library.failed, e.library.trigger], [true, 3, 1, "nightly"]);
+  assert.equal(JSON.stringify(full).includes(ENV.CONSOLE_KEY) || JSON.stringify(full).includes(TOKEN), false, "no secrets");
+
+  // The week's totals from the store's own reports.
+  const ql = async (u, init) => {
+    const q = JSON.parse(init.body).variables.q;
+    const cols = q.startsWith("FROM sales") ? ["day", "orders", "total_sales"] : ["day", "sessions"];
+    const rows = q.startsWith("FROM sales") ? [["2026-11-07", 2, "40.5"], ["2026-11-08", 1, "19.99"]] : [["2026-11-07", 30], ["2026-11-08", 12]];
+    return new Response(JSON.stringify({ data: { shopifyqlQuery: { parseErrors: [], tableData: { columns: cols.map((name) => ({ name, dataType: "x" })), rows } } } }), { status: 200 });
+  };
+  assert.deepEqual(await D.shopWeek(envOf(), ql, "c3d"), { days: 7, sessions: 42, orders: 3, sales: 60.49 });
+
+  // Saved as latest and as the day's file; day files over 30 days old go, latest and newer days stay.
+  const RESULTS = fakeResults();
+  await RESULTS.put("digest/2026-09-30.json", "{}");
+  await RESULTS.put("digest/2026-10-20.json", "{}");
+  await RESULTS.put("results/keep-0001", "{}");
+  const saved = await D.saveDigest(RESULTS, full, now);
+  assert.deepEqual(saved, { key: "digest/2026-11-08.json", removed: 1 });
+  assert.deepEqual([...RESULTS.m.keys()].sort(), ["digest/2026-10-20.json", "digest/2026-11-08.json", "digest/latest.json", "results/keep-0001"]);
+  assert.equal(RESULTS.m.get("digest/latest.json").httpMetadata.contentType, "application/json");
+
+  // GET /api/digest: the key, then the latest (or a day's) digest.
+  const env = { ...ENV, IMAGES: fakeKV(), RESULTS };
+  const get = (q = "", headers = KEYH) => W3.handleRequest(new Request(`https://console.example/api/digest${q}`, { headers }), env);
+  assert.equal((await get("", {})).status, 401);
+  const latest = await get();
+  assert.equal(latest.status, 200);
+  assert.equal(latest.headers.get("content-type"), "application/json; charset=utf-8");
+  assert.equal((await latest.json()).stores.c3d.siteCheck.scores.overall, 86);
+  assert.equal((await get("?date=2026-11-08")).status, 200);
+  assert.equal((await get("?date=2026-11-01")).status, 404);
+  assert.equal((await get("?date=../../x")).status, 400);
+  assert.equal((await W3.handleRequest(new Request("https://console.example/api/digest", { headers: KEYH }), { ...ENV, IMAGES: fakeKV(), RESULTS: fakeResults() })).status, 404, "before the first digest");
+  const Q = await import("../worker/queue.mjs");
+  assert.equal((await Q.runAction({ id: "digest-read-01", method: "GET", path: "/api/digest" }, env)).status, 200, "the console reads it through the queue");
+
+  // The cron's own step: written even when every store read fails, and never throws.
+  const R2 = fakeResults();
+  const out = await W3.scheduledDigest({ IMAGES: fakeKV(), RESULTS: R2 }, null, { fetchImpl: async () => { throw new Error("offline"); }, now });
+  assert.equal(out.date, "2026-11-08");
+  assert.ok(R2.m.has("digest/latest.json") && R2.m.has("digest/2026-11-08.json"));
+  assert.equal(await W3.scheduledDigest({ IMAGES: fakeKV() }, null), null, "no bucket, no digest");
 });
 
 // ---------- rank tracker ----------
@@ -3871,4 +4053,172 @@ test("c3d listing photo: a network failure says why", async () => {
   const res = await handleC3dListings(photoReq(new Uint8Array([0x89, 0x50, 0x4e, 0x47])), { env: envOf(), fetch: sh.fetch }, "photo");
   assert.equal(res.status, 502);
   assert.match(res.body.error, /socket hang up/);
+});
+
+// ---------- marketing scorecard ----------
+const SC = await import("../lib/scorecard.mjs");
+const scRow = (campaign, source, medium, sessions, cart = 0, checkout = 0, done = 0) =>
+  ({ utm_campaign: campaign, utm_source: source, utm_medium: medium, sessions: String(sessions), sessions_with_cart_additions: String(cart), sessions_that_reached_checkout: String(checkout), sessions_that_completed_checkout: String(done) });
+const scOrder = (campaign, amount, extra = {}) => ({ id: `gid://shopify/Order/${Math.random()}`, createdAt: "2026-11-07T12:00:00Z", test: false, cancelledAt: null,
+  currentTotalPriceSet: { shopMoney: { amount: String(amount), currencyCode: "USD" } },
+  customerJourneySummary: campaign == null ? null : { lastVisit: { utmParameters: { campaign, source: "facebook", medium: "paid" } }, firstVisit: null }, ...extra });
+
+test("scorecard: winner, average and loser against the store's own average", () => {
+  // 200 visits and 10 orders in all: the store average is 5%.
+  const sessionRows = [
+    scRow("", "", "", 100, 8, 4, 3),                   // untagged: counts toward the average only
+    scRow("Holiday-Tees", "facebook", "paid", 30, 6, 4, 4), scRow("holiday-tees", "instagram", "paid", 10, 1, 1, 0), // one campaign, two sources
+    scRow("fall-post", "social", "organic", 40, 2, 1, 1),
+    scRow("new-ad", "facebook", "paid", 5),
+    scRow("dud-post", "social", "organic", 15),
+  ];
+  const orderNodes = [
+    ...Array.from({ length: 4 }, () => scOrder("holiday-tees", 25)), scOrder("Fall-Post", 20), scOrder(null, 30), scOrder(null, 30), scOrder(null, 30), scOrder(null, 30), scOrder(null, 30),
+    scOrder("holiday-tees", 99, { test: true }), scOrder("holiday-tees", 99, { cancelledAt: "2026-11-07T13:00:00Z" }),
+  ];
+  const spend = { "holiday-tees": { dailyBudget: 2, spendToDate: 20 }, "new-ad": { dailyBudget: 1, startDate: "2026-11-07" } };
+  const sc = SC.buildScorecard({ store: "ed", days: 7, sessionRows, orderNodes, spend, now: new Date("2026-11-08T11:30:00Z") });
+  assert.deepEqual([sc.since, sc.until, sc.totals.sessions, sc.totals.orders, sc.totals.sales, sc.average.conversionRate], ["2026-11-02", "2026-11-08", 200, 10, 270, 5]);
+  const by = Object.fromEntries(sc.campaigns.map((c) => [c.campaign, c]));
+  const h = by["holiday-tees"];
+  assert.deepEqual([h.sessions, h.cartAdds, h.orders, h.sales, h.conversionRate, h.paid, h.cost, h.costPerVisit, h.costPerOrder, h.label],
+    [40, 7, 4, 100, 10, true, 14, 0.35, 3.5, "winner"]);
+  assert.deepEqual(h.sources.map((s) => [s.source, s.sessions]), [["facebook", 30], ["instagram", 10]]);
+  assert.deepEqual([by["fall-post"].label, by["fall-post"].paid, by["fall-post"].cost, by["fall-post"].conversionRate], ["loser", false, null, 2.5], "1 in 40 is half the average");
+  assert.deepEqual([by["dud-post"].label, by["dud-post"].orders], ["loser", 0]);
+  // 5 visits is too early to call; the ad started yesterday, so 2 days x $1.
+  assert.deepEqual([by["new-ad"].label, by["new-ad"].cost, by["new-ad"].costPerVisit, by["new-ad"].pauseRecommended], ["average", 2, 0.4, false]);
+  assert.match(by["new-ad"].reasons.join(" "), /too early/);
+  assert.deepEqual([sc.pauseRecommended, sc.overCap, sc.limits], [[], [], { maxCostPerVisit: 0.5, maxDailyBudget: 2 }]);
+});
+
+test("scorecard: pause flags (no visits after 3 days, cost per visit over the limit) and the $2/day cap", () => {
+  const now = new Date("2026-11-08T11:30:00Z");
+  const spend = {
+    "ghost-ad": { dailyBudget: 1, startDate: "2026-11-05" },     // 4 days, no visits: pause
+    "brand-new": { dailyBudget: 1, startDate: "2026-11-07" },    // 2 days, no visits: wait
+    "pricey": { dailyBudget: 2, spendToDate: 12 },              // $12 for 20 visits = $0.60 > $0.50
+    "big-spender": { dailyBudget: 5, spendToDate: 10 },         // over the cap, but $10 / 100 visits is fine
+  };
+  const rows = [scRow("pricey", "facebook", "paid", 20), scRow("big-spender", "instagram", "paid", 100, 5, 2, 2)];
+  const sc = SC.buildScorecard({ store: "c3d", days: 7, sessionRows: rows, orderNodes: [scOrder("big-spender", 18), scOrder("big-spender", 18)], spend, now });
+  const by = Object.fromEntries(sc.campaigns.map((c) => [c.campaign, c]));
+  assert.deepEqual([by["ghost-ad"].pauseRecommended, by["ghost-ad"].flags, by["ghost-ad"].label, by["ghost-ad"].cost], [true, ["no_visits"], "loser", 4]);
+  assert.deepEqual([by["brand-new"].pauseRecommended, by["brand-new"].flags], [false, []]);
+  assert.deepEqual([by.pricey.costPerVisit, by.pricey.flags, by.pricey.pauseRecommended, by.pricey.label], [0.6, ["cost_per_visit"], true, "loser"]);
+  assert.deepEqual([by["big-spender"].flags, by["big-spender"].pauseRecommended, by["big-spender"].cost, by["big-spender"].costPerVisit], [["over_daily_cap"], false, 10, 0.1]);
+  assert.match(by["big-spender"].reasons.join(" "), /\$5\.00\/day is over the \$2\.00\/day cap/);
+  assert.deepEqual(sc.pauseRecommended.sort(), ["ghost-ad", "pricey"]);
+  assert.deepEqual(sc.overCap, ["big-spender"]);
+  // With no startDate, a 2-day window can't say an ad has run 3 days; a 7-day one can.
+  assert.deepEqual(SC.buildScorecard({ store: "c3d", days: 2, sessionRows: [], orderNodes: [], spend: { x: { dailyBudget: 1 } }, now }).pauseRecommended, []);
+  assert.deepEqual(SC.buildScorecard({ store: "c3d", days: 7, sessionRows: [], orderNodes: [], spend: { x: { dailyBudget: 1 } }, now }).pauseRecommended, ["x"]);
+  // The store's own limits: only its section is read, and the cap can be lowered but never raised above $2.
+  const cfg = { c3d: { maxCostPerVisit: 0.75, maxDailyBudget: 9 }, ed: { maxCostPerVisit: 0.1, maxDailyBudget: 1 } };
+  assert.deepEqual(SC.storeLimits(cfg, "c3d"), { maxCostPerVisit: 0.75, maxDailyBudget: 2 });
+  assert.deepEqual(SC.storeLimits(cfg, "ed"), { maxCostPerVisit: 0.1, maxDailyBudget: 1 });
+  assert.deepEqual(SC.storeLimits(null, "ed"), { maxCostPerVisit: 0.5, maxDailyBudget: 2 });
+  const relaxed = SC.buildScorecard({ store: "c3d", days: 7, sessionRows: rows, orderNodes: [], spend, limitsConfig: cfg, now });
+  assert.equal(relaxed.campaigns.find((c) => c.campaign === "pricey").pauseRecommended, false, "$0.60 is under C3D's own $0.75 limit");
+  // Window cost: budget x days, capped by spend to date; spend to date alone when there's no budget.
+  assert.equal(SC.windowCost({ dailyBudget: 2, spendToDate: 3 }, { days: 7, today: "2026-11-08" }), 3);
+  assert.equal(SC.windowCost({ spendToDate: 4.5 }, { days: 2, today: "2026-11-08" }), 4.5);
+  assert.equal(SC.windowCost({ dailyBudget: 2, startDate: "2026-12-01" }, { days: 7, today: "2026-11-08" }), 0, "not started yet");
+});
+
+test("scorecard: without order access, completed checkouts stand in for orders; no orders anywhere compares ad cost per visit", () => {
+  const now = new Date("2026-11-08T11:30:00Z");
+  const noOrders = SC.buildScorecard({ store: "ed", days: 7, sessionRows: [scRow("a", "facebook", "paid", 20, 3, 2, 2), scRow("", "", "", 20)], orderNodes: null, now });
+  assert.deepEqual([noOrders.ordersSource, noOrders.totals.orders, noOrders.totals.sales, noOrders.campaigns[0].orders, noOrders.campaigns[0].sales], ["completed_checkouts", 2, null, 2, null]);
+  const cheapDear = SC.buildScorecard({ store: "ed", days: 7, now, orderNodes: [],
+    sessionRows: [scRow("cheap", "facebook", "paid", 100), scRow("mid", "facebook", "paid", 50), scRow("dear", "instagram", "paid", 20)],
+    spend: { cheap: { spendToDate: 5 }, mid: { spendToDate: 5 }, dear: { spendToDate: 9 } } });
+  const by = Object.fromEntries(cheapDear.campaigns.map((c) => [c.campaign, c]));
+  assert.equal(cheapDear.average.costPerVisit, 0.11);
+  assert.deepEqual([by.cheap.label, by.mid.label, by.dear.label, by.dear.pauseRecommended], ["winner", "average", "loser", false]);
+});
+
+test("GET /api/scorecard: key, store and days checked; spend and limits from R2; Shopify failures become clear errors", async () => {
+  const W = await import("../worker/app.mjs");
+  const RESULTS = fakeResults();
+  await RESULTS.put("ads/spend-c3d.json", JSON.stringify({ "ornament-ad": { dailyBudget: 3, spendToDate: 6, startDate: "2026-11-06" } }));
+  await RESULTS.put("ads/spend-ed.json", JSON.stringify({ "tee-ad": { dailyBudget: 1 } }));
+  await RESULTS.put(SC.LIMITS_KEY, JSON.stringify({ c3d: { maxCostPerVisit: 0.25 } }));
+  const queries = [];
+  const sh = fakeShopify({ override: {
+    MarketingTraffic: (v, data) => { queries.push(v.q); return data({ shopifyqlQuery: { parseErrors: [], tableData: { columns: ["utm_campaign", "utm_source", "utm_medium", "sessions", "sessions_with_cart_additions", "sessions_that_reached_checkout", "sessions_that_completed_checkout"].map((name) => ({ name, dataType: "x" })),
+      rows: [["ornament-ad", "facebook", "paid", "12", "2", "1", "1"], ["", "", "", "28", "1", "1", "1"]] } } }); },
+    ScorecardOrders: (v, data) => { queries.push(v.q); return data({ orders: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [scOrder("ornament-ad", 22), scOrder(null, 15)] } }); },
+  } });
+  const ctx = (bucket = RESULTS) => ({ env: envOf(), fetch: sh.fetch, bucket, now: () => new Date("2026-11-08T11:30:00Z") });
+  assert.equal((await SC.handleScorecard(get({ store: "c3d", days: "7" }), ctx())).status, 401);
+  assert.equal((await SC.handleScorecard(keyed({ store: "both", days: "7" }), ctx())).status, 400);
+  assert.equal((await SC.handleScorecard(keyed({ store: "c3d", days: "30" }), ctx())).status, 400);
+  const res = await SC.handleScorecard(keyed({ store: "c3d", days: "2" }), ctx());
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(queries, [SC.campaignSessionsQ(2), "created_at:>=2026-11-07"]);
+  assert.match(queries[0], /GROUP BY utm_campaign, utm_source, utm_medium SINCE -1d UNTIL today/);
+  const c = res.body.campaigns[0];
+  // 2 days x $3 = $6 over 12 visits = $0.50, over C3D's own $0.25 limit; $3/day is over the cap.
+  assert.deepEqual([c.campaign, c.sessions, c.orders, c.sales, c.cost, c.costPerVisit, c.flags, c.pauseRecommended], ["ornament-ad", 12, 1, 22, 6, 0.5, ["cost_per_visit", "over_daily_cap"], true]);
+  assert.deepEqual([res.body.totals.sessions, res.body.totals.orders, res.body.totals.sales, res.body.errors, res.body.missingScopes], [40, 2, 37, {}, []]);
+  assert.equal(JSON.stringify(res.body).includes("tee-ad"), false, "never the other brand's spend file");
+  assert.ok(sh.calls.filter((x) => x.op).every((x) => x.domain === "charleston3d.myshopify.com"), "only the C3D store");
+  noLeak(res.body);
+
+  // Missing scopes: both parts degrade with the scope to add, nothing throws.
+  const denied = (scope) => () => new Response(JSON.stringify({ errors: [{ message: "Access denied", extensions: { code: "ACCESS_DENIED", requiredAccess: `\`${scope}\` access scope` } }] }), { status: 200 });
+  const shD = fakeShopify({ override: { MarketingTraffic: denied("read_reports"), ScorecardOrders: denied("read_orders") } });
+  const d = await SC.handleScorecard(keyed({ store: "ed", days: "7" }), { env: envOf(), fetch: shD.fetch, bucket: RESULTS, now: () => new Date("2026-11-08T11:30:00Z") });
+  assert.equal(d.status, 200);
+  assert.match(d.body.errors.sessions, /read_reports/);
+  assert.match(d.body.errors.orders, /read_orders/);
+  assert.deepEqual(d.body.missingScopes, ["read_reports", "read_orders"]);
+  assert.deepEqual(d.body.pauseRecommended, ["tee-ad"], "the ED ad with no visits for the whole week");
+
+  // A broken spend file is reported, not fatal; no bucket at all is fine; a store that isn't connected says so.
+  const broken = fakeResults();
+  await broken.put("ads/spend-c3d.json", "{not json");
+  const b = await SC.handleScorecard(keyed({ store: "c3d" }), ctx(broken));
+  assert.equal(b.status, 200);
+  assert.match(b.body.errors.spend, /isn't valid JSON/);
+  assert.equal((await SC.handleScorecard(keyed({ store: "c3d" }), ctx(null))).status, 200);
+  const nc = await SC.handleScorecard(keyed({ store: "c3d" }), { env: envOf({ C3D_SHOPIFY_DOMAIN: undefined }), fetch: sh.fetch, bucket: null });
+  assert.match(nc.body.errors.shopify, /isn't connected yet/);
+
+  // Through the Worker route.
+  const env = { ...ENV, IMAGES: fakeKV(), RESULTS };
+  assert.equal((await W.handleRequest(new Request("https://console.example/api/scorecard?store=c3d&days=7"), env)).status, 401);
+  assert.equal((await W.handleRequest(new Request("https://console.example/api/scorecard?store=c3d&days=9", { headers: KEYH }), env)).status, 400);
+  // The orders query was checked against the real Admin API 2025-10 schema when it was sent.
+  assert.ok(checked().includes(SC.SCORECARD_ORDERS_QUERY));
+  assert.deepEqual(schemaErrors(SC.SCORECARD_ORDERS_QUERY), []);
+  assert.deepEqual(schemaProblems, []);
+});
+
+test("digest: each store carries its 7-day scorecard", async () => {
+  const D = await import("../lib/digest.mjs");
+  const seen = [];
+  const scorecard = async (env, f, store, bucket, now) => { seen.push([store, bucket === "B"]); return { days: 7, store, pauseRecommended: store === "ed" ? ["tee-ad"] : [] }; };
+  const out = await D.buildDigest({ env: envOf(), fetchImpl: null, bucket: "B", now: new Date("2026-11-08T11:31:00Z"), week: async () => ({}), scorecard });
+  assert.deepEqual(seen.sort(), [["c3d", true], ["ed", true]]);
+  assert.deepEqual([out.stores.c3d.scorecard.store, out.stores.ed.scorecard.pauseRecommended], ["c3d", ["tee-ad"]]);
+  const failing = await D.buildDigest({ env: envOf(), fetchImpl: null, now: new Date(), week: async () => ({}), scorecard: async () => { throw new Error("boom"); } });
+  assert.equal(failing.stores.c3d.scorecard.error, "boom");
+  // The brief drops the source breakdown and keeps the top 10.
+  const full = SC.buildScorecard({ store: "ed", days: 7, sessionRows: Array.from({ length: 12 }, (_, i) => scRow(`c${i}`, "social", "organic", 12 - i)), orderNodes: [], now: new Date() });
+  const brief = SC.scorecardBrief(full);
+  assert.equal(brief.campaigns.length, 10);
+  assert.equal("sources" in brief.campaigns[0], false);
+});
+
+test("utm(): tagged links for posts and ads", async () => {
+  const { utm, listingShareUrl } = await import("../lib/utm.mjs");
+  assert.equal(utm("https://elevatedshirts.com/products/tee", { source: "Facebook", medium: "paid", campaign: "ED Holiday Tees!", content: "photo 1" }),
+    "https://elevatedshirts.com/products/tee?utm_source=facebook&utm_medium=paid&utm_campaign=ed-holiday-tees&utm_content=photo-1");
+  assert.equal(utm("https://charleston3d.com/products/x?variant=1&utm_source=old", { source: "qr", medium: "print", campaign: "market" }),
+    "https://charleston3d.com/products/x?variant=1&utm_source=qr&utm_medium=print&utm_campaign=market");
+  assert.equal(listingShareUrl("https://charleston3d.com/products/ornament", "ornament"),
+    "https://charleston3d.com/products/ornament?utm_source=social&utm_medium=organic&utm_campaign=ornament&utm_content=new-listing");
+  assert.throws(() => utm("http://example.com", { source: "x" }));
 });
