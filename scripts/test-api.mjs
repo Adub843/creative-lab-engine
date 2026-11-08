@@ -3859,6 +3859,9 @@ test("c3d listing photos: refuses foreign hosts, the ED store and items not list
   const run = (body) => handleC3dListings(post(body), { env: envOf(), fetch: sh.fetch }, "photos");
   assert.equal((await run({ store: "ed", ref: "andy-20261017-santakey" })).body.code, "wrong_store");
   assert.equal((await run({ store: "c3d", ref: "andy-20261017-santakey", photos: [{ resourceUrl: "https://evil.example.com/x.png" }] })).status, 400);
+  assert.equal((await run({ store: "c3d", ref: "andy-20261017-santakey", photos: [{ resourceUrl: "https://kittl.com.evil.example/x.png" }] })).status, 400);
+  assert.equal((await run({ store: "c3d", ref: "andy-20261017-santakey", photos: [{ resourceUrl: "http://cache.kittl.com/x.png" }] })).status, 400);
+  assert.equal((await run({ store: "c3d", ref: "andy-20261017-santakey", photos: [{ resourceUrl: "https://cache.kittl.com/x.png" }] })).body.code, "not_listed");
   assert.equal((await run({ store: "c3d", ref: "andy-20261017-santakey" })).body.code, "not_listed");
   assert.ok(!sh.calls.some((c) => c.op === "ConsoleC3dAddPhotos"));
 });
