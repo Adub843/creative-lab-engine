@@ -1,0 +1,11 @@
+{
+  "about": "The AI jobs of the marketing loop. engine is the per-job switch: \"claude\" now, \"alice\" once Aaron's own model takes that job over. See README.md.",
+  "jobs": [
+    { "id": "marketing-qa", "file": "marketing-qa.md", "schedule": "on demand: before every post or ad is sent", "engine": "claude" },
+    { "id": "weekly-marketing-decision", "file": "weekly-marketing-decision.md", "schedule": "weekly: Monday 12:00 UTC, once per store", "engine": "claude" },
+    { "id": "daily-brief", "file": "daily-brief.md", "schedule": "daily: 11:45 UTC, after the digest, once per store", "engine": "claude" },
+    { "id": "listing-copy", "file": "listing-copy.md", "schedule": "on demand: when a listing is made", "engine": "claude" },
+    { "id": "seo-fix-picker", "file": "seo-fix-picker.md", "schedule": "weekly: Monday 12:15 UTC, once per store", "engine": "claude" },
+    { "id": "review-summary", "file": "review-summary.md", "schedule": "weekly: Monday 12:30 UTC, once per store", "engine": "claude" }
+  ]
+}

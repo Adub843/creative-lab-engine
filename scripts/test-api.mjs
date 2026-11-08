@@ -1206,6 +1206,7 @@ test("listings: happy path stages the image, creates Blank x Color x Size, publi
   assert.equal(res.status, 201, JSON.stringify(res.body));
   assert.equal(res.body.alreadyListed, false);
   assert.equal(res.body.url, "https://elevatedshirts.com/products/lowcountry-sunset-tee");
+  assert.equal(res.body.shareUrl, "https://elevatedshirts.com/products/lowcountry-sunset-tee?utm_source=social&utm_medium=organic&utm_campaign=lowcountry-sunset-tee&utm_content=new-listing");
   assert.equal(res.body.adminUrl, "https://admin.shopify.com/store/elevated-designs/products/555");
   assert.match(res.body.message, /is live on elevatedshirts\.com/);
   assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["OnlineStorePublication", "ConsoleListingLookup", "ConsoleStagedUpload", "ConsoleListingCreate", "ConsolePublish"]);
@@ -4052,4 +4053,172 @@ test("c3d listing photo: a network failure says why", async () => {
   const res = await handleC3dListings(photoReq(new Uint8Array([0x89, 0x50, 0x4e, 0x47])), { env: envOf(), fetch: sh.fetch }, "photo");
   assert.equal(res.status, 502);
   assert.match(res.body.error, /socket hang up/);
+});
+
+// ---------- marketing scorecard ----------
+const SC = await import("../lib/scorecard.mjs");
+const scRow = (campaign, source, medium, sessions, cart = 0, checkout = 0, done = 0) =>
+  ({ utm_campaign: campaign, utm_source: source, utm_medium: medium, sessions: String(sessions), sessions_with_cart_additions: String(cart), sessions_that_reached_checkout: String(checkout), sessions_that_completed_checkout: String(done) });
+const scOrder = (campaign, amount, extra = {}) => ({ id: `gid://shopify/Order/${Math.random()}`, createdAt: "2026-11-07T12:00:00Z", test: false, cancelledAt: null,
+  currentTotalPriceSet: { shopMoney: { amount: String(amount), currencyCode: "USD" } },
+  customerJourneySummary: campaign == null ? null : { lastVisit: { utmParameters: { campaign, source: "facebook", medium: "paid" } }, firstVisit: null }, ...extra });
+
+test("scorecard: winner, average and loser against the store's own average", () => {
+  // 200 visits and 10 orders in all: the store average is 5%.
+  const sessionRows = [
+    scRow("", "", "", 100, 8, 4, 3),                   // untagged: counts toward the average only
+    scRow("Holiday-Tees", "facebook", "paid", 30, 6, 4, 4), scRow("holiday-tees", "instagram", "paid", 10, 1, 1, 0), // one campaign, two sources
+    scRow("fall-post", "social", "organic", 40, 2, 1, 1),
+    scRow("new-ad", "facebook", "paid", 5),
+    scRow("dud-post", "social", "organic", 15),
+  ];
+  const orderNodes = [
+    ...Array.from({ length: 4 }, () => scOrder("holiday-tees", 25)), scOrder("Fall-Post", 20), scOrder(null, 30), scOrder(null, 30), scOrder(null, 30), scOrder(null, 30), scOrder(null, 30),
+    scOrder("holiday-tees", 99, { test: true }), scOrder("holiday-tees", 99, { cancelledAt: "2026-11-07T13:00:00Z" }),
+  ];
+  const spend = { "holiday-tees": { dailyBudget: 2, spendToDate: 20 }, "new-ad": { dailyBudget: 1, startDate: "2026-11-07" } };
+  const sc = SC.buildScorecard({ store: "ed", days: 7, sessionRows, orderNodes, spend, now: new Date("2026-11-08T11:30:00Z") });
+  assert.deepEqual([sc.since, sc.until, sc.totals.sessions, sc.totals.orders, sc.totals.sales, sc.average.conversionRate], ["2026-11-02", "2026-11-08", 200, 10, 270, 5]);
+  const by = Object.fromEntries(sc.campaigns.map((c) => [c.campaign, c]));
+  const h = by["holiday-tees"];
+  assert.deepEqual([h.sessions, h.cartAdds, h.orders, h.sales, h.conversionRate, h.paid, h.cost, h.costPerVisit, h.costPerOrder, h.label],
+    [40, 7, 4, 100, 10, true, 14, 0.35, 3.5, "winner"]);
+  assert.deepEqual(h.sources.map((s) => [s.source, s.sessions]), [["facebook", 30], ["instagram", 10]]);
+  assert.deepEqual([by["fall-post"].label, by["fall-post"].paid, by["fall-post"].cost, by["fall-post"].conversionRate], ["loser", false, null, 2.5], "1 in 40 is half the average");
+  assert.deepEqual([by["dud-post"].label, by["dud-post"].orders], ["loser", 0]);
+  // 5 visits is too early to call; the ad started yesterday, so 2 days x $1.
+  assert.deepEqual([by["new-ad"].label, by["new-ad"].cost, by["new-ad"].costPerVisit, by["new-ad"].pauseRecommended], ["average", 2, 0.4, false]);
+  assert.match(by["new-ad"].reasons.join(" "), /too early/);
+  assert.deepEqual([sc.pauseRecommended, sc.overCap, sc.limits], [[], [], { maxCostPerVisit: 0.5, maxDailyBudget: 2 }]);
+});
+
+test("scorecard: pause flags (no visits after 3 days, cost per visit over the limit) and the $2/day cap", () => {
+  const now = new Date("2026-11-08T11:30:00Z");
+  const spend = {
+    "ghost-ad": { dailyBudget: 1, startDate: "2026-11-05" },     // 4 days, no visits: pause
+    "brand-new": { dailyBudget: 1, startDate: "2026-11-07" },    // 2 days, no visits: wait
+    "pricey": { dailyBudget: 2, spendToDate: 12 },              // $12 for 20 visits = $0.60 > $0.50
+    "big-spender": { dailyBudget: 5, spendToDate: 10 },         // over the cap, but $10 / 100 visits is fine
+  };
+  const rows = [scRow("pricey", "facebook", "paid", 20), scRow("big-spender", "instagram", "paid", 100, 5, 2, 2)];
+  const sc = SC.buildScorecard({ store: "c3d", days: 7, sessionRows: rows, orderNodes: [scOrder("big-spender", 18), scOrder("big-spender", 18)], spend, now });
+  const by = Object.fromEntries(sc.campaigns.map((c) => [c.campaign, c]));
+  assert.deepEqual([by["ghost-ad"].pauseRecommended, by["ghost-ad"].flags, by["ghost-ad"].label, by["ghost-ad"].cost], [true, ["no_visits"], "loser", 4]);
+  assert.deepEqual([by["brand-new"].pauseRecommended, by["brand-new"].flags], [false, []]);
+  assert.deepEqual([by.pricey.costPerVisit, by.pricey.flags, by.pricey.pauseRecommended, by.pricey.label], [0.6, ["cost_per_visit"], true, "loser"]);
+  assert.deepEqual([by["big-spender"].flags, by["big-spender"].pauseRecommended, by["big-spender"].cost, by["big-spender"].costPerVisit], [["over_daily_cap"], false, 10, 0.1]);
+  assert.match(by["big-spender"].reasons.join(" "), /\$5\.00\/day is over the \$2\.00\/day cap/);
+  assert.deepEqual(sc.pauseRecommended.sort(), ["ghost-ad", "pricey"]);
+  assert.deepEqual(sc.overCap, ["big-spender"]);
+  // With no startDate, a 2-day window can't say an ad has run 3 days; a 7-day one can.
+  assert.deepEqual(SC.buildScorecard({ store: "c3d", days: 2, sessionRows: [], orderNodes: [], spend: { x: { dailyBudget: 1 } }, now }).pauseRecommended, []);
+  assert.deepEqual(SC.buildScorecard({ store: "c3d", days: 7, sessionRows: [], orderNodes: [], spend: { x: { dailyBudget: 1 } }, now }).pauseRecommended, ["x"]);
+  // The store's own limits: only its section is read, and the cap can be lowered but never raised above $2.
+  const cfg = { c3d: { maxCostPerVisit: 0.75, maxDailyBudget: 9 }, ed: { maxCostPerVisit: 0.1, maxDailyBudget: 1 } };
+  assert.deepEqual(SC.storeLimits(cfg, "c3d"), { maxCostPerVisit: 0.75, maxDailyBudget: 2 });
+  assert.deepEqual(SC.storeLimits(cfg, "ed"), { maxCostPerVisit: 0.1, maxDailyBudget: 1 });
+  assert.deepEqual(SC.storeLimits(null, "ed"), { maxCostPerVisit: 0.5, maxDailyBudget: 2 });
+  const relaxed = SC.buildScorecard({ store: "c3d", days: 7, sessionRows: rows, orderNodes: [], spend, limitsConfig: cfg, now });
+  assert.equal(relaxed.campaigns.find((c) => c.campaign === "pricey").pauseRecommended, false, "$0.60 is under C3D's own $0.75 limit");
+  // Window cost: budget x days, capped by spend to date; spend to date alone when there's no budget.
+  assert.equal(SC.windowCost({ dailyBudget: 2, spendToDate: 3 }, { days: 7, today: "2026-11-08" }), 3);
+  assert.equal(SC.windowCost({ spendToDate: 4.5 }, { days: 2, today: "2026-11-08" }), 4.5);
+  assert.equal(SC.windowCost({ dailyBudget: 2, startDate: "2026-12-01" }, { days: 7, today: "2026-11-08" }), 0, "not started yet");
+});
+
+test("scorecard: without order access, completed checkouts stand in for orders; no orders anywhere compares ad cost per visit", () => {
+  const now = new Date("2026-11-08T11:30:00Z");
+  const noOrders = SC.buildScorecard({ store: "ed", days: 7, sessionRows: [scRow("a", "facebook", "paid", 20, 3, 2, 2), scRow("", "", "", 20)], orderNodes: null, now });
+  assert.deepEqual([noOrders.ordersSource, noOrders.totals.orders, noOrders.totals.sales, noOrders.campaigns[0].orders, noOrders.campaigns[0].sales], ["completed_checkouts", 2, null, 2, null]);
+  const cheapDear = SC.buildScorecard({ store: "ed", days: 7, now, orderNodes: [],
+    sessionRows: [scRow("cheap", "facebook", "paid", 100), scRow("mid", "facebook", "paid", 50), scRow("dear", "instagram", "paid", 20)],
+    spend: { cheap: { spendToDate: 5 }, mid: { spendToDate: 5 }, dear: { spendToDate: 9 } } });
+  const by = Object.fromEntries(cheapDear.campaigns.map((c) => [c.campaign, c]));
+  assert.equal(cheapDear.average.costPerVisit, 0.11);
+  assert.deepEqual([by.cheap.label, by.mid.label, by.dear.label, by.dear.pauseRecommended], ["winner", "average", "loser", false]);
+});
+
+test("GET /api/scorecard: key, store and days checked; spend and limits from R2; Shopify failures become clear errors", async () => {
+  const W = await import("../worker/app.mjs");
+  const RESULTS = fakeResults();
+  await RESULTS.put("ads/spend-c3d.json", JSON.stringify({ "ornament-ad": { dailyBudget: 3, spendToDate: 6, startDate: "2026-11-06" } }));
+  await RESULTS.put("ads/spend-ed.json", JSON.stringify({ "tee-ad": { dailyBudget: 1 } }));
+  await RESULTS.put(SC.LIMITS_KEY, JSON.stringify({ c3d: { maxCostPerVisit: 0.25 } }));
+  const queries = [];
+  const sh = fakeShopify({ override: {
+    MarketingTraffic: (v, data) => { queries.push(v.q); return data({ shopifyqlQuery: { parseErrors: [], tableData: { columns: ["utm_campaign", "utm_source", "utm_medium", "sessions", "sessions_with_cart_additions", "sessions_that_reached_checkout", "sessions_that_completed_checkout"].map((name) => ({ name, dataType: "x" })),
+      rows: [["ornament-ad", "facebook", "paid", "12", "2", "1", "1"], ["", "", "", "28", "1", "1", "1"]] } } }); },
+    ScorecardOrders: (v, data) => { queries.push(v.q); return data({ orders: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [scOrder("ornament-ad", 22), scOrder(null, 15)] } }); },
+  } });
+  const ctx = (bucket = RESULTS) => ({ env: envOf(), fetch: sh.fetch, bucket, now: () => new Date("2026-11-08T11:30:00Z") });
+  assert.equal((await SC.handleScorecard(get({ store: "c3d", days: "7" }), ctx())).status, 401);
+  assert.equal((await SC.handleScorecard(keyed({ store: "both", days: "7" }), ctx())).status, 400);
+  assert.equal((await SC.handleScorecard(keyed({ store: "c3d", days: "30" }), ctx())).status, 400);
+  const res = await SC.handleScorecard(keyed({ store: "c3d", days: "2" }), ctx());
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(queries, [SC.campaignSessionsQ(2), "created_at:>=2026-11-07"]);
+  assert.match(queries[0], /GROUP BY utm_campaign, utm_source, utm_medium SINCE -1d UNTIL today/);
+  const c = res.body.campaigns[0];
+  // 2 days x $3 = $6 over 12 visits = $0.50, over C3D's own $0.25 limit; $3/day is over the cap.
+  assert.deepEqual([c.campaign, c.sessions, c.orders, c.sales, c.cost, c.costPerVisit, c.flags, c.pauseRecommended], ["ornament-ad", 12, 1, 22, 6, 0.5, ["cost_per_visit", "over_daily_cap"], true]);
+  assert.deepEqual([res.body.totals.sessions, res.body.totals.orders, res.body.totals.sales, res.body.errors, res.body.missingScopes], [40, 2, 37, {}, []]);
+  assert.equal(JSON.stringify(res.body).includes("tee-ad"), false, "never the other brand's spend file");
+  assert.ok(sh.calls.filter((x) => x.op).every((x) => x.domain === "charleston3d.myshopify.com"), "only the C3D store");
+  noLeak(res.body);
+
+  // Missing scopes: both parts degrade with the scope to add, nothing throws.
+  const denied = (scope) => () => new Response(JSON.stringify({ errors: [{ message: "Access denied", extensions: { code: "ACCESS_DENIED", requiredAccess: `\`${scope}\` access scope` } }] }), { status: 200 });
+  const shD = fakeShopify({ override: { MarketingTraffic: denied("read_reports"), ScorecardOrders: denied("read_orders") } });
+  const d = await SC.handleScorecard(keyed({ store: "ed", days: "7" }), { env: envOf(), fetch: shD.fetch, bucket: RESULTS, now: () => new Date("2026-11-08T11:30:00Z") });
+  assert.equal(d.status, 200);
+  assert.match(d.body.errors.sessions, /read_reports/);
+  assert.match(d.body.errors.orders, /read_orders/);
+  assert.deepEqual(d.body.missingScopes, ["read_reports", "read_orders"]);
+  assert.deepEqual(d.body.pauseRecommended, ["tee-ad"], "the ED ad with no visits for the whole week");
+
+  // A broken spend file is reported, not fatal; no bucket at all is fine; a store that isn't connected says so.
+  const broken = fakeResults();
+  await broken.put("ads/spend-c3d.json", "{not json");
+  const b = await SC.handleScorecard(keyed({ store: "c3d" }), ctx(broken));
+  assert.equal(b.status, 200);
+  assert.match(b.body.errors.spend, /isn't valid JSON/);
+  assert.equal((await SC.handleScorecard(keyed({ store: "c3d" }), ctx(null))).status, 200);
+  const nc = await SC.handleScorecard(keyed({ store: "c3d" }), { env: envOf({ C3D_SHOPIFY_DOMAIN: undefined }), fetch: sh.fetch, bucket: null });
+  assert.match(nc.body.errors.shopify, /isn't connected yet/);
+
+  // Through the Worker route.
+  const env = { ...ENV, IMAGES: fakeKV(), RESULTS };
+  assert.equal((await W.handleRequest(new Request("https://console.example/api/scorecard?store=c3d&days=7"), env)).status, 401);
+  assert.equal((await W.handleRequest(new Request("https://console.example/api/scorecard?store=c3d&days=9", { headers: KEYH }), env)).status, 400);
+  // The orders query was checked against the real Admin API 2025-10 schema when it was sent.
+  assert.ok(checked().includes(SC.SCORECARD_ORDERS_QUERY));
+  assert.deepEqual(schemaErrors(SC.SCORECARD_ORDERS_QUERY), []);
+  assert.deepEqual(schemaProblems, []);
+});
+
+test("digest: each store carries its 7-day scorecard", async () => {
+  const D = await import("../lib/digest.mjs");
+  const seen = [];
+  const scorecard = async (env, f, store, bucket, now) => { seen.push([store, bucket === "B"]); return { days: 7, store, pauseRecommended: store === "ed" ? ["tee-ad"] : [] }; };
+  const out = await D.buildDigest({ env: envOf(), fetchImpl: null, bucket: "B", now: new Date("2026-11-08T11:31:00Z"), week: async () => ({}), scorecard });
+  assert.deepEqual(seen.sort(), [["c3d", true], ["ed", true]]);
+  assert.deepEqual([out.stores.c3d.scorecard.store, out.stores.ed.scorecard.pauseRecommended], ["c3d", ["tee-ad"]]);
+  const failing = await D.buildDigest({ env: envOf(), fetchImpl: null, now: new Date(), week: async () => ({}), scorecard: async () => { throw new Error("boom"); } });
+  assert.equal(failing.stores.c3d.scorecard.error, "boom");
+  // The brief drops the source breakdown and keeps the top 10.
+  const full = SC.buildScorecard({ store: "ed", days: 7, sessionRows: Array.from({ length: 12 }, (_, i) => scRow(`c${i}`, "social", "organic", 12 - i)), orderNodes: [], now: new Date() });
+  const brief = SC.scorecardBrief(full);
+  assert.equal(brief.campaigns.length, 10);
+  assert.equal("sources" in brief.campaigns[0], false);
+});
+
+test("utm(): tagged links for posts and ads", async () => {
+  const { utm, listingShareUrl } = await import("../lib/utm.mjs");
+  assert.equal(utm("https://elevatedshirts.com/products/tee", { source: "Facebook", medium: "paid", campaign: "ED Holiday Tees!", content: "photo 1" }),
+    "https://elevatedshirts.com/products/tee?utm_source=facebook&utm_medium=paid&utm_campaign=ed-holiday-tees&utm_content=photo-1");
+  assert.equal(utm("https://charleston3d.com/products/x?variant=1&utm_source=old", { source: "qr", medium: "print", campaign: "market" }),
+    "https://charleston3d.com/products/x?variant=1&utm_source=qr&utm_medium=print&utm_campaign=market");
+  assert.equal(listingShareUrl("https://charleston3d.com/products/ornament", "ornament"),
+    "https://charleston3d.com/products/ornament?utm_source=social&utm_medium=organic&utm_campaign=ornament&utm_content=new-listing");
+  assert.throws(() => utm("http://example.com", { source: "x" }));
 });

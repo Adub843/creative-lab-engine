@@ -32,6 +32,7 @@ import { handlePicture } from "../lib/picture.mjs";
 import { runScheduledSnapshots } from "../lib/tracker.mjs";
 import { syncKittlLibrary, STATE_KEY as KITTL_STATE_KEY, SYNC_DEBOUNCE_MS } from "../lib/kittl-sync.mjs";
 import { buildDigest, saveDigest, digestKey, isDigestDate, DIGEST_LATEST } from "../lib/digest.mjs";
+import { handleScorecard } from "../lib/scorecard.mjs";
 
 // The app pages: only its own scripts, Shopify's CDN for product photos, never framed.
 export const SITE_HEADERS = {
@@ -109,6 +110,7 @@ const pricing = jsonRoute(handlePricing);
 const marketing = jsonRoute(handleMarketing);
 const promotions = jsonRoute(handlePromotions);
 const team = jsonRoute(handleTeam);
+const scorecard = jsonRoute(handleScorecard);
 const marketingKv = (env) => (env?.MARKETING && typeof env.MARKETING.get === "function" ? env.MARKETING : null);
 
 // Previews are small, so they stay in KV either way.
@@ -146,6 +148,8 @@ export async function handleRequest(req, env) {
       }, { env: envReader(env), fetch: (input, init) => fetch(input, init) }, pathname.slice("/api/c3d-listings/".length));
       return json(out.body, out.status);
     }
+    // The marketing scorecard (lib/scorecard.mjs): ad spend and limits come from small JSON files in the RESULTS bucket.
+    if (pathname === "/api/scorecard") return await scorecard(req, env, { bucket: env?.RESULTS && typeof env.RESULTS.get === "function" ? env.RESULTS : null });
     if (pathname === "/api/pricing") return await pricing(req, env, { kv: env?.PRICING ?? null });
     // A Shopify product picture for the console (it can't load pictures from other sites itself).
     if (pathname === "/api/picture") {
@@ -285,7 +289,7 @@ export async function scheduledDigest(env, autofix = null, { fetchImpl = (input,
   if (!env?.RESULTS || typeof env.RESULTS.put !== "function") return null;
   try {
     const kv = (b) => (b && typeof b.get === "function" ? b : null);
-    const digest = await buildDigest({ env: envReader(env), fetchImpl, marketingKv: marketingKv(env), pricingKv: kv(env.PRICING), imagesKv: kv(env.IMAGES), autofix, now });
+    const digest = await buildDigest({ env: envReader(env), fetchImpl, marketingKv: marketingKv(env), pricingKv: kv(env.PRICING), imagesKv: kv(env.IMAGES), bucket: env.RESULTS, autofix, now });
     await saveDigest(env.RESULTS, digest, now);
     return digest;
   } catch (e) {
