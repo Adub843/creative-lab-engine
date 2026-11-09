@@ -80,3 +80,10 @@ test("the route needs the console key and GET", async () => {
   assert.equal(out.nodes.engine.jobs.every((j) => j.tone === "off"), true);
   assert.equal(out.network, null);
 });
+
+test("a job that answers ok:false is recorded as failed, with its reason", async () => {
+  const b = fakeR2();
+  const rec = await M.recordRun(b, "*/15 * * * *", { ok: false, error: "GOOGLE_SERVICE_ACCOUNT isn't valid JSON.", at: NOW });
+  assert.equal(rec.ok, false);
+  assert.match(rec.text, /valid JSON/);
+});
