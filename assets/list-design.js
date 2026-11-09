@@ -53,7 +53,7 @@ export function listPanel({ onListed = () => {} } = {}) {
           el("a", { href: was.url, target: "_blank", rel: "noopener", "data-act": "listed-view" }, "View", ext())) : null),
       ok
         ? el("button", { class: "btn brand", type: "button", "data-act": "list", "aria-label": `Add ${displayName(i)} to Elevated Designs`, onclick: (e) => sheet.open(i, e.currentTarget, done) }, "Add to Elevated Designs")
-        : el("p", { class: "muted small" }, "SVG can't be a Shopify product photo. Export it as a PNG in the Design Studio to list it."));
+        : el("p", { class: "muted small" }, "SVG can't be a Shopify product photo. Put it on a shirt in the Shirt designer and save it to the library as a PNG to list it."));
   }
 
   function draw() {
@@ -68,7 +68,7 @@ export function listPanel({ onListed = () => {} } = {}) {
     count.textContent = state.items.length ? `${shown.length} of ${state.items.length} designs` : "";
     if (!state.items.length) {
       grid.replaceChildren(el("div", { class: "state state-empty" }, el("strong", {}, "No designs in the online library yet"),
-        el("p", {}, "Upload them in the Design Studio, then come back to list them."),
+        el("p", {}, "Upload them in the Art library, then come back to list them."),
         el("div", { class: "row" }, el("a", { class: "btn", href: "#studio/ed" }, "Open shirt designer"))));
       return;
     }

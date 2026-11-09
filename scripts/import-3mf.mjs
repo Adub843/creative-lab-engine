@@ -30,7 +30,7 @@ for (const ev of ["uncaughtException", "unhandledRejection"])
   process.on(ev, (e) => { console.error(`Stopped by an unexpected error: ${e?.stack ?? e}`); process.exit(1); });
 process.on("exit", (code) => { if (code && logFile) try { fs.appendFileSync(logFile, `Exited with code ${code}\n`); } catch { /* optional */ } });
 const maxGb = flag("r2") ? Infinity : Number((flag("max-gb") ?? "--max-gb=0.5").split("=")[1]);
-const [folder, base = "https://business-console.business-console.workers.dev"] = args.filter((a) => !a.startsWith("--"));
+const [folder, base = "https://creative-lab-engine.business-console.workers.dev"] = args.filter((a) => !a.startsWith("--"));
 if (!folder || Number.isNaN(maxGb) || maxGb <= 0) {
   console.error("Usage: node scripts/import-3mf.mjs <folder> [console-url] [--dry-run] [--max-gb=0.5] [--r2] [--log=<file>]");
   process.exit(2);

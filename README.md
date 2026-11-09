@@ -1,6 +1,6 @@
-# Creative Lab engine (formerly Business Console)
+# Creative Lab engine (formerly the Business Console, now retired)
 
-**2026-10-30:** this is now the background engine behind the Creative Lab Studios console (https://claude.ai/artifact/U8rNeWMPq7NfF7f88AEuPK). It has no pages of its own; the console runs every action below through the `creative-lab-actions` queue (see `worker/queue.mjs`). The rest of this README describes each function as it was built in the Business Console.
+**2026-10-30:** this is now the background engine behind the Creative Lab Studios console (https://claude.ai/artifact/U8rNeWMPq7NfF7f88AEuPK). It has no pages of its own; the console runs every action below through the `creative-lab-actions` queue (see `worker/queue.mjs`). The rest of this README describes each function as it was built in the Creative Lab engine.
 
 One place to run Charleston 3D and Elevated Designs: dashboard, brand pages, a map of every connected service, product publishing and insights for both Shopify stores, and a design studio with an image library and shirt designer.
 
@@ -106,6 +106,14 @@ If a scope is missing, that part of the page says which scope to add and the res
 
 Turn it on once with `npx wrangler secret put MESHY_API_KEY` (the key from meshy.ai › API). The key stays in the Worker; the page only ever talks to the console. Jobs are listed under `c3d-meshy:` in the IMAGES KV namespace.
 
+## Art library, E: drive and shirt designer
+
+These came over from the Design Studio on 7 Nov 2026 (epix3d.com is now a separate 3D maker site), so the console is the one place for art and shirts.
+
+- **Art library** (Library, on both stores): every image in the online library. Each image belongs to one brand: `ed`, `epix3d` (an Elevated Designs label) or `c3d`. Elevated Designs shows its own and EPIX3D's art; Charleston 3D shows only its own. Open an image to rename it, tag it, change its category or brand, show it in the shirt app, put it on a shirt, list it or delete it; select several to do it at once. Charleston 3D art is never public and never reaches the shirt app or the shirt designer (the server enforces this on upload, on every change and in the public feed). Images saved before brands existed count as Elevated Designs, or Charleston 3D when their category names it.
+- **E: drive** (Library, on both stores): every design file on Aaron's E: drive (plus Kittl and the old design lab images), searched with previews, read from his PC through a Cloudflare Tunnel while it's on. Each store sees its own files. The PC side is `drive-server/` (see its README); the console signs every request with CONSOLE_KEY and the PC checks it. `DRIVE_ORIGIN` in `wrangler.toml` is the tunnel's address (`https://library.epix3d.com`, a name from the Design Studio days that can later move to a console hostname).
+- **Shirt designer** (Make, Elevated Designs): uploads and saved designs go to Elevated Designs or EPIX3D. Home has "Start a design" tiles on the real shirt photos.
+
 ## Kittl library sync
 
 The image library follows the Kittl "Clipped Images" folder by itself, so the shirt apps' designs stay current.
@@ -125,7 +133,7 @@ The console runs as one Cloudflare Worker on Cloudflare's free plan: the pages, 
 
 **1. A Cloudflare account.** If you don't have one yet, sign up for free at https://dash.cloudflare.com/sign-up (no card needed, no domain needed). You don't need to turn on R2 or anything else: the first deploy makes the one thing the console needs (a KV namespace for images).
 
-**2. Node.js on your computer.** Install the LTS version (22 or newer) from https://nodejs.org. Then open a terminal (Windows: PowerShell; Mac: Terminal) in this folder. If you don't have the code yet: on GitHub open `Adub843/Business-console`, choose **Code > Download ZIP**, unzip it, and open the terminal in that folder.
+**2. Node.js on your computer.** Install the LTS version (22 or newer) from https://nodejs.org. Then open a terminal (Windows: PowerShell; Mac: Terminal) in this folder. If you don't have the code yet: on GitHub open `Adub843/creative-lab-engine`, choose **Code > Download ZIP**, unzip it, and open the terminal in that folder.
 
 **3. Install and sign in.** Type each line and press Enter:
 
@@ -281,16 +289,21 @@ Run `npm install` once first (the API tests use `graphql`, and `wrangler` runs t
 | `POST /api/promotions {store, action: "discountStatus", id, active}` / `{..., action: "discountDelete", id}` | Turn a discount on or off, or delete it |
 | `POST /api/promotions {store, action: "giftcard", amount, note?, expiresOn?}` / `{..., action: "giftcardDisable", id}` | Create a gift card (the code comes back once), or turn one off for good |
 | `POST /api/promotions {store, action: "segment", name, query}` | Create a customer group |
-| `GET /api/images` | Image library list: `{items: [{key, name, type, size, tags, added}]}` |
+| `GET /api/images` | Image library list: `{items: [{key, name, type, size, tags, added, brand, url}]}` |
+| `GET /api/images?public=1[&brand=ed\|epix3d]` | No key: the shirt app's art, never private or Charleston 3D art: `{items: [{key, name, type, tags, category, kind, added, brand}]}`, CORS for the app's origins |
+| `PATCH /api/images/<key>` | Change `name`, `tags`, `category`, `kind`, `public`, `access` or `brand` (`c3d`, `ed`, `epix3d`; moving to `c3d` turns public off) |
+| `GET /api/drive/search?q=&brand=ed\|c3d&kind=&page=&per=` / `GET /api/drive/stats` | The E: drive library (needs the key); each file comes with signed `thumbUrl` and `fileUrl` links |
+| `GET /api/drive/thumb/<id>`, `GET /api/drive/file/<id>` | A preview or the file itself, with the key or a signed link |
+| `GET /api/drive/public?q=&page=&per=` | No key: the E: drive pictures the shirt app may show (`SHIRT_APP_FOLDERS` in `drive-server/config.mjs`), `{page, per, total, items: [{id, name, folder, ext, kind, thumbUrl, fileUrl}]}` with absolute signed links, CORS for the app's origins. 503 `pc_offline` while the PC is off |
 | `GET /api/images/<key>` | The image file (no key needed; keys are unguessable) |
-| `POST /api/images` | Save one image: the raw file as the body, its type in `content-type` (PNG, JPEG, WebP, GIF or SVG, checked against the file), `x-filename`, optional `x-tags`; 20 MB at most |
+| `POST /api/images` | Save one image: the raw file as the body, its type in `content-type` (PNG, JPEG, WebP, GIF or SVG, checked against the file), `x-filename`, optional `x-tags`, `x-brand`, `x-public`, `x-category`; 20 MB at most |
 | `DELETE /api/images/<key>` | Remove one image |
 | `GET /api/library-sync` | The last Kittl library sync's counts (no key needed) |
 | `POST /api/library-sync` | Sync now: run the Kittl library sync at once (at most once a minute) and return its counts |
 | `GET /api/digest` (`?date=YYYY-MM-DD` for an earlier day) | The daily digest: per store (`c3d`, `ed`) the site check scores and fails/warns, automatic fixes made and undone in the last 24 hours, the rank snapshot, last 7 days' sessions/orders/sales, each store's 7-day marketing scorecard (trimmed), and (ED) the price sync and Kittl library sync state. Written at 11:30 UTC to the RESULTS bucket as `digest/latest.json` and `digest/<date>.json` (kept 30 days) |
 | `GET /api/scorecard?store=c3d\|ed&days=2\|7` | The marketing scorecard (lib/scorecard.mjs, no AI): per UTM campaign the visits, add-to-carts, checkouts (ShopifyQL, `read_reports`), orders and sales (orders credited by their visit's UTM campaign, `read_orders`), cost from the optional R2 file `ads/spend-<store>.json`, cost per visit and per order, a winner/average/loser label against the store's own average, pause flags (no visits after 3 days, cost per visit over `config/marketing-limits.json`'s limit, default $0.50) and the $2/day cap. The thresholds are documented at the top of lib/scorecard.mjs. The AI steps that read it are in `ai-jobs/` |
 
-All of them need the console key (`x-console-key`), except fetching an image file by its key. There is no CORS: only the console's own pages can call the API from a browser. A listing makes several Shopify calls including an image upload of up to 20 MB. If one is cut off after the product was made, List it again finds it by its `design:` tag and finishes publishing it instead of making a second one.
+All of them need the console key (`x-console-key`), except fetching an image file by its key and the shirt app's public feeds marked "No key". Only those public reads get CORS, and only for the shirt app's own addresses; everything else can only be called from the console's own pages. A listing makes several Shopify calls including an image upload of up to 20 MB. If one is cut off after the product was made, List it again finds it by its `design:` tag and finishes publishing it instead of making a second one.
 
 ## Moving to another host later
 
