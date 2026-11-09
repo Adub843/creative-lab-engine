@@ -275,7 +275,8 @@ export async function handleScheduled(env, cron, scheduledTime = Date.now()) {
     return await scheduledPricing({ env: envReader(env), kv: env?.PRICING ?? null, fetchImpl: (input, init) => fetch(input, init) });
   } catch (e) {
     console.error("price sync", e?.code ?? e?.name, e?.message);
-    return null;
+    // The System map shows this reason on the job's red line (lib/system-map.mjs keeps it short; no store data in it).
+    return { ok: false, error: String(e?.message ?? e?.code ?? "the price sync failed").slice(0, 160) };
   }
 }
 
