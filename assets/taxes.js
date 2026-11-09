@@ -37,7 +37,7 @@ export async function renderTaxes() {
       data = await api(API, { key: true, reason: KEY_REASON });
       draw();
     } catch (e) {
-      root.replaceChildren(status, el("section", { class: "panel" }, el("h2", {}, "Taxi couldn't load"), el("p", { class: "muted" }, e.message),
+      root.replaceChildren(status, el("section", { class: "panel" }, el("h2", {}, "Taxi couldn't load"), el("p", { class: "muted" }, e.status === 404 ? "Taxi's part of the Creative Lab engine isn't deployed yet. Once it is, this page fills in on its own." : e.message),
         el("div", { class: "row" }, el("button", { class: "btn primary", type: "button", onclick: load }, "Try again"))));
     }
   }
