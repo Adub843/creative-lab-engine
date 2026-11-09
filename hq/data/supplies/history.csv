@@ -85,3 +85,47 @@ date,group,item,best,unit,store
 2026-11-02,Packing & shipping,"Shipping boxes, mailer (9x6)",0.58,box,Amazon
 2026-11-02,Packing & shipping,"Shipping boxes, medium (12x9x6)",0.8995,box,Amazon
 2026-11-02,Packing & shipping,"Shipping boxes, small (6x4x4)",0.3699,box,Amazon
+2026-11-09,Bambu Lab printers,Bambu Lab A1,259.0,printer,Bambu Lab store
+2026-11-09,Bambu Lab printers,Bambu Lab A1 mini,199.0,printer,Bambu Lab store
+2026-11-09,Bambu Lab printers,Bambu Lab A2L,439.0,printer,Bambu Lab store
+2026-11-09,Bambu Lab printers,Bambu Lab H2C,1899.0,printer,Bambu Lab store
+2026-11-09,Bambu Lab printers,Bambu Lab H2D,1399.0,printer,Bambu Lab store
+2026-11-09,Bambu Lab printers,Bambu Lab H2S,1049.0,printer,Bambu Lab store
+2026-11-09,Bambu Lab printers,Bambu Lab H3C,2499.0,printer,Bambu Lab store
+2026-11-09,Bambu Lab printers,Bambu Lab P1S,349.0,printer,Bambu Lab store
+2026-11-09,Bambu Lab printers,Bambu Lab P2S,449.0,printer,Bambu Lab store
+2026-11-09,Bambu Lab printers,Bambu Lab X2D,589.0,printer,Bambu Lab store
+2026-11-09,Filament,Bambu Lab ABS,10.39,kg,Bambu Lab store
+2026-11-09,Filament,Bambu Lab Matte PLA,10.39,kg,Bambu Lab store
+2026-11-09,Filament,Bambu Lab PETG,9.09,kg,Bambu Lab store
+2026-11-09,Filament,Bambu Lab PLA,9.74,kg,Bambu Lab store
+2026-11-09,Filament,Bambu Lab PLA+,13.64,kg,Bambu Lab store
+2026-11-09,Filament,Bambu Lab Silk PLA,12.34,kg,Bambu Lab store
+2026-11-09,Filament,Bambu Lab TPU 95A,20.99,kg,Bambu Lab store
+2026-11-09,Filament,ELEGOO ABS,12.82,kg,Amazon
+2026-11-09,Filament,ELEGOO ASA,13.0,kg,ELEGOO store
+2026-11-09,Filament,ELEGOO Matte PLA,9.19,kg,Amazon
+2026-11-09,Filament,ELEGOO PETG,9.0,kg,Amazon
+2026-11-09,Filament,ELEGOO PLA,9.66,kg,Amazon
+2026-11-09,Filament,ELEGOO PLA+,9.8,kg,ELEGOO store
+2026-11-09,Filament,ELEGOO Silk PLA,13.0,kg,ELEGOO store
+2026-11-09,Filament,ELEGOO TPU 95A,12.3,kg,ELEGOO store
+2026-11-09,Filament,Polymaker ABS,8.33,kg,Polymaker US Wholesale
+2026-11-09,Filament,Polymaker ASA,12.5,kg,Polymaker US Wholesale
+2026-11-09,Filament,Polymaker Matte PLA,8.2,kg,Polymaker US Wholesale
+2026-11-09,Filament,Polymaker PETG,8.0,kg,Polymaker US Wholesale
+2026-11-09,Filament,Polymaker PLA,8.33,kg,Polymaker US Wholesale
+2026-11-09,Filament,Polymaker PLA+,9.0,kg,Polymaker US Wholesale
+2026-11-09,Filament,Polymaker Silk PLA,12.5,kg,Polymaker US Wholesale
+2026-11-09,Filament,Polymaker TPU 95A,15.0,kg,Amazon
+2026-11-09,Light box parts,Foil tape,0.0948,ft,Amazon
+2026-11-09,Light box parts,"White LED strip, 12V wall plug",0.5485,ft,Amazon
+2026-11-09,Light box parts,"White LED strip, USB plug-in",0.6495,ft,Amazon
+2026-11-09,Light box parts,"White LED strip, battery",0.853,ft,Amazon
+2026-11-09,Packing & shipping,Desiccant packs,0.02,packet,Amazon
+2026-11-09,Packing & shipping,Fragile labels,0.005,label,Amazon
+2026-11-09,Packing & shipping,Honeycomb packing paper (pull to expand),0.0641,ft,Amazon
+2026-11-09,Packing & shipping,"Packing tape, heavy duty",1.3325,roll,Amazon
+2026-11-09,Packing & shipping,"Shipping boxes, mailer (9x6)",0.5332,box,Amazon
+2026-11-09,Packing & shipping,"Shipping boxes, medium (12x9x6)",0.8995,box,Amazon
+2026-11-09,Packing & shipping,"Shipping boxes, small (6x4x4)",0.3699,box,Amazon
