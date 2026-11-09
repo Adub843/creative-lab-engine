@@ -222,3 +222,15 @@ test("worker: 10:00 UTC runs Taxi, and /api/taxes is routed", async () => {
   const body = await res.json();
   assert.ok(Array.isArray(body.weeks) && body.deadlines.length);
 });
+
+test("taxes: Aaron confirms assumptions and the page says so", async () => {
+  const T = await import("../lib/taxes.mjs");
+  const s = T.cleanSettings({ confirm: ["filing", "sCorp", "materials"] });
+  assert.ok(s.confirmed.filing && s.confirmed.sCorp && s.confirmed.materials);
+  const a = T.assumptionsFor(s);
+  assert.match(a[0], /^Confirmed by you on \d{4}-\d\d-\d\d: You file single/);
+  assert.match(a[2], /^Confirmed by you on .*S corp/);
+  assert.match(a[4], /about 20% of Charleston 3D sales and 45% of Elevated Designs sales/);
+  assert.doesNotMatch(T.assumptionsFor(T.DEFAULT_SETTINGS)[0], /Confirmed/);
+  assert.throws(() => T.cleanSettings({ confirm: ["nope"] }), /confirm takes/);
+});
