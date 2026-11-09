@@ -33,6 +33,7 @@ import { runScheduledSnapshots } from "../lib/tracker.mjs";
 import { syncKittlLibrary, STATE_KEY as KITTL_STATE_KEY, SYNC_DEBOUNCE_MS } from "../lib/kittl-sync.mjs";
 import { buildDigest, saveDigest, digestKey, isDigestDate, DIGEST_LATEST } from "../lib/digest.mjs";
 import { handleScorecard } from "../lib/scorecard.mjs";
+import { handleTaxes, handleTaxFile, runTaxi, taxiBrief } from "../lib/taxes.mjs";
 
 // The app pages: only its own scripts, Shopify's CDN for product photos, never framed.
 export const SITE_HEADERS = {
@@ -111,6 +112,7 @@ const marketing = jsonRoute(handleMarketing);
 const promotions = jsonRoute(handlePromotions);
 const team = jsonRoute(handleTeam);
 const scorecard = jsonRoute(handleScorecard);
+const taxes = jsonRoute(handleTaxes);
 const marketingKv = (env) => (env?.MARKETING && typeof env.MARKETING.get === "function" ? env.MARKETING : null);
 
 // Previews are small, so they stay in KV either way.
@@ -128,6 +130,11 @@ export async function handleRequest(req, env) {
     if (pathname === "/api/promotions") return await promotions(req, env, { kv: marketingKv(env) });
     // The Team page's task board is small JSON, kept in the same KV under "team:<store>".
     if (pathname === "/api/team") return await team(req, env, { kv: marketingKv(env) });
+    // Taxi, the tax agent: the year's sales ledger, her reports and the records in the same KV under "tax:*",
+    // receipt photos and PDFs in IMAGES under their own prefix (never in the image list).
+    if (pathname === "/api/taxes") return await taxes(req, env, { kv: marketingKv(env), files: env?.IMAGES ? kvBlobStore(env.IMAGES, "tax-file:") : null });
+    if (pathname.startsWith("/api/taxes/file/"))
+      return await handleTaxFile(req, { kv: marketingKv(env), files: env?.IMAGES ? kvBlobStore(env.IMAGES, "tax-file:") : null, env: envReader(env) });
     if (pathname === "/api/listings") {
       // The design is read through the image library's own read route, from the same KV namespace.
       const readImage = async (key) => libraryReader({ blobs: imageStore(env), env: envReader(env) })(key);
@@ -229,6 +236,17 @@ export const UPKEEP_CRON = "45 * * * *";
 export const KITTL_CRON = UPKEEP_CRON;
 export const KITTL_HOUR_UTC = 4;
 export const isKittlRun = (scheduledTime) => new Date(scheduledTime).getUTCHours() === KITTL_HOUR_UTC;
+// Taxi's daily sales roundup shares the 15-minute cron (the account has no free cron slot): the 10:00 UTC tick
+// (6 AM Eastern in daylight time, 5 AM in standard time) runs Taxi instead of that one price sync step.
+// On Fridays the same run writes the weekly tax summary. The 11:30 digest then carries her report to Stacy.
+export const TAXI_HOUR_UTC = 10;
+export const isTaxiRun = (scheduledTime) => { const d = new Date(scheduledTime); return d.getUTCHours() === TAXI_HOUR_UTC && d.getUTCMinutes() < 15; };
+export async function scheduledTaxi(env, scheduledTime = Date.now()) {
+  const kv = marketingKv(env);
+  if (!kv) return null;
+  try { return await runTaxi({ kv, env: envReader(env), fetch: (input, init) => fetch(input, init) }, { now: new Date(scheduledTime) }); }
+  catch (e) { console.error("taxi", e?.code ?? e?.name, e?.message); return null; }
+}
 export async function handleScheduled(env, cron, scheduledTime = Date.now()) {
   if (!cron || cron === AUDIT_CRON) return runScheduledAudits(envReader(env), (input, init) => fetch(input, init), marketingKv(env));
   if (cron === AUTOFIX_CRON) {
@@ -239,6 +257,7 @@ export async function handleScheduled(env, cron, scheduledTime = Date.now()) {
     return fixes;
   }
   if (cron === UPKEEP_CRON) return isKittlRun(scheduledTime) ? scheduledKittlSync(env, undefined, "nightly") : scheduledUpkeep(env);
+  if (isTaxiRun(scheduledTime)) return scheduledTaxi(env, scheduledTime);
   try {
     return await scheduledPricing({ env: envReader(env), kv: env?.PRICING ?? null, fetchImpl: (input, init) => fetch(input, init) });
   } catch (e) {
@@ -290,6 +309,8 @@ export async function scheduledDigest(env, autofix = null, { fetchImpl = (input,
   try {
     const kv = (b) => (b && typeof b.get === "function" ? b : null);
     const digest = await buildDigest({ env: envReader(env), fetchImpl, marketingKv: marketingKv(env), pricingKv: kv(env.PRICING), imagesKv: kv(env.IMAGES), bucket: env.RESULTS, autofix, now });
+    // Taxi's last report and Friday summary (both stores together: one LLC, one tax return).
+    digest.taxi = await taxiBrief(marketingKv(env)).catch(() => null);
     await saveDigest(env.RESULTS, digest, now);
     return digest;
   } catch (e) {

@@ -119,6 +119,12 @@ The image library follows the Kittl "Clipped Images" folder by itself, so the sh
 - The last run's counts are at /api/library-sync. No key is needed. `stale: true` means no sync in over 26 hours (a missed night).
 - No key or secret is involved anywhere in this sync.
 
+## Taxi (taxes)
+
+Taxi is the tax agent, in Creative Lab Studios under Money > Taxi · taxes (page code `assets/taxes.js`, published to the console as `engine/taxes.js`; API `/api/taxes`, `lib/taxes.mjs`). Both stores belong to Elevated Designs LLC and one Schedule C, so she shows both, each in its own column. Every morning on the 10:00 UTC tick of the 15-minute cron she reads both stores' paid orders (no customer details are kept) and works out for each sale: the SC sales tax collected (goes to the sales tax account), card fee, material cost, the income tax reserve (her calculated rate on the sale's profit, for the IRS and SC) and what's left for Aaron. The page has the Friday-to-Thursday weekly totals to move, SC sales tax by month with due dates, the year's tax so far, deadlines with links, receipts and screenshots by week (photos and PDFs up to 10 MB, kept in IMAGES under `tax-file:`), her daily log, settings and every assumption with its source. Her report and, on Fridays, the week's summary with the amount to move go into the daily digest (`taxi`) for Stacy. Ledger, reports and settings live in MARKETING under `tax:*`. She's guidance, not a CPA: the 2026 rules are in `lib/taxes.mjs` (`TAX_RULES`) and are updated each January. Aaron's personal taxes live in the Pocket Ledger app, never here.
+
+For Taxi's exact numbers (optional; without them she estimates): `read_shopify_payments_payouts` (the real card fee on each order), `read_inventory` (each product's cost per item) and `read_all_orders` (sales older than 60 days, so the whole tax year stays in her ledger after February).
+
 ## Put the console online (Cloudflare)
 
 The console runs as one Cloudflare Worker on Cloudflare's free plan: the pages, the API and the image library (in Workers KV) all live there. You only do steps 1 to 5 once.
