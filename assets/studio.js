@@ -1,5 +1,5 @@
-// Design Studio: the image library plus a shirt editor on real product photos.
-// The library is the same one the shirt app uses. Anyone can browse and design with the shirt-app images
+// Shirt designer (Elevated Designs): the image library plus a shirt editor on real product photos. It took over from the
+// Design Studio's designer on 2026-11-07. The library is the same one the shirt app uses. Anyone can browse and design with the shirt-app images
 // (GET /api/images?public=1, no key); the console key only adds private images and is needed to upload or delete.
 // Images live online (Cloudflare Workers KV). If that API can't be reached, uploads are kept in this browser.
 // The shirt is a studio photo of a white blank (assets/blanks, the same photos as design.elevatedshirts.com):
@@ -198,11 +198,12 @@ export async function listImages() {
 // Private items carry a signed link from the API; public ones load from /api/images/:key without the key.
 export const imageUrl = (item) => item.local ? localUrls.get(item.key) : item.url ?? `${API}/${encodeURIComponent(item.key)}`;
 
-export async function upload(file, tags, isPublic) {
+// brand: c3d, ed or epix3d (lib/images.mjs). Charleston 3D art is never public; the server enforces it too.
+export async function upload(file, tags, isPublic, brand = "ed") {
   try {
     const res = await fetch(API, {
       method: "POST",
-      headers: { "content-type": file.type, "x-filename": file.name, "x-tags": tags, ...(isPublic ? { "x-public": "1" } : {}), ...keyHeader() },
+      headers: { "content-type": file.type, "x-filename": file.name, "x-tags": tags, "x-brand": brand, ...(isPublic && brand !== "c3d" ? { "x-public": "1" } : {}), ...keyHeader() },
       body: file,
     });
     if (res.status === 401 || res.status === 403) throw Object.assign(new Error(res.status === 401 ? "Wrong or missing console key." : "Uploads are off until CONSOLE_KEY is set for this console."), { stop: true, key: res.status === 401 });
@@ -214,7 +215,7 @@ export async function upload(file, tags, isPublic) {
     if (res.status === 413 || res.status === 415) throw Object.assign(new Error((await res.json().catch(() => ({}))).error ?? res.statusText), { stop: true });
   } catch (e) { if (e.stop) throw e; }
   const item = { key: `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-    name: file.name, type: file.type, size: file.size, tags, added: Date.now() };
+    name: file.name, type: file.type, size: file.size, tags, brand, added: Date.now() };
   await tx("readwrite", (s) => s.put({ ...item, blob: file }));
   return { saved: "local", item };
 }
@@ -276,6 +277,16 @@ function askName(value) {
   return new Promise((ok) => { nameDlg.addEventListener("close", () => ok(nameDlg.returnValue), { once: true }); nameDlg.showModal(); nameDlg.querySelector("#dn-in").select(); });
 }
 
+// The Elevated Designs brand new uploads and saved designs go to: Elevated Designs itself or its EPIX3D label.
+const SHIRT_BRANDS = [["ed", "Elevated Designs"], ["epix3d", "EPIX3D"]];
+const shirtBrand = () => SHIRT_BRANDS.some(([k]) => k === store.get("bc-art-brand", "ed")) ? store.get("bc-art-brand", "ed") : "ed";
+export const STYLE_NAMES = STYLES;
+// Starts the designer on a shirt style (the quick-start tiles on Home), keeping the art already placed.
+export function startDesign(style) {
+  if (!STYLES.some(([k]) => k === style)) return;
+  store.set("bc-design-2", { ...store.get("bc-design-2", {}), style });
+}
+
 // ---------- page ----------
 export async function renderStudio() {
   const saved = store.get("bc-design-2", null);
@@ -327,6 +338,9 @@ export async function renderStudio() {
   const fileIn = el("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif,image/svg+xml", multiple: true, hidden: true });
   const tagsIn = el("input", { class: "field", type: "text", placeholder: "Tags for new uploads, e.g. halloween, logo" });
   const pubIn = el("input", { type: "checkbox", checked: true });
+  const brandIn = el("select", { class: "field", id: "ed-brand", "aria-label": "Brand for uploads and saved designs" }, SHIRT_BRANDS.map(([k, n]) => el("option", { value: k }, n)));
+  brandIn.value = shirtBrand();
+  brandIn.addEventListener("change", () => store.set("bc-art-brand", brandIn.value));
   const filters = filterBar({ onChange: () => drawLib(), id: "ed-lib" });
   const countLine = el("p", { class: "muted small" });
   const syncLine = el("p", { class: "muted small" });
@@ -336,9 +350,10 @@ export async function renderStudio() {
   const panels = {
     library: el("div", { class: "ed-pane stack" }, el("h2", {}, "Image library"), filters.el, countLine, lib, syncLine),
     upload: el("div", { class: "ed-pane stack" }, el("h2", {}, "Upload"),
-      el("div", { class: "drop" }, "Drop images here or ", btn("choose files", () => fileIn.click(), "btn ghost")), fileIn, tagsIn,
+      el("div", { class: "drop" }, "Drop images here or ", btn("choose files", () => fileIn.click(), "btn ghost")), fileIn,
+      el("label", { class: "stack small", style: "gap:4px", for: "ed-brand" }, "Brand", brandIn), tagsIn,
       el("label", { class: "row small" }, pubIn, "Show in the shirt app library"),
-      el("p", { class: "muted small" }, "PNG with a transparent background prints best. Up to 20 MB each. Adding or deleting library images needs the console key; designing doesn't.")),
+      el("p", { class: "muted small" }, "PNG with a transparent background prints best. Up to 20 MB each. Saved designs go to the same brand. Rename, move or tag images in the Art library. Adding or deleting library images needs the console key; designing doesn't.")),
     shirt: el("div", { class: "ed-pane stack" }, el("h2", {}, "Shirt")),
     text: el("div", { class: "ed-pane stack" }),
     layers: el("div", { class: "ed-pane stack" }, el("h2", {}, "Layers"), el("p", { class: "muted small" }, "Top layer first. Select one to edit it."), layersList),
@@ -400,7 +415,7 @@ export async function renderStudio() {
     let cloud = 0, local = 0, failed = 0, reason = "";
     for (const [n, f] of list.entries()) {
       countLine.textContent = `Uploading ${n + 1} of ${list.length}…`;
-      try { (await upload(f, tagsIn.value.trim(), pubIn.checked)).saved === "cloud" ? cloud++ : local++; }
+      try { (await upload(f, tagsIn.value.trim(), pubIn.checked, brandIn.value)).saved === "cloud" ? cloud++ : local++; }
       catch (e) { failed++; reason ||= e.message; if (e.key) { consoleKey.clear(); break; } }
     }
     await refresh();
@@ -784,9 +799,9 @@ export async function renderStudio() {
     const clean = name.trim().replace(/[^\w .-]+/g, "").replace(/\s+/g, "-").slice(0, 60) || `design-${day()}`;
     const blob = await new Promise((ok) => printCanvas().then((c) => c.toBlob(ok, "image/png")));
     try {
-      const r = await upload(new File([blob], `${clean}.png`, { type: "image/png" }), "studio", false);
+      const r = await upload(new File([blob], `${clean}.png`, { type: "image/png" }), "studio", false, brandIn.value);
       await refresh();
-      toast(r.saved === "cloud" ? `Saved "${clean}.png" to the library. List it from Elevated Designs, List a design.` : `Saved "${clean}.png" in this browser only; the online library couldn't be reached.`);
+      toast(r.saved === "cloud" ? `Saved "${clean}.png" to the ${brandIn.value === "epix3d" ? "EPIX3D" : "Elevated Designs"} library. List it from List a design.` : `Saved "${clean}.png" in this browser only; the online library couldn't be reached.`);
     } catch (e) { if (e.key) consoleKey.clear(); toast(e.message); }
   }
   async function exportMockup() {

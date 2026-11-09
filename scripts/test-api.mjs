@@ -1557,7 +1557,7 @@ test("build: dist/ holds only index.html, assets/ and tools/, and wrangler.toml 
   assert.match(toml, /\[\[kv_namespaces\]\]\s+binding = "IMAGES"/);
   assert.ok(!/shpat_|CONSOLE_KEY\s*=|_TOKEN\s*=|_SECRET\s*=/.test(toml), "no secrets in wrangler.toml");
   const vars = toml.split(/\n\[vars\]\n/)[1]?.split(/\n\[/)[0] ?? "";
-  assert.deepEqual(vars.split("\n").filter((l) => l.trim() && !l.startsWith("#")).map((l) => l.split("=")[0].trim()), toml.includes("[vars]") ? ["CONSOLE_PAGE"] : [], "the only plain variable is the console's address");
+  assert.deepEqual(vars.split("\n").filter((l) => l.trim() && !l.startsWith("#")).map((l) => l.split("=")[0].trim()), toml.includes("[vars]") ? ["CONSOLE_PAGE", "DRIVE_ORIGIN"] : [], "the only plain variables are the console's address and the E: drive tunnel's address");
   assert.deepEqual([...toml.matchAll(/bucket_name\s*=\s*"([^"]+)"/g)].map((m) => m[1]), ["c3d-files", "creative-lab-engine"], "two R2 buckets: Charleston 3D's print files and the console's action answers");
   // Nothing in this project runs on Netlify: no config, functions, packages, code or docs for it.
   for (const gone of ["netlify.toml", "netlify", "lib/netlify.mjs"]) assert.ok(!fs.existsSync(path.join(root, gone)), `${gone} is gone`);
@@ -1643,7 +1643,7 @@ test("worker: image library on Workers KV keeps the same API (list, file, upload
     const up = await W.handleRequest(wreq("/api/images", { method: "POST", headers: { "content-type": "image/png", "x-filename": `d${i}.png`, "x-tags": "palmetto", ...KEYH }, body: PNG }), env);
     assert.equal(up.status, 201);
     const { item } = await up.json();
-    assert.deepEqual(Object.keys(item).sort(), ["added", "key", "name", "public", "size", "tags", "type", "url"]);
+    assert.deepEqual(Object.keys(item).sort(), ["added", "brand", "key", "name", "public", "size", "tags", "type", "url"]);
     keys.push(item.key); urls.push(item.url);
   }
   assert.ok([...kv.m.keys()].every((k) => k.startsWith("image:")), "stored under the image: prefix");
@@ -1902,6 +1902,31 @@ test("worker: a listing reads its design from the same KV image library", async 
     assert.equal(r2.body.markup, 10);
     assert.equal(r2.body.report.changed, 3);
   });
+
+  test("pricing: the Price sheet page gets every row, with blank and design prices, and never makes one up", async () => {
+    const v = P.sheetView(SHEET, 10);
+    assert.equal(v.length, 5);
+    const s = v.find((r) => r.id === "gildan-64000" && r.size === "S");
+    assert.deepEqual([s.cost, s.suggested, s.yours, s.price, s.designPrice, s.offered], [2.81, 13.99, null, 13.99, 23.99, true]);
+    const x = v.find((r) => r.size === "2XL");
+    assert.deepEqual([x.price, x.designPrice], [21.5, 31.5], "your_price wins");
+    const off = v.find((r) => r.id === "fruit-3930r");
+    assert.deepEqual([off.offered, off.price, off.designPrice], [false, null, null], "offer=no has no store price");
+    assert.throws(() => P.sheetView([["name"]]), /needs id and size/);
+    const cat = P.catalogView();
+    assert.ok(cat.length > 50 && cat.every((r) => r.id && r.size));
+    assert.ok(cat.some((r) => r.id === "gildan-64000" && r.size === "S" && r.price > 0));
+    // The route: key needed, ED only, works without the PRICING KV, falls back to the bundled copy.
+    const hdr = (k) => (k === "x-console-key" ? ENV.CONSOLE_KEY : null);
+    const q = (s) => ({ method: "GET", query: new URLSearchParams(s), header: hdr });
+    assert.equal((await P.handlePricing({ ...q("store=ed&view=sheet"), header: () => null }, { env: envOf(), kv: null, fetch })).status, 401);
+    assert.equal((await P.handlePricing(q("store=c3d&view=sheet"), { env: envOf(), kv: null, fetch })).status, 400);
+    const r = await P.handlePricing(q("store=ed&view=sheet"), { env: envOf(), kv: null, fetch });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.source, "bundled");
+    assert.ok(r.body.rows.length > 50);
+    assert.match(r.body.sheetUrl, /11G7MyaGqSaz3WCd21etMYc-YebpAbyKzmvE1aqNWpy8/);
+  });
 }
 
 // ---------- marketing ----------
@@ -1939,7 +1964,7 @@ function fakeSite({ bad = false, site = "https://charleston3d.com", keys = MKENV
     if (u.host !== host) return null;
     hits.push(u.pathname);
     assert.ok(init.signal, "every site fetch has a timeout");
-    assert.match(init.headers["user-agent"], /BusinessConsole-SEO/);
+    assert.match(init.headers["user-agent"], /CreativeLab-SEO/);
     if (down) return text("", 503);
     switch (u.pathname) {
       case "/": return text(bad ? HOME_BAD : HOME_GOOD);
@@ -2026,6 +2051,27 @@ test("marketing: a healthy site scores well, uses its own IndexNow key, and only
   assert.ok(!site.hits.includes("/collections/frontpage"), "the hidden home page collection is not used either");
 });
 
+test("marketing: Shopify's own /llms.txt agent file doesn't count; the /pages/llms fact sheet does", async () => {
+  const UCP = `# Charleston3D\n\nAgent instructions. Discover the profile at /.well-known/ucp and use the MCP endpoint.\n${"- Respect Retry-After.\n".repeat(20)}`;
+  const wrap = (pagesLlms) => {
+    const site = fakeSite();
+    return async (url, init) => {
+      const u = new URL(String(url));
+      if (u.pathname === "/llms.txt") return new Response(UCP, { status: 200, headers: { "content-type": "text/plain" } });
+      if (u.pathname === "/pages/llms") return new Response(pagesLlms ?? "Not found", { status: pagesLlms ? 200 : 404, headers: { "content-type": "text/plain" } });
+      return site.fetch(url, init);
+    };
+  };
+  const without = await MK.auditSite(wrap(null), { store: "c3d", site: "https://charleston3d.com", key: MKENV.C3D_INDEXNOW_KEY, clock: () => NOW });
+  const c = without.checks.find((x) => x.id === "llms");
+  assert.equal(c.level, "fail");
+  assert.match(c.title, /Shopify's shopping-agent file/);
+  const withPage = await MK.auditSite(wrap(LLMS), { store: "c3d", site: "https://charleston3d.com", key: MKENV.C3D_INDEXNOW_KEY, clock: () => NOW });
+  const ok = withPage.checks.find((x) => x.id === "llms");
+  assert.equal(ok.level, "pass");
+  assert.match(ok.detail ?? ok.url ?? JSON.stringify(ok), /pages\/llms/);
+});
+
 test("marketing: a domain that redirects to another host is flagged and the live sitemap is still read", async () => {
   const live = fakeSite({ site: "https://theelevateddesignsllc.com" });
   const redirecting = async (url, init) => {
@@ -2079,7 +2125,7 @@ test("marketing: a 429 from Shopify is tried again, then reported as a warning, 
     assert.match(a.checks.find((c) => c.id === id).fix, /Shopify limited/);
   }
   assert.ok(!a.checks.some((c) => /password|Create page handle llms/.test(c.fix ?? "")), "no domain, password or llms advice for a 429");
-  assert.equal(calls, 10, "each of the 5 pages is asked twice");
+  assert.equal(calls, 12, "each of the 6 pages (llms.txt and the llms page included) is asked twice");
   assert.equal(a.scores.seo, null, "checks Shopify turned away don't lower the score");
   const kvm = new Map([["history:ed", JSON.stringify([{ date: "2026-10-27", scores: { overall: 80 } }])]]);
   const kv = { get: async (k) => JSON.parse(kvm.get(k) ?? "null"), put: async (k, v) => kvm.set(k, v) };
@@ -2753,7 +2799,7 @@ test("worker: /api/marketing runs through the Worker with the MARKETING KV, and 
   }, f.fetch);
 });
 
-test("wrangler.toml: MARKETING and PRICING KV bindings, the daily audit cron, the price sync cron and the Kittl sync cron", async () => {
+test("wrangler.toml: MARKETING and PRICING KV bindings, and one 15-minute cron that runs the audit, fixes, Kittl sync and price sync", async () => {
   const fs = await import("node:fs");
   const toml = fs.readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   assert.match(toml, /\[\[kv_namespaces\]\]\s*\nbinding = "MARKETING"/);
@@ -4228,4 +4274,278 @@ test("utm(): tagged links for posts and ads", async () => {
   assert.equal(listingShareUrl("https://charleston3d.com/products/ornament", "ornament"),
     "https://charleston3d.com/products/ornament?utm_source=social&utm_medium=organic&utm_campaign=ornament&utm_content=new-listing");
   assert.throws(() => utm("http://example.com", { source: "x" }));
+});
+
+// ---------- handoff board ----------
+const HO = await import("../lib/handoffs.mjs");
+const hoReq = (method, body, query = {}, headers = { "content-type": "application/json", "x-console-key": "open-sesame-test-key-0001" }) =>
+  ({ method, query: new URLSearchParams(query), header: (k) => headers[k.toLowerCase()] ?? null, text: async () => JSON.stringify(body ?? {}) });
+const hoClock = (iso) => () => new Date(iso);
+
+test("handoffs: key and KV required; a run writes one note and its lane reads it back with heads-ups", async () => {
+  const kv = fakeKV();
+  assert.equal((await HO.handleHandoffs(hoReq("GET", null, {}, {}), { env: envOf(), kv })).status, 401);
+  assert.equal((await HO.handleHandoffs(hoReq("GET"), { env: envOf(), kv: null })).status, 503);
+  const at = hoClock("2026-10-30T14:00:00Z");
+  const w = await HO.handleHandoffs(hoReq("POST", { lane: "marketing", task: "Ad budget guard", store: "c3d", did: "Checked the one live ad.", changed: "", next: "ED ad starts Nov 2 if Aaron OKs it.",
+    headsUp: [{ to: "ops", text: "ED ad is waiting for Aaron's OK." }] }), { env: envOf(), kv }, at);
+  assert.equal(w.status, 201);
+  assert.deepEqual(w.body.handoff.headsUpTo, ["ops"]);
+  assert.equal(w.body.handoff.status, "ok");
+  await HO.handleHandoffs(hoReq("POST", { lane: "ed", task: "Price watch", did: "No mismatches." }), { env: envOf(), kv }, hoClock("2026-10-30T15:00:00Z"));
+  const ops = await HO.handleHandoffs(hoReq("GET", null, { lane: "ops" }), { env: envOf(), kv }, hoClock("2026-10-30T16:00:00Z"));
+  assert.deepEqual(ops.body.handoffs.map((h) => h.task), ["Ad budget guard"], "ops sees the heads-up sent to it, not ed's note");
+  const all = await HO.handleHandoffs(hoReq("GET"), { env: envOf(), kv }, hoClock("2026-10-30T16:00:00Z"));
+  assert.deepEqual(all.body.handoffs.map((h) => h.lane), ["ed", "marketing"], "newest first");
+  assert.deepEqual(all.body.stale, ["ops", "c3d"]);
+  const since = await HO.handleHandoffs(hoReq("GET", null, { since: "2026-10-30T14:30:00Z" }), { env: envOf(), kv }, hoClock("2026-10-30T16:00:00Z"));
+  assert.equal(since.body.handoffs.length, 1);
+});
+
+test("handoffs: bad lanes, statuses, emails, phone numbers and keys are refused", async () => {
+  const kv = fakeKV();
+  const base = { lane: "ops", task: "Brief", did: "Sent it." };
+  for (const body of [{ ...base, lane: "aaron" }, { ...base, status: "great" }, { ...base, did: "" }, { ...base, store: "both-stores" },
+    { ...base, did: "Customer jane@example.com asked" }, { ...base, next: "Call 843-555-0100" }, { ...base, changed: "used shpat_abcdef123456" },
+    { ...base, headsUp: [{ to: "nobody", text: "hi" }] }, { ...base, task: "x".repeat(81) }]) {
+    assert.equal((await HO.handleHandoffs(hoReq("POST", body), { env: envOf(), kv })).status, 400, JSON.stringify(body));
+  }
+  assert.equal(kv.m.size, 0);
+  assert.equal((await HO.handleHandoffs(hoReq("GET", null, { lane: "nobody" }), { env: envOf(), kv })).status, 400);
+});
+
+test("handoffs: notes over 30 days old drop off, the manager brief is saved, and Aaron can remove a note", async () => {
+  const kv = fakeKV();
+  await HO.handleHandoffs(hoReq("POST", { lane: "c3d", task: "Triage", did: "Two new requests." }), { env: envOf(), kv }, hoClock("2026-09-01T10:00:00Z"));
+  const fresh = await HO.handleHandoffs(hoReq("POST", { lane: "c3d", task: "Triage", did: "One new request." }), { env: envOf(), kv }, hoClock("2026-10-30T10:00:00Z"));
+  const r = await HO.handleHandoffs(hoReq("GET"), { env: envOf(), kv }, hoClock("2026-10-30T11:00:00Z"));
+  assert.deepEqual(r.body.handoffs.map((h) => h.did), ["One new request."]);
+  const b = await HO.handleHandoffs(hoReq("POST", { brief: { needsYou: ["OK the ED ad for Nov 2-8"], fixed: [], watching: ["C3D ad CPC $0.41"] } }), { env: envOf(), kv }, hoClock("2026-10-30T11:30:00Z"));
+  assert.equal(b.status, 201);
+  assert.equal((await HO.handleHandoffs(hoReq("POST", { brief: { needsYou: "nope" } }), { env: envOf(), kv })).status, 400);
+  const again = await HO.handleHandoffs(hoReq("GET"), { env: envOf(), kv }, hoClock("2026-10-30T12:00:00Z"));
+  assert.deepEqual(again.body.brief.needsYou, ["OK the ED ad for Nov 2-8"]);
+  assert.equal((await HO.handleHandoffs(hoReq("DELETE", { id: fresh.body.handoff.id }), { env: envOf(), kv })).status, 200);
+  assert.equal((await HO.handleHandoffs(hoReq("DELETE", { id: fresh.body.handoff.id }), { env: envOf(), kv })).status, 404);
+});
+
+test("worker: /api/handoffs uses the MARKETING KV", async () => {
+  const kv = fakeKV(), env = workerEnv({ MARKETING: kv });
+  const r = await W.handleRequest(wreq("/api/handoffs", { method: "POST", headers: { "content-type": "application/json", ...KEYH }, body: JSON.stringify({ lane: "claude", task: "Setup upgrade", did: "Added the handoff board." }) }), env);
+  assert.equal(r.status, 201);
+  assert.ok(kv.m.has("handoffs"));
+  assert.equal((await W.handleRequest(wreq("/api/handoffs"), env)).status, 401);
+});
+
+// ---------- brands on the image library (moved here from the Design Studio, 2026-11-07) ----------
+const brandCtx = () => ({ blobs: fakeBlobs(), env: envOf() });
+const brandPost = (ctx, h = {}) => handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", "x-filename": "art.png", ...KEYH, ...h }, body: PNG }), ctx);
+
+test("brands: old images count as Elevated Designs, or Charleston 3D when their category says so", () => {
+  assert.equal(I.brandOf({}), "ed"); assert.equal(I.brandOf(null), "ed"); assert.equal(I.brandOf({ brand: "nope" }), "ed");
+  assert.equal(I.brandOf({ brand: "c3d" }), "c3d"); assert.equal(I.brandOf({ brand: "epix3d" }), "epix3d");
+  assert.equal(I.brandOf({ category: "Charleston 3D logos" }), "c3d");
+  assert.equal(I.brandOf({ brand: "ed", category: "Charleston3D" }), "ed", "a brand that was set wins");
+  assert.equal(I.canBePublic("c3d"), false); assert.equal(I.canBePublic("ed"), true); assert.equal(I.canBePublic("epix3d"), true);
+});
+
+test("brands: uploads need the key and keep their brand; Charleston 3D art is never public", async () => {
+  const ctx = brandCtx();
+  assert.equal((await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", "x-brand": "ed" }, body: PNG }), ctx)).status, 401);
+  for (const b of ["c3d", "ed", "epix3d"]) {
+    const r = await brandPost(ctx, { "x-brand": b, "x-public": "1", "x-access": "pro" });
+    assert.equal(r.status, 201);
+    const { item } = await r.json();
+    assert.equal(item.brand, b);
+    assert.equal(item.public, b !== "c3d", `${b} public`);
+    assert.equal(item.access, b === "c3d" ? undefined : "pro", "C3D art can't be unlocked in the shirt app either");
+  }
+  assert.equal((await (await brandPost(ctx, { "x-brand": "bogus" })).json()).item.brand, "ed");
+  assert.equal((await (await brandPost(ctx)).json()).item.brand, "ed", "no brand: Elevated Designs");
+});
+
+test("brands: the public feed hides private and Charleston 3D art (even old public ones) and filters by brand", async () => {
+  const ctx = brandCtx();
+  await brandPost(ctx, { "x-brand": "ed", "x-public": "1", "x-filename": "ed.png" });
+  await brandPost(ctx, { "x-brand": "epix3d", "x-public": "1", "x-filename": "epix.png" });
+  await brandPost(ctx, { "x-brand": "c3d", "x-public": "1", "x-filename": "c3d.png" });
+  await brandPost(ctx, { "x-brand": "ed", "x-filename": "private.png" });
+  // made public before brands existed, filed under a Charleston 3D category
+  const old = (await (await brandPost(ctx, { "x-filename": "old-c3d.png", "x-public": "1" })).json()).item;
+  const m = ctx.blobs.m.get(`image:${old.key}`).metadata; delete m.brand; m.category = "Charleston 3D";
+  const feed = async (q = "") => (await (await handleImages(imgReq(`/api/images?public=1${q}`, { headers: { origin: "https://design.elevatedshirts.com" } }), ctx)).json()).items;
+  assert.deepEqual((await feed()).map((i) => i.name).sort(), ["ed.png", "epix.png"]);
+  assert.deepEqual(Object.keys((await feed())[0]).sort(), ["added", "brand", "key", "name", "tags", "type"],
+    "the fields the studio's feed had (category and kind too when set), nothing more");
+  assert.deepEqual((await feed("&brand=ed")).map((i) => i.name), ["ed.png"]);
+  assert.deepEqual((await feed("&brand=epix3d")).map((i) => i.name), ["epix.png"]);
+  assert.deepEqual(await feed("&brand=c3d"), [], "asking for Charleston 3D gets nothing");
+  assert.equal((await handleImages(imgReq("/api/images?public=1&brand=nope"), ctx)).status, 400);
+  const keyed = (await (await handleImages(imgReq("/api/images", { headers: KEYH }), ctx)).json()).items;
+  assert.equal(keyed.find((i) => i.key === old.key).brand, "c3d", "the keyed list names every image's brand");
+  assert.ok(keyed.every((i) => ["c3d", "ed", "epix3d"].includes(i.brand)));
+  const pr = await brandPost(ctx, { "x-brand": "ed", "x-filename": "members.png", "x-access": "members" });
+  const c3dLocked = (await (await brandPost(ctx, { "x-filename": "c3d-members.png", "x-access": "members" })).json()).item;
+  const mm = ctx.blobs.m.get(`image:${c3dLocked.key}`).metadata; delete mm.brand; mm.category = "Charleston 3D";
+  const members = await I.imagesForTags(ctx.blobs, [], ctx.env, "https://console.example");
+  assert.deepEqual(members.map((i) => i.name), ["members.png"], "signed-in customers never get Charleston 3D art either");
+  assert.equal(pr.status, 201);
+});
+
+test("brands: PATCH moves an image between brands, and moving to Charleston 3D turns public and access off", async () => {
+  const ctx = brandCtx();
+  const { item } = await (await brandPost(ctx, { "x-brand": "ed", "x-public": "1", "x-access": "pro" })).json();
+  const patch = (body, h = KEYH) => handleImages(imgReq(`/api/images/${item.key}`, { method: "PATCH", headers: { "content-type": "application/json", ...h }, body: JSON.stringify(body) }), ctx);
+  let out = (await (await patch({ name: "Renamed", tags: "a, b", category: "Holidays", brand: "epix3d" })).json()).item;
+  assert.deepEqual([out.name, out.tags, out.category, out.brand, out.public, out.access], ["Renamed", "a, b", "Holidays", "epix3d", true, "pro"]);
+  out = (await (await patch({ brand: "c3d" })).json()).item;
+  assert.deepEqual([out.brand, out.public, out.access], ["c3d", false, undefined]);
+  out = (await (await patch({ public: true })).json()).item;
+  assert.equal(out.public, false, "Charleston 3D art can't be made public");
+  assert.equal((await patch({ brand: "nope" })).status, 400);
+  assert.equal((await patch({ brand: "ed" }, {})).status, 401, "moving needs the key");
+  assert.equal(ctx.blobs.m.get(`image:${item.key}`).metadata.brand, "c3d", "a refused change leaves it as it was");
+});
+
+// ---------- the E: drive library (lib/drive.mjs), checked against the PC side's own signature check ----------
+const { handleDrive } = await import("../lib/drive.mjs");
+const { verifySig, driveSig: driveSigFor, classify, shirtSearch } = await import("../drive-server/lib.mjs");
+const DKEY = ENV.CONSOLE_KEY;
+const DID = "0123456789abcdef0123";
+function fakePC(seen) {
+  return async (u, init) => {
+    const url = new URL(u);
+    seen.push({ host: url.host, path: url.pathname + url.search, ok: verifySig(DKEY, init.headers["x-drive-exp"], init.headers["x-drive-sig"], url.pathname + url.search) });
+    if (url.pathname === "/public") return Response.json({ page: 0, per: 500, total: 2, items: [{ id: DID, name: "skull.png", folder: "DTF Ready Prints", ext: ".png", kind: "dtf", rel: "E:\\secret" }, { id: "../etc", name: "bad" }] });
+    if (url.pathname === "/search") return Response.json({ total: 1, items: [{ id: DID, name: "skull.svg", thumb: true, src: "e", brand: "ed" }] });
+    if (url.pathname === "/stats") return Response.json({ kinds: [{ brand: "ed", kind: "svg", n: 3 }], index: "index-1.db" });
+    if (url.pathname.startsWith("/thumb/")) return new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/webp" } });
+    return new Response("x", { headers: { "content-type": "model/stl", "content-disposition": "attachment; filename=a.stl" } });
+  };
+}
+const driveEnv = (extra = {}) => envOf({ DRIVE_ORIGIN: "https://library.test", ...extra });
+const dcall = (p, init = {}, opts = {}) => handleDrive(new Request(`https://console.example${p}`, init), { env: driveEnv(), ...opts });
+
+test("drive: search and stats need the console key, and every request to the PC is signed", async () => {
+  const seen = [];
+  assert.equal((await dcall("/api/drive/search?q=skull", {}, { fetchImpl: fakePC(seen) })).status, 401);
+  assert.equal((await dcall("/api/drive/stats", { headers: { "x-console-key": "wrong-key-wrong-key-1" } }, { fetchImpl: fakePC(seen) })).status, 401);
+  assert.equal(seen.length, 0, "nothing reaches the PC without the key");
+  const res = await dcall("/api/drive/search?q=skull&brand=ed&evil=1", { headers: KEYH }, { fetchImpl: fakePC(seen) });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.deepEqual([seen[0].host, seen[0].path, seen[0].ok], ["library.test", "/search?q=skull&brand=ed", true], "only known fields go on, signed");
+  assert.match(body.items[0].thumbUrl, new RegExp(`^/api/drive/thumb/${DID}\\?exp=\\d+&sig=`));
+  assert.match(body.items[0].fileUrl, /^\/api\/drive\/file\//);
+  const st = await dcall("/api/drive/stats", { headers: KEYH }, { fetchImpl: fakePC(seen) });
+  assert.equal(st.status, 200); assert.equal((await st.json()).kinds[0].n, 3);
+  assert.equal(st.headers.get("cache-control"), "no-store");
+});
+
+test("drive: signed links load previews and files without the key; forged, old or swapped links don't", async () => {
+  const seen = [];
+  const { thumbUrl, fileUrl } = (await (await dcall("/api/drive/search", { headers: KEYH }, { fetchImpl: fakePC(seen) })).json()).items[0];
+  const t = await dcall(thumbUrl, {}, { fetchImpl: fakePC(seen) });
+  assert.equal(t.status, 200); assert.equal(t.headers.get("content-type"), "image/webp");
+  assert.equal(t.headers.get("x-content-type-options"), "nosniff");
+  const f = await dcall(fileUrl, {}, { fetchImpl: fakePC(seen) });
+  assert.equal(f.status, 200); assert.match(f.headers.get("content-disposition"), /attachment/);
+  assert.ok(seen.every((s) => s.ok));
+  assert.equal((await dcall(thumbUrl.replace(/sig=.*/, "sig=forged"), {}, { fetchImpl: fakePC(seen) })).status, 404);
+  assert.equal((await dcall(thumbUrl, {}, { fetchImpl: fakePC(seen), now: Date.now() + 2 * 3600_000 })).status, 404, "expired");
+  assert.equal((await dcall(fileUrl.replace("/file/", "/thumb/"), {}, { fetchImpl: fakePC(seen) })).status, 404, "a file link isn't a preview link");
+  assert.equal((await handleDrive(new Request(`https://console.example${thumbUrl}`), { env: envOf({ DRIVE_ORIGIN: "https://library.test", CONSOLE_KEY: "a-different-long-random-console-key-123" }), fetchImpl: fakePC(seen) })).status, 404,
+    "links stop working when the console key changes");
+  assert.equal((await dcall("/api/drive/thumb/..%2f..%2fwindows", { headers: KEYH }, { fetchImpl: fakePC(seen) })).status, 404);
+  assert.equal((await dcall("/api/drive/elsewhere", { headers: KEYH }, { fetchImpl: fakePC(seen) })).status, 404);
+});
+
+test("drive: a switched-off PC reads as offline; errors are handled; it's read only; no DRIVE_ORIGIN is 503", async () => {
+  const r = await dcall("/api/drive/search", { headers: KEYH }, { fetchImpl: async () => new Response("bad gateway", { status: 530 }) });
+  assert.equal(r.status, 503); assert.equal((await r.json()).code, "pc_offline");
+  const thrown = await dcall("/api/drive/stats", { headers: KEYH }, { fetchImpl: async () => { throw new Error("dns"); } });
+  assert.equal(thrown.status, 503); assert.equal((await thrown.json()).code, "pc_offline");
+  const html500 = await dcall("/api/drive/search", { headers: KEYH }, { fetchImpl: async () => new Response("<html>", { status: 500, headers: { "content-type": "text/html" } }) });
+  assert.equal((await html500.json()).code, "pc_offline");
+  const refused = await dcall("/api/drive/search", { headers: KEYH }, { fetchImpl: async () => Response.json({ error: "Bad signature" }, { status: 401 }) });
+  assert.equal(refused.status, 502, "the PC refusing the console's signature is a server problem, not a wrong key");
+  assert.equal((await dcall("/api/drive/search", { method: "POST", headers: KEYH })).status, 405);
+  const unset = await handleDrive(new Request("https://console.example/api/drive/search", { headers: KEYH }), { env: envOf() });
+  assert.equal(unset.status, 503); assert.equal((await unset.json()).code, "drive_not_set_up");
+});
+
+test("drive: the shirt app's public list needs no key, has absolute signed links on the console's address and CORS for the app only", async () => {
+  const seen = [];
+  const app = { origin: "https://design.elevatedshirts.com" };
+  const res = await dcall("/api/drive/public?q=skull&brand=c3d&per=50", { headers: app }, { fetchImpl: fakePC(seen) });
+  assert.equal(res.status, 200);
+  assert.equal(seen[0].path, "/public?q=skull&per=50", "the brand can't be chosen from outside");
+  assert.equal(seen[0].ok, true);
+  assert.equal(res.headers.get("access-control-allow-origin"), "https://design.elevatedshirts.com");
+  const body = await res.json();
+  assert.deepEqual(Object.keys(body).sort(), ["items", "page", "per", "total"], "the same shape the studio sent");
+  assert.equal(body.items.length, 1, "bad ids are dropped");
+  assert.deepEqual(Object.keys(body.items[0]).sort(), ["ext", "fileUrl", "folder", "id", "kind", "name", "thumbUrl"], "nothing about the PC's paths");
+  assert.match(body.items[0].thumbUrl, new RegExp(`^https://console\\.example/api/drive/thumb/${DID}\\?exp=\\d+&sig=`));
+  const fu = new URL(body.items[0].fileUrl);
+  const t = await dcall(fu.pathname + fu.search, { headers: app }, { fetchImpl: fakePC(seen) });
+  assert.equal(t.status, 200);
+  assert.equal(t.headers.get("access-control-allow-origin"), "https://design.elevatedshirts.com", "the app can read the file to print it");
+  for (const o of ["https://evil.example", "https://epix3d.com"])
+    assert.equal((await dcall("/api/drive/public", { headers: { origin: o } }, { fetchImpl: fakePC(seen) })).headers.get("access-control-allow-origin"), null, o);
+  const search = await dcall("/api/drive/search", { headers: app }, { fetchImpl: fakePC(seen) });
+  assert.equal(search.status, 401, "the full search still needs the key");
+  assert.equal(search.headers.get("access-control-allow-origin"), null);
+  const off = await dcall("/api/drive/public", { headers: app }, { fetchImpl: async () => new Response("", { status: 530 }) });
+  assert.equal(off.status, 503);
+  assert.equal(off.headers.get("access-control-allow-origin"), "https://design.elevatedshirts.com", "the app can tell the PC is off");
+  const extra = await handleDrive(new Request("https://console.example/api/drive/public", { headers: { origin: "https://shirts.example.com" } }),
+    { env: envOf({ DRIVE_ORIGIN: "https://library.test", BUILDER_ORIGINS: "https://shirts.example.com" }), fetchImpl: fakePC(seen) });
+  assert.equal(extra.headers.get("access-control-allow-origin"), "https://shirts.example.com", "BUILDER_ORIGINS works here too");
+});
+
+test("drive server: the shirt app only gets Elevated Designs pictures from the chosen E: folders", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const db = new DatabaseSync(":memory:");
+  db.exec("CREATE TABLE items (id TEXT PRIMARY KEY, src TEXT, root INTEGER, rel TEXT, name TEXT, folder TEXT, ext TEXT, brand TEXT, kind TEXT)");
+  const add = db.prepare("INSERT INTO items VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+  const rows = [["a", 0, "DTF Ready Prints\\skull.png", ".png", "ed", "dtf"], ["b", 0, "Fraud Account\\id.png", ".png", "ed", "image"],
+    ["c", 0, "SVG FILES\\boats\\anchor.svg", ".svg", "ed", "svg"], ["d", 0, "SVG FILES\\boats\\anchor.ai", ".ai", "ed", "source"],
+    ["e", 0, "Design Images_old\\p.png", ".png", "ed", "image"], ["f", 1, "DTF Ready Prints\\lab.png", ".png", "ed", "image"],
+    ["g", 0, "DTF Ready Prints\\boat.png", ".png", "c3d", "image"], ["h", 0, "loose.png", ".png", "ed", "image"]];
+  for (const [id, root, rel, ext, brand, kind] of rows) add.run(id, root ? "lab" : "e", root, rel, rel.split("\\").at(-1), rel.split("\\").slice(0, -1).join("\\"), ext, brand, kind);
+  const roots = [{ src: "e" }, { src: "lab" }];
+  const got = (q = "") => shirtSearch(db, roots, ["Design Images", "DTF Ready Prints", "SVG FILES"], new URLSearchParams(q)).items.map((i) => i.id);
+  assert.deepEqual(got(), ["a", "c"], "only pictures, only Elevated Designs, only inside the chosen folders on E:");
+  assert.deepEqual(got("q=anchor"), ["c"]);
+  assert.deepEqual(got("q=100%25"), [], "search text can't widen the match");
+  assert.deepEqual(shirtSearch(db, roots, [], new URLSearchParams()).items, [], "no folders chosen: nothing is public");
+});
+
+test("drive server: the PC rejects unsigned, forged, replayed-path and stale requests, and sorts files by brand", () => {
+  const exp = String(Math.floor(Date.now() / 1000));
+  const sig = driveSigFor(DKEY, exp, "/search?q=a");
+  assert.equal(verifySig(DKEY, exp, sig, "/search?q=a"), true);
+  assert.equal(verifySig(DKEY, exp, sig, "/file/0123456789abcdef0123"), false);
+  assert.equal(verifySig("another-key-123456789", exp, sig, "/search?q=a"), false);
+  assert.equal(verifySig(DKEY, String(Number(exp) - 3600), driveSigFor(DKEY, String(Number(exp) - 3600), "/stats"), "/stats"), false);
+  assert.equal(verifySig(DKEY, exp, undefined, "/stats"), false);
+  assert.deepEqual([classify("Print files\\boat\\hull.stl").brand, classify("Print files\\boat\\hull.stl").kind], ["c3d", "3d"]);
+  assert.deepEqual([classify("DTF Ready Prints\\skull.png").brand, classify("DTF Ready Prints\\skull.png").kind], ["ed", "dtf"]);
+  assert.equal(classify("SVG FILES\\a\\b.svg").kind, "svg");
+});
+
+test("worker: /api/drive reaches the drive library with DRIVE_ORIGIN from env, and unknown paths stay JSON 404s", async () => {
+  const seen = [];
+  await withFetch(async () => {
+    const env = workerEnv({ DRIVE_ORIGIN: "https://library.test" });
+    assert.equal((await W.handleRequest(wreq("/api/drive/search"), env)).status, 401);
+    const r = await W.handleRequest(wreq("/api/drive/search?q=a", { headers: KEYH }), env);
+    assert.equal(r.status, 200);
+    assert.deepEqual([seen[0].host, seen[0].ok], ["library.test", true]);
+    const pub = await W.handleRequest(wreq("/api/drive/public", { headers: { origin: "https://design.elevatedshirts.com" } }), env);
+    assert.equal(pub.headers.get("access-control-allow-origin"), "https://design.elevatedshirts.com");
+    assert.equal((await W.handleRequest(wreq("/api/drivex"), env)).status, 404);
+    assert.deepEqual(env.ASSETS.calls, [], "never falls through to the files");
+  }, fakePC(seen));
 });

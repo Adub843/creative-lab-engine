@@ -70,6 +70,10 @@ enabled = true
 
 [vars]
 CONSOLE_PAGE = "https://claude.ai/artifact/U8rNeWMPq7NfF7f88AEuPK"
+# The E: drive library (Library, E: drive; lib/drive.mjs): the files stay on Aaron's PC and come through the
+# Cloudflare Tunnel run by drive-server/. A plain address, not a secret. library.epix3d.com is the tunnel's name from
+# the Design Studio days; it can later move to a console hostname (re-run drive-server/setup.ps1 with the new name).
+DRIVE_ORIGIN = "https://library.epix3d.com"
 
 # 11:00 UTC daily (early morning in Charleston): checks both public sites for the Marketing page.
 # 11:30 UTC daily: applies the safe SEO fixes (titles, descriptions, alt text) to both stores.
