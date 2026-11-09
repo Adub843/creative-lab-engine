@@ -3725,7 +3725,7 @@ test("team: the board needs the key and the KV; each store has its own board and
 
 test("team: an agent of the other store can't be given a task; bad text is refused", async () => {
   const kv = fakeKV();
-  assert.deepEqual(ownersFor("c3d"), ["aaron", "ops", "c3d", "marketing", "builder", "admin"]);
+  assert.deepEqual(ownersFor("c3d"), ["aaron", "ops", "c3d", "marketing", "taxi", "builder", "admin"]);
   for (const body of [{ store: "c3d", text: "x", owner: "ed" }, { store: "c3d", text: "   " }, { store: "c3d", text: "x".repeat(201) }, { store: "c3d", text: 5 }, { store: "c3d", tasks: [] }])
     assert.equal((await handleTeam(teamReq("POST", body), { env: envOf(), kv })).status, 400, JSON.stringify(body));
   assert.equal(kv.m.size, 0);
