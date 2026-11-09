@@ -4,7 +4,7 @@
 
 - Owner: Aaron Lewis (GitHub `Adub843`).
 - Businesses: Elevated Designs LLC (shirts) and Charleston3D (3D printing, a DBA of the LLC). Both are in Charleston, SC.
-- Last updated: 2026-10-26, compiled from every project thread, project memory, the audit, the recheck report and the skills catalog.
+- Last updated: 2026-11-09 (rules 19 photo-real images and 20 no Business console), previously 2026-10-26, compiled from every project thread, project memory, the audit, the recheck report and the skills catalog.
 
 ---
 
@@ -32,6 +32,8 @@
 16. **Never say "done" unless you checked it live yourself:** the live site, store, app or console, not another thread's report.
 17. **No personal Gmail as a public contact** on any site. Use hello@charleston3d.com (ImprovMX), hello@elevatedshirts.com (forwarding) or the store contact form.
 18. **Check before you ask Aaron for anything.** Aaron, 2026-11-07, after saying it many times: never ask him to do, connect, sign in to or set up anything until you have checked (a) project memory, (b) the console database, and (c) the live service in Claude in Chrome or through its connector, and confirmed you cannot do it yourself. Holo, Kittl, Shopify, Cloudflare and GitHub are already connected. If you must ask, say what you checked and give a direct link. Only secrets, payment methods, Publish/Deploy presses and typed OKs for irreversible steps are truly his.
+19. **Photo-real images only.** Aaron, 2026-11-09, after three months of fake-looking renders: every product, listing and post image must look like a real photograph. Code, Python or Blender renders are never a final image; they are only for building 3D models, print files and internal checks. Make finished images with Kittl's AI in realistic/photo mode, keeping each item's true shape and colors. An image that looks like a 3D render fails ship-check and is never posted or listed, not even labeled "design preview".
+20. **No Business console.** Aaron, 2026-11-09: the old Business console (repo Adub843/Business-console, Worker business-console, folder `Desktop\business-console`) is retired. Never suggest it, link to it, build on it, deploy it or send work to it. All console work goes to Creative Lab Studios Console (https://claude.ai/artifact/U8rNeWMPq7NfF7f88AEuPK) and its engine Adub843/creative-lab-engine (Worker `creative-lab-engine`, deployed from `Desktop\creative-lab-engine`). Deleting the old repo or Worker still needs Aaron's typed OK.
 
 ## 2. How Aaron wants to work
 
@@ -51,7 +53,7 @@
 | ED shirt app | design.elevatedshirts.com | Adub843/elevated-shirt-app (public export) + elevated-shirt-app-private (source with costs) | GitHub Pages |
 | EPIX3D shirt app | epix3d.com | Adub843/epix3d-shirt-app | GitHub Pages (repo must be public for free Pages) |
 | Charleston3D order app | app.charleston3d.com | Adub843/charleston3d-app | GitHub Pages |
-| Business Console | business-console.business-console.workers.dev | Adub843/Business-console | Cloudflare Worker + KV |
+| Creative Lab Studios Console | https://claude.ai/artifact/U8rNeWMPq7NfF7f88AEuPK (engine: Worker `creative-lab-engine`) | Adub843/creative-lab-engine | Claude artifact + Cloudflare Worker, KV, R2 and queue. The old Business console is retired (rule 20). |
 | Backups | n/a | elevated-designs-legacy, cloudflare-sites (14 old Cloudflare sites), elevated-shirt-app-private | GitHub (private) |
 
 What each piece does (Aaron's design):
@@ -100,7 +102,7 @@ How it connects:
 | Store data, products, prices, collections, pages, redirects, SEO fields | **Shopify MCP connector** (`graphql_query` / `graphql_mutation`, productSet, stagedUploadsCreate, collectionCreate, pageCreate, urlRedirectCreate, themeFilesUpsert). It's signed into ONE store at a time. `switch-shop` signs it out, so tell Aaron first. It blocks themePublish, themeDelete and bulk operations, so Aaron presses Publish. |
 | Theme code | Hand-coded Liquid in GitHub. Test with the liquidjs render harness, tests/liquid-strict.js, `shopify theme check`, Playwright e2e and screenshots, the WCAG contrast audit, and tests/schema-check.py before upload. |
 | DNS for charleston3d.com and epix3d.com | **Wix MCP connector** (account DNS API) |
-| Console deploy, KV, crons, secrets | Cloudflare Workers + KV with **wrangler**, run on Aaron's PC (`npx.cmd wrangler deploy` in `Desktop\business-console`). The Cloudflare MCP connector is used for reads. |
+| Console deploy, KV, crons, secrets | Cloudflare Workers + KV with **wrangler** for the `creative-lab-engine` Worker, run on Aaron's PC (`Desktop\2026-11-08 Deploy Creative Lab Engine.cmd`, which runs `npx.cmd wrangler deploy` in `Desktop\creative-lab-engine`; Aaron types DEPLOY). Never deploy the old business-console. The Cloudflare MCP connector is used for reads. |
 | Code, PRs, Pages, Actions | **GitHub MCP connector** (branches, PRs, Actions logs). Sessions can't create repos, so Aaron creates them. Free Pages needs a public repo. |
 | Art library, logos, mockups | **Kittl MCP connector** (list, upload, render-mockup, vectorize, upscale). Imports go through console `scripts/import-kittl.mjs` (Desktop "Run Kittl import.cmd"; Aaron types the console key). |
 | Price sheet, docs | **Google Drive connector.** Share files with Aaron's Gmail as an editor. |
@@ -164,8 +166,8 @@ The skills live in project files `agent-skills-catalog/skills/` and on the Deskt
 
 ## 13. Details for Aaron's PC and console access
 
-- **Console store access** uses Shopify Dev Dashboard apps with client credentials (`C3D_CLIENT_ID`/`C3D_CLIENT_SECRET`, `ED_CLIENT_ID`/`ED_CLIENT_SECRET`). New apps no longer get `shpat_` tokens. Other secret names: `CONSOLE_KEY` (16+ characters), `C3D_INDEXNOW_KEY`, `ED_INDEXNOW_KEY`, `BING_WEBMASTER_API_KEY`, `GSC_SERVICE_ACCOUNT`, `BUILDER_ORIGINS`, `DESIGN_MARKUP` (default 10). Values live only in Cloudflare (Workers > business-console > Settings > Variables and Secrets), and Aaron types them himself.
-- **Before a console deploy,** check that the branch in `Desktop\business-console` contains every merged PR (#5 Marketing, #6, #7 polish and price fix, #8 epix3d origins), or features drop out. Until the PRs are merged, every repo's `main` is only "Initial commit", so check which branch is live before deploying.
+- **Console store access** uses Shopify Dev Dashboard apps with client credentials (`C3D_CLIENT_ID`/`C3D_CLIENT_SECRET`, `ED_CLIENT_ID`/`ED_CLIENT_SECRET`). New apps no longer get `shpat_` tokens. Other secret names: `CONSOLE_KEY` (16+ characters), `C3D_INDEXNOW_KEY`, `ED_INDEXNOW_KEY`, `BING_WEBMASTER_API_KEY`, `GSC_SERVICE_ACCOUNT`, `BUILDER_ORIGINS`, `DESIGN_MARKUP` (default 10). Values live only in Cloudflare (Workers > creative-lab-engine > Settings > Variables and Secrets), and Aaron types them himself.
+- **Before a console deploy,** check that `Desktop\creative-lab-engine` is on the latest `main` of Adub843/creative-lab-engine and that `npm run check` and `npm test` pass. The old `Desktop\business-console` folder is retired: never deploy from it.
 - **Still in `C:\Users\lewis\Documents`** because Windows scheduled tasks run them: bodycam-finder (Released Footage App, Autopilot and Retry), video-studio, funny-video-clips, hype-chain-orders-sync. Move them only together with their tasks.
 - **Don't touch** `Desktop\3D g's`.
 - **Code backups:** `Desktop\Business Handoff\07 Code Backups` has git bundles of every repo plus the legacy project. Restore steps are in runbook 8.
@@ -186,7 +188,7 @@ The skills live in project files `agent-skills-catalog/skills/` and on the Deskt
 - 2026-10-30: Aaron's only console is Creative Lab Studios (https://claude.ai/artifact/U8rNeWMPq7NfF7f88AEuPK). This repo is its background engine, moved here from Adub843/Business-console with full history and every branch; the old Business-console repo and Worker are being retired. The engine (Worker `creative-lab-engine`) has no pages: the console sends actions through the `creative-lab-actions` queue and reads answers from the `creative-lab-engine` R2 bucket (worker/queue.mjs). The shirt apps still read `/api/images?public=1` from it.
 - Its crons (11:00 and 11:30 UTC daily, every 15 minutes, hourly at :45) run here since the switch-over on 2026-10-31. The free plan allows 5 crons per account, and the old business-console Worker still holds "*/15 * * * *", so all 5 are used: never add a cron here. The Kittl library sync runs once a night on the hourly cron's 04:45 UTC run (11:45 PM Eastern in standard time, 12:45 AM in daylight time, after the 11:30 PM task pushes kittl.json) or on the console's "Sync now" (`POST /api/library-sync`, once a minute at most); the other hourly runs only renew the public art snapshot when needed, and every run prunes old queue answers. The 11:30 UTC cron also writes the daily digest to R2 (`digest/latest.json`, read with `GET /api/digest`). The shirt apps' public art list (`/api/images?public=1`) is served from a saved copy in KV (`snapshot:public-images`), because the free plan's 1,000 KV lists a day are shared with Hype Chain.
 
-### Older notes (from Business-console)
+### Older notes (history only: the Business console is retired, see rule 20; deploy and edit only creative-lab-engine)
 
 - The private back office on Cloudflare Workers + KV (IMAGES, PRICING, MARKETING), with crons at 11:00 UTC, 11:30 UTC and every 15 minutes. It's deployed by hand from Aaron's PC: `npx.cmd wrangler deploy` in `Desktop\business-console`. The GitHub Action deploys only once the CLOUDFLARE_API_TOKEN/ACCOUNT_ID repo secrets exist.
 - Before deploying, make sure the branch contains every merged PR (#5, #6, #7, #8). `npm run check` and `npm test` must pass.
