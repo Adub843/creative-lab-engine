@@ -37,6 +37,7 @@ import { syncKittlLibrary, STATE_KEY as KITTL_STATE_KEY, SYNC_DEBOUNCE_MS } from
 import { buildDigest, saveDigest, digestKey, isDigestDate, DIGEST_LATEST } from "../lib/digest.mjs";
 import { handleScorecard } from "../lib/scorecard.mjs";
 import { handleTaxes, handleTaxFile, runTaxi, taxiBrief } from "../lib/taxes.mjs";
+import { handleSystemMap } from "../lib/system-map.mjs";
 
 // The app pages: only its own scripts, Shopify's CDN for product photos, never framed.
 export const SITE_HEADERS = {
@@ -164,6 +165,9 @@ export async function handleRequest(req, env) {
     // The marketing scorecard (lib/scorecard.mjs): ad spend and limits come from small JSON files in the RESULTS bucket.
     if (pathname === "/api/scorecard") return await scorecard(req, env, { bucket: env?.RESULTS && typeof env.RESULTS.get === "function" ? env.RESULTS : null });
     if (pathname === "/api/pricing") return await pricing(req, env, { kv: env?.PRICING ?? null });
+    // The console's live System map: the engine's job runs and the PC's network heartbeat (lib/system-map.mjs).
+    if (pathname === "/api/system-map")
+      return json(await handleSystemMap({ method: req.method, header: (k) => req.headers.get(k) }, { env: envReader(env), bucket: env?.RESULTS && typeof env.RESULTS.get === "function" ? env.RESULTS : null, imagesKv: env?.IMAGES ?? null }), 200);
     // A Shopify product picture for the console (it can't load pictures from other sites itself).
     if (pathname === "/api/picture") {
       const url = new URL(req.url);
