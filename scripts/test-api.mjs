@@ -3923,7 +3923,7 @@ test("engine: with CONSOLE_PAGE set, pages go to the Creative Lab console and th
   assert.notEqual((await W.handleRequest(wreq("/tools/nameplate-maker/"), env)).status, 302);
 });
 
-test("picture: only Shopify picture addresses, resized, behind the key", async () => {
+test("picture: any public https picture, Shopify resized, private addresses refused, behind the key", async () => {
   const { handlePicture } = await import("../lib/picture.mjs");
   const seen = [];
   const fetch = async (u) => { seen.push(String(u)); return new Response(PNG, { status: 200, headers: { "content-type": "image/png" } }); };
@@ -3934,11 +3934,18 @@ test("picture: only Shopify picture addresses, resized, behind the key", async (
   assert.equal(ok.headers.get("content-type"), "image/png");
   assert.match(seen[0], /width=160/);
   await handlePicture(req("https://elevatedshirts.com/cdn/shop/files/a.jpg"), { env, fetch });
-  for (const bad of ["https://evil.example/x.png", "http://cdn.shopify.com/x.png", "https://elevatedshirts.com/admin", "not a url"])
-    await assert.rejects(handlePicture(req(bad), { env, fetch }), /Only Shopify|picture address/);
+  for (const other of ["https://images.kittl.com/a/b.png", "https://files.cdn.printful.com/x.jpg", "https://lh3.googleusercontent.com/abc"]) {
+    assert.equal((await handlePicture(req(other, ENV.CONSOLE_KEY, "160"), { env, fetch })).status, 200, other);
+    assert.doesNotMatch(seen.at(-1), /width=/, "only Shopify gets a width");
+  }
+  for (const bad of ["http://cdn.shopify.com/x.png", "https://127.0.0.1/x.png", "https://169.254.169.254/latest", "https://[::1]/x.png", "https://localhost/x.png",
+    "https://nas.local/x.png", "https://a.internal/x.png", "https://example.com:8443/x.png", "https://u:p@example.com/x.png", "https://intranet/x.png", "not a url"])
+    await assert.rejects(handlePicture(req(bad), { env, fetch }), /public https|picture address/, bad);
   await assert.rejects(handlePicture(req("https://cdn.shopify.com/x.png", "wrong-key-xxxxxxxxxxxx"), { env, fetch }), /console key/);
   const notPic = async () => new Response("<html>", { status: 200, headers: { "content-type": "text/html" } });
   await assert.rejects(handlePicture(req("https://cdn.shopify.com/x.png"), { env, fetch: notPic }), /isn't a picture/);
+  const svg = async () => new Response("<svg/>", { status: 200, headers: { "content-type": "image/svg+xml" } });
+  await assert.rejects(handlePicture(req("https://example.com/x.svg"), { env, fetch: svg }), /isn't a picture/);
 });
 
 // ---------- Charleston 3D listings from the console's 3D files picker ----------
