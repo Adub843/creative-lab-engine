@@ -48,22 +48,81 @@ export const CONTENT_TYPES = {
 };
 
 // The shirt app's share: Elevated Designs pictures (no source files, no 3D) from the E: folders in SHIRT_APP_FOLDERS.
+// About 150,000 files, so the list is read from the index once (one full scan, a few seconds) and kept in memory;
+// every page, folder filter and search after that is answered from memory in milliseconds.
 const SHIRT_EXTS = [".png", ".svg", ".jpg", ".jpeg", ".webp"];
-export function shirtSearch(db, roots, shirtFolders, q) {
+// The shirt app's "type" filter, sorted the way the app sorts its own art: DTF-ready prints, SVGs, then other pictures.
+const SHIRT_TYPES = ["png", "svg", "dtf"];
+const shirtType = (r) => (r.kind === "dtf" ? "dtf" : r.ext === ".svg" ? "svg" : "png");
+export function loadShirtSet(db, roots, shirtFolders) {
   const eRoot = roots.findIndex((r) => r.src === "e");
-  const per = Math.min(1000, Math.max(1, Number(q.get("per")) || 500));
-  const page = Math.max(0, Number(q.get("page")) || 0);
-  const words = (q.get("q") ?? "").toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6);
   const esc = (w) => w.replace(/[\\%_]/g, (c) => "\\" + c);
   // a folder and everything under it: "<folder>\\" (an escaped backslash) then any path
   const folders = shirtFolders.map((f) => `${esc(f.toLowerCase())}\\\\%`);
   const where = ["root = ?", "brand = 'ed'", "kind IN ('image', 'svg', 'dtf', 'logo')", `ext IN (${SHIRT_EXTS.map(() => "?").join(", ")})`,
     `(${folders.map(() => "lower(rel) LIKE ? ESCAPE '\\'").join(" OR ") || "0"})`];
-  const args = [eRoot, ...SHIRT_EXTS, ...folders];
-  for (const w of words) { where.push("(lower(name) LIKE ? ESCAPE '\\' OR lower(folder) LIKE ? ESCAPE '\\')"); args.push(`%${esc(w)}%`, `%${esc(w)}%`); }
-  const sql = `FROM items WHERE ${where.join(" AND ")}`;
-  const total = db.prepare(`SELECT COUNT(*) n ${sql}`).get(...args).n;
-  const items = db.prepare(`SELECT id, name, folder, ext, kind FROM items WHERE ${where.join(" AND ")} ORDER BY folder COLLATE NOCASE, name COLLATE NOCASE LIMIT ? OFFSET ?`)
-    .all(...args, per, page * per);
-  return { page, per, total, items };
+  const rows = db.prepare(`SELECT id, name, folder, ext, kind, rel FROM items WHERE ${where.join(" AND ")} ORDER BY folder COLLATE NOCASE, name COLLATE NOCASE`)
+    .all(eRoot, ...SHIRT_EXTS, ...folders);
+  const lowerFolders = shirtFolders.map((f) => f.toLowerCase() + "\\");
+  const counts = shirtFolders.map(() => 0);
+  const items = [], tops = [], types = [], hay = [];
+  for (const r of rows) {
+    const rel = String(r.rel).toLowerCase();
+    const top = lowerFolders.findIndex((f) => rel.startsWith(f));
+    // "._name" files are Mac copy leftovers (zip "__MACOSX" folders), not pictures: they have no preview
+    if (top < 0 || String(r.name).startsWith("._")) continue;
+    counts[top]++;
+    items.push({ id: r.id, name: r.name, folder: r.folder, ext: r.ext, kind: r.kind });
+    tops.push(top);
+    types.push(SHIRT_TYPES.indexOf(shirtType(r)));
+    hay.push(`${String(r.name).toLowerCase()}\n${String(r.folder ?? "").toLowerCase()}`);
+  }
+  return { items, tops, types, hay, names: shirtFolders, folders: shirtFolders.map((name, i) => ({ name, count: counts[i] })).filter((f) => f.count) };
 }
+
+// One page of the share:  ?page=&per=&q=&folder=&type=   folder is one of the top folders (any case); type is png, svg
+// or dtf; every search word must be in the file's name or folder path. Always says how many files each top folder holds, for the shirt app's folder list.
+export function shirtPage(set, q) {
+  const per = Math.min(1000, Math.max(1, Number(q.get("per")) || 500));
+  const page = Math.max(0, Math.floor(Number(q.get("page")) || 0));
+  const words = (q.get("q") ?? "").toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6);
+  const folderName = (q.get("folder") ?? "").trim().toLowerCase();
+  const top = folderName ? set.names.findIndex((n) => n.toLowerCase() === folderName) : -1;
+  const type = SHIRT_TYPES.indexOf(q.get("type") ?? "");
+  if (folderName && top < 0) return { page, per, total: 0, items: [], folders: set.folders };
+  if (!words.length && top < 0 && type < 0) return { page, per, total: set.items.length, items: set.items.slice(page * per, page * per + per), folders: set.folders };
+  const from = page * per, items = [];
+  let total = 0;
+  for (let i = 0; i < set.items.length; i++) {
+    if (top >= 0 && set.tops[i] !== top) continue;
+    if (type >= 0 && set.types[i] !== type) continue;
+    if (words.length && !words.every((w) => set.hay[i].includes(w))) continue;
+    if (total >= from && items.length < per) items.push(set.items[i]);
+    total++;
+  }
+  return { page, per, total, items, folders: set.folders };
+}
+
+// Previews are made a few at a time. The newest request goes first (in the shirt app that is what the customer is
+// looking at now, after scrolling past the rest), and a request whose visitor has already gone is skipped, not made.
+// slot(gone) resolves true when the job may start (call done() after it) or false when gone() said nobody waits.
+export function jobQueue(limit) {
+  let running = 0;
+  const waiting = [];
+  const pump = () => {
+    while (running < limit && waiting.length) {
+      const job = waiting.pop();
+      if (job.gone()) { job.resolve(false); continue; }
+      running++;
+      job.resolve(true);
+    }
+  };
+  return {
+    slot: (gone = () => false) => new Promise((resolve) => { waiting.push({ resolve, gone }); pump(); }),
+    done: () => { running--; pump(); },
+    get waiting() { return waiting.length; },
+    get running() { return running; },
+  };
+}
+
+export const shirtSearch = (db, roots, shirtFolders, q) => shirtPage(loadShirtSet(db, roots, shirtFolders), q);
