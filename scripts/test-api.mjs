@@ -4409,14 +4409,15 @@ test("brands: PATCH moves an image between brands, and moving to Charleston 3D t
 
 // ---------- the E: drive library (lib/drive.mjs), checked against the PC side's own signature check ----------
 const { handleDrive } = await import("../lib/drive.mjs");
-const { verifySig, driveSig: driveSigFor, classify, shirtSearch } = await import("../drive-server/lib.mjs");
+const { verifySig, driveSig: driveSigFor, classify, shirtSearch, loadShirtSet, shirtPage, jobQueue } = await import("../drive-server/lib.mjs");
 const DKEY = ENV.CONSOLE_KEY;
 const DID = "0123456789abcdef0123";
 function fakePC(seen) {
   return async (u, init) => {
     const url = new URL(u);
     seen.push({ host: url.host, path: url.pathname + url.search, ok: verifySig(DKEY, init.headers["x-drive-exp"], init.headers["x-drive-sig"], url.pathname + url.search) });
-    if (url.pathname === "/public") return Response.json({ page: 0, per: 500, total: 2, items: [{ id: DID, name: "skull.png", folder: "DTF Ready Prints", ext: ".png", kind: "dtf", rel: "E:\\secret" }, { id: "../etc", name: "bad" }] });
+    if (url.pathname === "/public") return Response.json({ page: 0, per: 500, total: 2, items: [{ id: DID, name: "skull.png", folder: "DTF Ready Prints", ext: ".png", kind: "dtf", rel: "E:\\secret" }, { id: "../etc", name: "bad" }],
+      folders: [{ name: "DTF Ready Prints", count: 2, path: "E:\\secret" }, { name: "bad" }] });
     if (url.pathname === "/search") return Response.json({ total: 1, items: [{ id: DID, name: "skull.svg", thumb: true, src: "e", brand: "ed" }] });
     if (url.pathname === "/stats") return Response.json({ kinds: [{ brand: "ed", kind: "svg", n: 3 }], index: "index-1.db" });
     if (url.pathname.startsWith("/thumb/")) return new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/webp" } });
@@ -4477,13 +4478,14 @@ test("drive: a switched-off PC reads as offline; errors are handled; it's read o
 test("drive: the shirt app's public list needs no key, has absolute signed links on the console's address and CORS for the app only", async () => {
   const seen = [];
   const app = { origin: "https://design.elevatedshirts.com" };
-  const res = await dcall("/api/drive/public?q=skull&brand=c3d&per=50", { headers: app }, { fetchImpl: fakePC(seen) });
+  const res = await dcall("/api/drive/public?q=skull&brand=c3d&folder=SVG+FILES&type=svg&page=3&per=50", { headers: app }, { fetchImpl: fakePC(seen) });
   assert.equal(res.status, 200);
-  assert.equal(seen[0].path, "/public?q=skull&per=50", "the brand can't be chosen from outside");
+  assert.equal(seen[0].path, "/public?q=skull&folder=SVG+FILES&type=svg&page=3&per=50", "the brand can't be chosen from outside; search, folder and paging go on");
   assert.equal(seen[0].ok, true);
   assert.equal(res.headers.get("access-control-allow-origin"), "https://design.elevatedshirts.com");
   const body = await res.json();
-  assert.deepEqual(Object.keys(body).sort(), ["items", "page", "per", "total"], "the same shape the studio sent");
+  assert.deepEqual(Object.keys(body).sort(), ["folders", "items", "page", "per", "total"], "the same shape the studio sent, plus the folder counts");
+  assert.deepEqual(body.folders, [{ name: "DTF Ready Prints", count: 2 }], "folder counts carry only a name and a count");
   assert.equal(body.items.length, 1, "bad ids are dropped");
   assert.deepEqual(Object.keys(body.items[0]).sort(), ["ext", "fileUrl", "folder", "id", "kind", "name", "thumbUrl"], "nothing about the PC's paths");
   assert.match(body.items[0].thumbUrl, new RegExp(`^https://console\\.example/api/drive/thumb/${DID}\\?exp=\\d+&sig=`));
@@ -4512,14 +4514,59 @@ test("drive server: the shirt app only gets Elevated Designs pictures from the c
   const rows = [["a", 0, "DTF Ready Prints\\skull.png", ".png", "ed", "dtf"], ["b", 0, "Fraud Account\\id.png", ".png", "ed", "image"],
     ["c", 0, "SVG FILES\\boats\\anchor.svg", ".svg", "ed", "svg"], ["d", 0, "SVG FILES\\boats\\anchor.ai", ".ai", "ed", "source"],
     ["e", 0, "Design Images_old\\p.png", ".png", "ed", "image"], ["f", 1, "DTF Ready Prints\\lab.png", ".png", "ed", "image"],
-    ["g", 0, "DTF Ready Prints\\boat.png", ".png", "c3d", "image"], ["h", 0, "loose.png", ".png", "ed", "image"]];
+    ["g", 0, "DTF Ready Prints\\boat.png", ".png", "c3d", "image"], ["h", 0, "loose.png", ".png", "ed", "image"],
+    ["i", 0, "DTF Ready Prints\\__MACOSX\\._skull.png", ".png", "ed", "dtf"]];
   for (const [id, root, rel, ext, brand, kind] of rows) add.run(id, root ? "lab" : "e", root, rel, rel.split("\\").at(-1), rel.split("\\").slice(0, -1).join("\\"), ext, brand, kind);
   const roots = [{ src: "e" }, { src: "lab" }];
   const got = (q = "") => shirtSearch(db, roots, ["Design Images", "DTF Ready Prints", "SVG FILES"], new URLSearchParams(q)).items.map((i) => i.id);
-  assert.deepEqual(got(), ["a", "c"], "only pictures, only Elevated Designs, only inside the chosen folders on E:");
+  assert.deepEqual(got(), ["a", "c"], "only pictures, only Elevated Designs, only inside the chosen folders on E:, no Mac leftovers");
   assert.deepEqual(got("q=anchor"), ["c"]);
   assert.deepEqual(got("q=100%25"), [], "search text can't widen the match");
   assert.deepEqual(shirtSearch(db, roots, [], new URLSearchParams()).items, [], "no folders chosen: nothing is public");
+  // the whole share, paged, filtered by top folder and searched from memory, with true counts per top folder
+  for (let i = 0; i < 1200; i++) { const n = `art-${String(i).padStart(4, "0")}.png`; add.run(`z${i}`, "e", 0, `Design Images\\pack ${i % 3}\\${n}`, n, `Design Images\\pack ${i % 3}`, ".png", "ed", "image"); }
+  const set = loadShirtSet(db, roots, ["Design Images", "DTF Ready Prints", "SVG FILES", "Empty Folder"]);
+  const page = (q) => shirtPage(set, new URLSearchParams(q));
+  assert.deepEqual(page("").folders, [{ name: "Design Images", count: 1200 }, { name: "DTF Ready Prints", count: 1 }, { name: "SVG FILES", count: 1 }],
+    "true counts per top folder, empty ones left out");
+  assert.equal(page("").total, 1202);
+  const seenIds = new Set();
+  for (let p = 0; p < 13; p++) for (const it of page(`per=100&page=${p}`).items) seenIds.add(it.id);
+  assert.equal(seenIds.size, 1202, "paging reaches every file, none twice");
+  assert.deepEqual(page("per=100&page=13").items, [], "past the end is empty");
+  assert.deepEqual(page("folder=svg files").items.map((i) => i.id), ["c"], "the folder filter ignores case");
+  assert.equal(page("folder=Design Images&per=10&page=119").items.length, 10);
+  assert.equal(page("folder=Design Images&per=10").total, 1200);
+  assert.deepEqual(page("folder=Fraud Account").items, [], "a folder outside the share gives nothing");
+  assert.equal(page("folder=Fraud Account").total, 0);
+  const deep = page("q=art-1187");
+  assert.deepEqual([deep.total, deep.items[0].name], [1, "art-1187.png"], "search finds a file far past the first pages");
+  assert.equal(page("q=PACK art-11&folder=design images").total, 100, "every word must match, in the name or the folder path");
+  assert.equal(page("q=100%25").total, 0, "search text is plain text");
+  assert.deepEqual(page("type=svg").items.map((i) => i.id), ["c"], "type: SVGs");
+  assert.deepEqual(page("type=dtf").items.map((i) => i.id), ["a"], "type: DTF-ready");
+  assert.equal(page("type=png&folder=design images").total, 1200, "type: other pictures");
+  assert.equal(page("type=nope").total, 1202, "an unknown type is ignored");
+  assert.deepEqual(Object.keys(deep.items[0]).sort(), ["ext", "folder", "id", "kind", "name"], "no paths from the PC");
+  assert.equal(page("per=5000").per, 1000, "at most 1,000 a page");
+});
+
+test("drive server: previews are made a few at a time, newest first, and skipped once the visitor has gone", async () => {
+  const q = jobQueue(2), started = [];
+  const job = (name, gone) => q.slot(gone).then((ok) => { started.push(ok ? name : `skip ${name}`); return ok; });
+  const a = job("a"), b = job("b");
+  await Promise.all([a, b]);
+  assert.equal(q.running, 2);
+  let cGone = false;
+  const c = job("c", () => cGone), d = job("d"), e = job("e");
+  assert.equal(q.waiting, 3, "the rest wait");
+  q.done(); await e;
+  assert.deepEqual(started, ["a", "b", "e"], "the newest request goes first");
+  cGone = true;
+  q.done(); await d;
+  q.done(); await c;
+  assert.deepEqual(started, ["a", "b", "e", "d", "skip c"], "a request nobody waits for any more is skipped");
+  assert.equal(q.running, 1);
 });
 
 test("drive server: the PC rejects unsigned, forged, replayed-path and stale requests, and sorts files by brand", () => {

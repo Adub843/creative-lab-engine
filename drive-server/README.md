@@ -9,6 +9,8 @@ PC and hands the console search results, previews and downloads through a free C
 - **Charleston3D** sees its own folders (Print files, Comercial downloaded 3d print files) and every 3D model (STL, 3MF, OBJ, STEP).
 - The Elevated Designs shirt app (design.elevatedshirts.com) gets the pictures in the E: folders listed in
   `SHIRT_APP_FOLDERS` (`config.mjs`), through the console's `GET /api/drive/public`. Nothing else on E: is public.
+  The server reads that list once per index (a few seconds at start) and then pages, searches and filters it from
+  memory, so the app can show all of it page by page. Previews are made a few at a time, newest request first.
 - Same name and size in two places counts as one file, shown once with how many copies exist.
 - The page works while the PC is on and E: is plugged in. When it isn't, the page says so.
 

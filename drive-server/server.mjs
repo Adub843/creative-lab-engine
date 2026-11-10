@@ -5,13 +5,14 @@
 //   GET /stats                                     counts per brand and kind
 //   GET /thumb/:id                                  a small WebP preview (made once, then cached)
 //   GET /file/:id                                   the original file, as a download
-//   GET /public?q=&page=&per=                       one page of the pictures the shirt app may show (SHIRT_APP_FOLDERS)
+//   GET /public?q=&folder=&type=&page=&per=         one page of the pictures the shirt app may show (SHIRT_APP_FOLDERS),
+//                                                   with how many each top folder holds
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { CURRENT_FILE, DATA_DIR, THUMB_DIR, ROOTS, PORT, KITTL_HOSTS, SHIRT_APP_FOLDERS } from "./config.mjs";
-import { ID_RE, THUMB_EXTS, CONTENT_TYPES, verifySig, shirtSearch } from "./lib.mjs";
+import { ID_RE, THUMB_EXTS, CONTENT_TYPES, verifySig, loadShirtSet, shirtPage, jobQueue } from "./lib.mjs";
 import { readKey } from "./key.mjs";
 
 const KEY = readKey();
@@ -19,15 +20,21 @@ if (!KEY) { console.error("No console key yet: run drive-server\\setup.ps1 and t
 fs.mkdirSync(THUMB_DIR, { recursive: true });
 
 // The index in use; switches to a new one within a minute of build-index.mjs finishing.
-let db = null, dbName = "";
+let db = null, dbName = "", shirtSet = null;
 function openIndex() {
   let name = "";
   try { name = fs.readFileSync(CURRENT_FILE, "utf8").trim(); } catch { return; }
   if (!name || name === dbName) return;
   const next = new DatabaseSync(path.join(DATA_DIR, name), { readOnly: true });
-  const old = db; db = next; dbName = name;
+  const old = db; db = next; dbName = name; shirtSet = null;
   try { old?.close(); } catch { /* already closed */ }
   console.log(`Using index ${name}`);
+  setTimeout(shirtShare, 0); // read the shirt app's share now, so the first visitor doesn't wait for it
+}
+// The shirt app's share, read once per index and kept in memory (lib.mjs).
+function shirtShare() {
+  if (!shirtSet && db) { const t = Date.now(); shirtSet = loadShirtSet(db, ROOTS, SHIRT_APP_FOLDERS); console.log(`Shirt app share: ${shirtSet.items.length} pictures (${Date.now() - t} ms)`); }
+  return shirtSet;
 }
 openIndex();
 setInterval(openIndex, 60_000).unref();
@@ -66,9 +73,14 @@ function search(q) {
 const stats = () => ({ kinds: db.prepare("SELECT brand, kind, COUNT(*) n FROM items GROUP BY brand, kind").all(), index: dbName });
 
 let sharp = null;
-async function thumb(r) {
+const thumbJobs = jobQueue(4);
+async function thumb(r, gone) {
   const out = path.join(THUMB_DIR, `${r.id}.webp`);
   if (fs.existsSync(out)) return fs.readFileSync(out);
+  if (!(await thumbJobs.slot(gone))) return null;
+  try { return fs.existsSync(out) ? fs.readFileSync(out) : await makeThumb(r, out); } finally { thumbJobs.done(); }
+}
+async function makeThumb(r, out) {
   let input;
   if (r.src === "kittl") {
     const u = new URL(r.thumb_url);
@@ -96,13 +108,13 @@ const server = http.createServer(async (req, res) => {
     const u = new URL(req.url, "http://local");
     if (u.pathname === "/search") return json(res, 200, search(u.searchParams));
     if (u.pathname === "/stats") return json(res, 200, stats());
-    if (u.pathname === "/public") return json(res, 200, shirtSearch(db, ROOTS, SHIRT_APP_FOLDERS, u.searchParams));
+    if (u.pathname === "/public") return json(res, 200, shirtPage(shirtShare(), u.searchParams));
     const m = u.pathname.match(/^\/(thumb|file)\/([0-9a-f]+)$/);
     if (!m || !ID_RE.test(m[2])) return json(res, 404, { error: "Not found" });
     const r = row(m[2]);
     if (!r) return json(res, 404, { error: "Not found" });
     if (m[1] === "thumb") {
-      const buf = await thumb(r).catch(() => null);
+      const buf = await thumb(r, () => req.socket.destroyed).catch(() => null);
       return buf ? send(res, 200, buf, { "content-type": "image/webp", "cache-control": "private, max-age=86400" }) : json(res, 404, { error: "No preview" });
     }
     const full = filePath(r);
