@@ -60,9 +60,16 @@ rem Starts the E: drive library server and its Cloudflare Tunnel (made by drive-
 start "Design library server" /min node "$here\server.mjs"
 start "Design library tunnel" /min "$cf" tunnel --config "$(Join-Path $data "tunnel.yml")" run
 "@ | Set-Content -LiteralPath $start -Encoding ascii
-$action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$start`""
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-Register-ScheduledTask -TaskName "Design Library" -Action $action -Trigger $trigger -Description "E: drive library for the Creative Lab engine (read only)" -Force | Out-Null
+# The task runs watch-library.ps1 at sign-in and every 5 minutes: it starts the server or the tunnel only when one
+# isn't running, so a crash or a dropped tunnel comes back by itself (start-library.cmd stays for starting by hand).
+$watch = Join-Path $here "watch-library.ps1"
+$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watch`""
+$triggers = @(
+  (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME),
+  (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5))
+)
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 2)
+Register-ScheduledTask -TaskName "Design Library" -Action $action -Trigger $triggers -Settings $settings -Description "Keeps the E: drive library for the Creative Lab engine running (read only)" -Force | Out-Null
 Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'drive-server\\server\.mjs|tunnel\.yml' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
-Start-Process cmd.exe -ArgumentList "/c `"$start`"" -WindowStyle Hidden
+& $watch
 Write-Host "`nDone. The library is in the Creative Lab engine (E: drive, under Library) while this PC is on." -ForegroundColor Green
