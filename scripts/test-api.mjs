@@ -2672,7 +2672,7 @@ test("marketing: site stats (totals, daily, locations, devices, pages, channels,
   const res = await MK.handleMarketing(keyed({ store: "ed", part: "traffic", days: "30" }), mkCtx(mkFetch(sh).fetch));
   assert.equal(res.status, 200, JSON.stringify(res.body));
   assert.equal(res.body.days, 30);
-  assert.ok(seen.every((q) => /SINCE -30d UNTIL today/.test(q)), "every report covers the chosen days");
+  assert.ok(seen.every((q) => /SINCE -29d UNTIL today/.test(q)), "every report covers exactly the chosen days (today plus 29 before)");
   const st = res.body.shop.stats;
   assert.deepEqual(st.summary, { sessions: 200, visitors: 150, pageviews: 640, pagesPerSession: 3.2, avgDuration: 95, bounceRate: 41, conversionRate: 1.5, addedToCartRate: 6, reachedCheckoutRate: 3, completedCheckoutRate: 1.5 });
   assert.deepEqual(st.daily.map((d) => d.date), ["2026-10-20", "2026-10-21"]);
