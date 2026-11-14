@@ -61,6 +61,8 @@ export function tidy(jobId, out) {
   return out;
 }
 
+const numbers = (t) => (String(t).replace(/,(?=\d{3})/g, "").match(/\d+(?:\.\d+)?/g) ?? []).map(Number);
+
 // Checks every job shares, then the listing-copy limits. Returns a list of problems (empty = pass).
 export function check(jobId, jobText, input, out) {
   const bad = [];
@@ -70,6 +72,7 @@ export function check(jobId, jobText, input, out) {
   const text = JSON.stringify(out);
   if (OTHER[input.store]?.test(text)) bad.push("names the other brand");
   if (/shpat_|sk-[A-Za-z0-9]{10}/.test(text)) bad.push("contains something that looks like a key");
+  if ("notes" in out && typeof out.notes !== "string") bad.push('notes must be one text string ("" if nothing is missing)');
   if (jobId === "listing-copy") {
     const len = (s) => (typeof s === "string" ? s.length : -1);
     if (!(len(out.title) > 0 && len(out.title) < 70)) bad.push(`title must be under 70 characters (is ${len(out.title)})`);
@@ -83,13 +86,43 @@ export function check(jobId, jobText, input, out) {
     if (!/^<p>/.test(out.descriptionHtml ?? "")) bad.push("descriptionHtml must be HTML paragraphs");
     for (const a of out.alt ?? []) if (len(a?.alt) >= 125) bad.push("alt text must be under 125 characters");
   }
+  if (jobId === "review-summary") {
+    const said = (input.reviews ?? []).map((r) => String(r.text ?? "")).concat((input.requests ?? []).map(String)).join("\n").toLowerCase();
+    const real = (q) => typeof q === "string" && q.trim().length > 3 && said.includes(q.trim().replace(/^["'“”]+|["'“”.]+$/g, "").toLowerCase());
+    if (out.count !== (input.reviews ?? []).length) bad.push(`count must be ${(input.reviews ?? []).length}, the number of reviews in the input`);
+    for (const t of out.themes ?? []) for (const q of t.quotes ?? []) if (!real(q)) bad.push(`quote is not word for word from a review: "${String(q).slice(0, 60)}"; copy an exact phrase`);
+    for (const q of out.postQuotes ?? []) {
+      if (!real(q?.quote)) bad.push(`post quote is not word for word from a review: "${String(q?.quote).slice(0, 60)}"`);
+      if (!/needs Aaron's OK/i.test(q?.status ?? "")) bad.push(`every postQuotes status must be "needs Aaron's OK before use"`);
+    }
+    if ((out.changes ?? []).length > 3) bad.push("at most 3 changes");
+    if ((out.postQuotes ?? []).length > 3) bad.push("at most 3 postQuotes");
+    if (!Array.isArray(out.themes) || !out.themes.length) bad.push("themes must be a list with at least one theme");
+    const dates = (input.reviews ?? []).map((r) => r.date).filter(Boolean).sort();
+    if (dates.length && (out.period?.from !== dates[0] || out.period?.to !== dates.at(-1))) bad.push(`period must be from ${dates[0]} to ${dates.at(-1)}, the first and last review dates in the input`);
+    const made = [...new Set(numbers((out.changes ?? []).map((c) => c?.change).join(" ")).filter((n) => !numbers(JSON.stringify(input)).includes(n)))];
+    if (made.length) bad.push(`changes use numbers that no review gave (${made.join(", ")}); never state a time, count or price that is not in the input`);
+  }
+  if (jobId === "daily-brief") {
+    const words = String(out.brief ?? "").trim().split(/\s+/).filter(Boolean).length;
+    if (words < 15 || words >= 120) bad.push(`brief must be under 120 words of plain text (is ${words})`);
+    if (!Array.isArray(out.needsYou)) bad.push("needsYou must be a list of short sentences (an empty list if nothing)");
+    const day = input.digest?.siteCheck?.date;
+    if (day ? out.date !== day : !/^\d{4}-\d{2}-\d{2}$/.test(out.date ?? "")) bad.push(`date must be ${day ?? "YYYY-MM-DD, the digest's date"}`);
+    // Every number in the brief has to be in the input (or be a plain difference of two input numbers).
+    const nums = (t) => (String(t).replace(/,(?=\d{3})/g, "").match(/\d+(?:\.\d+)?/g) ?? []).map(Number);
+    const have = nums(JSON.stringify(input));
+    const ok = (n) => have.some((h) => Math.abs(h - n) < 0.005) || have.some((a) => have.some((b) => Math.abs(Math.abs(a - b) - n) < 0.006));
+    const invented = [...new Set(nums(`${out.brief} ${[].concat(out.needsYou ?? []).join(" ")}`).filter((n) => !ok(n)))];
+    if (invented.length) bad.push(`these numbers are not in the input: ${invented.join(", ")}; use only numbers from the input`);
+  }
   return bad;
 }
 
 export function buildMessages(jobText, input, problems, lastAnswer) {
   const system = `You run one job for a small business. Follow the instructions and hard rules exactly.\n\n## Instructions\n${section(jobText, "Instructions")}\n\n## Output\n${section(jobText, "Output")}\n\n## Hard rules\n${section(jobText, "Hard rules")}`;
   const brand = BRAND[input.store];
-  const user = `${brand ? `The brand name for store "${input.store}" is "${brand}"; use that name in text people read, but keep "store": "${input.store}" exactly. ` : ""}Write the SEO description as 26 to 30 words in two or three sentences. Input JSON:\n${JSON.stringify(input, null, 2)}\n\nAnswer with one JSON object only, in the Output shape. No other text.`;
+  const user = `${brand ? `The brand name for store "${input.store}" is "${brand}"; use that name in text people read, but keep "store": "${input.store}" exactly. ` : ""}Write the SEO description as 26 to 30 words in two or three sentences. Input JSON:\n${JSON.stringify(input, null, 2)}\n\nThe dates and numbers shown in the Output shape are placeholders: take every date and number from the input. \"notes\" is one text string. Answer with one JSON object only, in the Output shape. No other text.`;
   const messages = [{ role: "system", content: system }, { role: "user", content: user }];
   if (problems?.length) {
     if (lastAnswer) messages.push({ role: "assistant", content: lastAnswer });

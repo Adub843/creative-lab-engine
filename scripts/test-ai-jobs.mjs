@@ -96,3 +96,45 @@ test("runner: a long SEO description is cut back to whole words inside 155 chara
   assert.equal(R.tidy("listing-copy", { seo: { description: "Short one." } }).seo.description, "Short one.");
   assert.match(R.check("listing-copy", LC, LC_IN, { ...LC_GOOD, seo: { title: LC_GOOD.seo.title, description: "Too short." } }).join(), /add about/);
 });
+
+const RS = fs.readFileSync(path.join(DIR, "review-summary.md"), "utf8");
+const RS_IN = JSON.parse(fs.readFileSync(path.join(DIR, "examples/review-summary.ed.input.json"), "utf8"));
+const RS_GOOD = { store: "ed", period: { from: "2026-11-02", to: "2026-11-07" }, count: 6, averageRating: 4,
+  themes: [{ theme: "fit", count: 3, averageRating: 3.3, quotes: ["it runs small", "Fits true to size"] }],
+  changes: [{ change: "Add a size chart to the product page", theme: "fit" }],
+  postQuotes: [{ quote: "Colors look just like the photo.", rating: 5, status: "needs Aaron's OK before use" }], notes: "" };
+
+test("runner: review-summary only passes quotes that are word for word from the reviews", () => {
+  assert.deepEqual(R.check("review-summary", RS, RS_IN, RS_GOOD), []);
+  const bad = (patch) => R.check("review-summary", RS, RS_IN, { ...RS_GOOD, ...patch }).join("; ");
+  assert.match(bad({ themes: [{ theme: "fit", count: 1, averageRating: 3, quotes: ["Best shirt I ever owned"] }] }), /not word for word/);
+  assert.match(bad({ postQuotes: [{ quote: "Amazing quality, ten stars", rating: 5, status: "needs Aaron's OK before use" }] }), /post quote is not word for word/);
+  assert.match(bad({ postQuotes: [{ quote: "Great gift.", rating: 5, status: "approved" }] }), /needs Aaron's OK/);
+  assert.match(bad({ count: 9 }), /count must be 6/);
+  assert.match(bad({ period: { from: "2026-11-01", to: "2026-11-08" } }), /period must be from 2026-11-02 to 2026-11-07/);
+  assert.match(bad({ changes: [{ change: "Say delivery takes 5 to 9 days", theme: "shipping" }] }), /numbers that no review gave/);
+  assert.match(bad({ notes: [] }), /notes must be one text string/);
+  assert.match(bad({ changes: [1, 2, 3, 4].map((n) => ({ change: "c" + n, theme: "fit" })) }), /at most 3 changes/);
+  assert.match(bad({ notes: "Charleston 3D also sells these" }), /other brand/);
+});
+
+const DB = fs.readFileSync(path.join(DIR, "daily-brief.md"), "utf8");
+const DB_IN = JSON.parse(fs.readFileSync(path.join(DIR, "examples/daily-brief.c3d.input.json"), "utf8"));
+const DB_GOOD = { store: "c3d", date: "2026-11-14", needsYou: ["Pause the Hype chains Facebook ad."],
+  brief: "One ad should be paused today and one product page is missing its description. Over 7 days the shop had 412 visits, 5 orders and $96.45 in sales, up 24 visits and 1 order from yesterday. The automatic fixes made 3 changes and undid 1.", notes: "" };
+
+test("runner: daily-brief rejects numbers that are not in the digest, and long briefs", () => {
+  assert.deepEqual(R.check("daily-brief", DB, DB_IN, DB_GOOD), []);
+  const bad = (patch) => R.check("daily-brief", DB, DB_IN, { ...DB_GOOD, ...patch }).join("; ");
+  assert.match(bad({ brief: DB_GOOD.brief.replace("412", "1,250") }), /not in the input: 1250/);
+  assert.match(bad({ brief: "word ".repeat(130) }), /under 120 words/);
+  assert.match(bad({ needsYou: "Pause the ad" }), /needsYou must be a list/);
+  assert.match(bad({ date: "2026-11-08" }), /date must be 2026-11-14/);
+});
+
+test("every job on a local engine has an example input and its own checks", () => {
+  for (const j of jobs.filter((x) => x.engine.startsWith("local"))) {
+    assert.ok(fs.readdirSync(path.join(DIR, "examples")).some((f) => f.startsWith(j.id + ".")), `${j.id}: example input in ai-jobs/examples/`);
+    assert.match(fs.readFileSync(new URL("./run-ai-job.mjs", import.meta.url), "utf8"), new RegExp(`jobId === "${j.id}"`), `${j.id}: checks in the runner`);
+  }
+});
