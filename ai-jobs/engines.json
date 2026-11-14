@@ -1,0 +1,9 @@
+{
+  "about": "Where each engine in jobs.json runs. Local engines are reached over an SSH forward on Aaron's private Tailscale network; nothing is opened to the internet and no key is stored here. local-small = GMKtec K15 (small jobs), local-big = Blink (bigger jobs). claude = a job a Claude session runs by hand; the runner never calls it.",
+  "engines": {
+    "local-small": { "ssh": "AI1@100.99.149.38", "port": 11434, "model": "qwen3:4b-instruct", "maxTokens": 1200 },
+    "local-big": { "ssh": "aaronlewis@100.70.128.45", "port": 1234, "model": "console-8b", "maxTokens": 2000 },
+    "claude": { "manual": true }
+  },
+  "fallback": { "local-small": "local-big", "local-big": "claude" }
+}

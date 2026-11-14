@@ -1,7 +1,7 @@
 # AI jobs
 
 Every step in the marketing loop that needs judgment is written here as a plain job file, so any model can run it.
-Today the engine is `claude`. Later it is `alice`, Aaron's own local model. Everything else (fetching numbers, the
+The engine is one of Aaron's own local models first (`local-small` on the GMKtec, `local-big` on the Blink) and `claude` only for judgment calls, for now. Everything else (fetching numbers, the
 scorecard, cost math, flags, the digest, saving files) is plain code in `lib/` and never needs a model.
 
 ## The loop
@@ -14,7 +14,15 @@ scorecard, cost math, flags, the digest, saving files) is plain code in `lib/` a
 ## Files
 
 - `jobs.json` lists every job: `{ "id", "file", "schedule", "engine" }`.
-  `engine` is the per-job switch: `"claude"` now, `"alice"` once Alice takes that job over. Change one job at a time.
+  `engine` is the per-job switch, one of the engines in `engines.json`: `"local-small"`, `"local-big"` or `"claude"`. Move one job at a time.
+- `engines.json` says where each engine runs and which engine a job falls back to when its answer fails the checks
+  (`local-small` to `local-big` to `claude`). No keys: the local models listen only on their own machine and are reached over SSH.
+- `scripts/run-ai-job.mjs` is the local runner: `node scripts/run-ai-job.mjs listing-copy --input ai-jobs/examples/listing-copy.c3d.input.json`.
+  It checks every answer (Output shape, one brand, price unchanged, length limits), retries with the list of problems, then falls back.
+  Every run is saved in `ai-jobs/runs/` (this PC only, not in git); a job no local model could pass is saved in `ai-jobs/runs/needs-claude/`.
+- **Keeping the local model current (rule 20):** when a job file, rule or check changes, change it here, add or update an
+  example input in `examples/` and a test in `scripts/test-ai-jobs.mjs` the same day, and re-run the job on the local engines.
+  When Claude makes a judgment call on a job, save the input, the decision and the reason as an example so the local model can learn it.
 - `<job>.md` is one job. Every file has the same sections, in this order:
   - `## Purpose`: what the job is for, in a sentence or two.
   - `## When it runs`: the trigger or schedule.
