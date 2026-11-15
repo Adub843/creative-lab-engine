@@ -32,3 +32,10 @@ starts the server and tunnel now and at every sign-in (scheduled task "Design Li
 The server listens on 127.0.0.1 only. Every request must carry a signature made with CONSOLE_KEY by the console
 Worker (`lib/drive.mjs`), checked here (`lib.mjs`), and the Worker only signs for someone who has the console key.
 It answers GET only.
+
+## Where the data folder is
+Normally `%LOCALAPPDATA%\design-library`. If `setup.ps1` was run from inside the Claude desktop app, Windows keeps
+that folder in the app's private copy (`%LOCALAPPDATA%\Packages\Claude_...\LocalCache\Local\design-library`), and the
+"Design Library" task, which starts outside the app, could not see the key or `tunnel.yml` there. `config.mjs`,
+`watch-library.ps1` and `setup.ps1` now use the private folder by its real path whenever it exists. If the Claude
+app is ever removed that folder goes with it: run `setup.ps1` again (type the key, the index rebuilds).

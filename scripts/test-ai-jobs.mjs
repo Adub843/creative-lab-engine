@@ -61,6 +61,10 @@ test("runner: engines.json has a fallback chain that ends at claude and holds no
   for (const [from, to] of Object.entries(fallback)) { assert.ok(engines[from], from); assert.ok(engines[to], to); }
   assert.equal(engines.claude.manual, true);
   assert.doesNotMatch(JSON.stringify(engines), /password|secret|api.?key|bearer/i);
+  // Each local engine falls back to the other one once, then to claude: never a loop.
+  assert.deepEqual(R.engineChain("local-big", fallback, engines), ["local-big", "local-small", "claude"]);
+  assert.deepEqual(R.engineChain("local-small", fallback, engines), ["local-small", "local-big", "claude"]);
+  assert.deepEqual(R.engineChain("claude", fallback, engines), ["claude"]);
 });
 
 test("runner: reads the Output keys and pulls JSON out of a chatty answer", () => {
@@ -135,6 +139,7 @@ test("runner: daily-brief rejects numbers that are not in the digest, and long b
   assert.match(bad({ date: "2026-11-08" }), /date must be 2026-11-14/);
   assert.match(bad({ brief: DB_GOOD.brief.replace("412 visits", "412 sessions") }), /word for word/);
   assert.match(bad({ notes: "There were no orders this week" }), /do not say there were none/);
+  assert.match(bad({ brief: "All data shows no activity or traffic." }), /do not say there were none/);
   const old = { ...DB_IN, digest: { ...DB_IN.digest, siteCheck: { ...DB_IN.digest.siteCheck, date: "2026-11-12", today: false } } };
   assert.match(R.check("daily-brief", DB, old, DB_GOOD).join("; "), /older one.*2026-11-12/);
 });
@@ -156,6 +161,64 @@ test("daily brief run: the input, numbers sentence and handoff are built by code
   const h = D.handoffFor("c3d", "2026-11-14", { ok: true, engine: "local-small", output: { brief: "Short brief. ".repeat(60), needsYou: ["Fix the IndexNow key."] } });
   assert.equal(h.lane, "console"); assert.equal(h.store, "c3d"); assert.ok(h.did.length <= 400 && h.did.endsWith(".")); assert.equal(h.needsAaron, "Fix the IndexNow key.");
   assert.equal(D.handoffFor("ed", "2026-11-14", { ok: false, tries: [] }).status, "partial");
+});
+
+test("daily brief run: the team board only hears about a fallback or a failure", async () => {
+  const D = await import("./daily-brief.mjs");
+  assert.equal(D.teamNoteFor("c3d", { ok: true, engine: "local-big", tries: [{ engine: "local-big" }] }), null);
+  const fell = D.teamNoteFor("c3d", { ok: true, engine: "local-small", tries: [{ engine: "local-big" }, { engine: "local-small" }] });
+  assert.match(fell, /Charleston 3D: the Blink did not answer or failed its checks, so the GMKtec wrote it/);
+  assert.doesNotMatch(fell, /Elevated/);
+  assert.match(D.teamNoteFor("ed", { ok: false, tries: [{ engine: "local-big" }] }), /Elevated Designs: no local PC could write it today/);
+  const calls = [];
+  assert.equal(D.postTeamNote("x", (cmd, args, opts) => { calls.push([cmd, args.at(-1), opts.input]); return { stdout: "posted\n" }; }), true);
+  assert.deepEqual(calls, [["ssh", "python3 ~/team-notes/post_note.py job nuc", "x"]]);
+  assert.equal(D.postTeamNote("x", () => ({ stdout: "" })), false);
+});
+
+test("price requests: a confirmed request is checked again before the store is touched", async () => {
+  const P = await import("./price-requests.mjs");
+  const now = Date.parse("2026-11-15T17:00:00Z");
+  const req = { id: "0123456789ab", store: "c3d", product_id: 101, title: "Mini Name Desk Plate", old: 19, new: 21, at: "2026-11-15T16:58:00Z" };
+  assert.equal(P.requestProblem(req, now), null);
+  assert.match(P.requestProblem({ ...req, at: "2026-11-15T16:40:00Z" }, now), /10 minutes old/);
+  assert.match(P.requestProblem({ ...req, store: "other" }, now), /store that does not exist/);
+  assert.match(P.requestProblem({ ...req, new: 0.1 }, now), /must be from 0\.50/);
+  assert.match(P.requestProblem({ ...req, new: 19 }, now), /same as the old one/);
+  assert.match(P.requestProblem({ ...req, product_id: "101" }, now), /no product id/);
+  assert.match(P.requestProblem({ ...req, id: "../x" }, now), /not readable/);
+
+  const products = [{ id: 101, variants: [{ price: "19.00" }] }, { id: 102, variants: [{ price: "12.00" }, { price: "24.99" }] }];
+  assert.equal(P.livePriceProblem(products, req), null);
+  assert.match(P.livePriceProblem(products, { ...req, old: 18 }), /live price is now \$19\.00, not the \$18\.00/);
+  assert.match(P.livePriceProblem(products, { ...req, product_id: 102 }), /different prices by size/);
+  assert.match(P.livePriceProblem(products, { ...req, product_id: 999 }), /no longer in the store/);
+
+  // the whole pass, with the store and the engine faked
+  const calls = [];
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method ?? "GET", key: init.headers?.["x-console-key"], body: init.body });
+    if (String(url).includes("/products.json")) return new Response(JSON.stringify({ products }), { status: 200 });
+    if (String(url).endsWith("/api/products")) return new Response(JSON.stringify({ changed: 1, price: "21.00" }), { status: 200 });
+    return new Response("{}", { status: 404 });
+  };
+  const done = await P.carryOut(req, { key: "a-test-key-000000000", fetchImpl, now });
+  assert.deepEqual(done, { ok: true, changed: 1 });
+  const post = calls.find((c) => c.method === "POST");
+  assert.equal(post.url, "https://creative-lab-engine.business-console.workers.dev/api/products");
+  assert.deepEqual(JSON.parse(post.body), { store: "c3d", id: "gid://shopify/Product/101", price: "21.00" });
+  assert.equal(post.key, "a-test-key-000000000");
+  assert.ok(calls[0].url.startsWith("https://charleston3d.com/products.json"), "the Charleston 3D store is the only one read");
+
+  // a stale price never reaches the engine
+  calls.length = 0;
+  const stale = await P.carryOut({ ...req, old: 18 }, { key: "k", fetchImpl, now });
+  assert.equal(stale.ok, false);
+  assert.ok(!calls.some((c) => c.method === "POST"));
+  // the engine's refusal is passed on in its own words
+  const refuse = async (url, init = {}) => String(url).includes("/products.json") ? new Response(JSON.stringify({ products }), { status: 200 })
+    : new Response(JSON.stringify({ error: "This shirt is priced from the price sheet.", code: "sheet_priced" }), { status: 409 });
+  assert.match((await P.carryOut(req, { key: "k", fetchImpl: refuse, now })).reason, /priced from the price sheet\. Nothing was changed/);
 });
 
 test("every job on a local engine has an example input and its own checks", () => {

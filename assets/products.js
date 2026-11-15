@@ -4,9 +4,13 @@
 // Charleston 3D rows also have a Customizable switch (the "customizable" tag: the theme then asks
 // for a name to print). Elevated Designs rows have a Shirt builder switch instead (the "builder-blank"
 // tag: the blank shows in the shirt apps), plus the "List a design" panel (list-design.js).
+// Edit price changes the price of a product that is already listed. It asks twice, showing the old and the
+// new price, and leaves an Undo on the row. Shirts priced from the price sheet and products priced by size
+// cannot be changed here; the row says where to change them instead.
 import { el, toast } from "./app.js";
 import { SETUP_URL, STORES, api, host, initialStore, money, storeSwitcher } from "./api.js";
 import { listPanel } from "./list-design.js";
+import { confirmButton } from "./confirm.js";
 
 const API = "/api/products";
 const FILTERS = [["all", "All products"], ["live", "Live on the site"], ["off", "Not live"], ["draft", "Drafts"], ["builder", "In the shirt builder"]];
@@ -25,7 +29,7 @@ const thumb = (url) => {
 };
 
 export async function renderProducts() {
-  const state = { store: initialStore(), products: [], q: "", filter: "all", loading: true, error: null, req: 0 };
+  const state = { store: initialStore(), products: [], q: "", filter: "all", loading: true, error: null, req: 0, editing: null };
 
   const wrap = el("section", { class: "panel brand-band", "aria-labelledby": "prod-title" });
   const title = el("h2", { id: "prod-title" });
@@ -80,6 +84,10 @@ export async function renderProducts() {
     const view = p.live
       ? el("a", { class: "btn", href: p.url, target: "_blank", rel: "noopener", "data-act": "view" }, "View on site", el("span", { class: "ext", "aria-hidden": "true" }, "↗"))
       : el("span", { class: "btn is-off", "aria-disabled": "true", title: "Switch it on to put it on the site" }, "Not on site");
+    const priceBtn = p.price == null ? null
+      : p.sheetPriced ? el("span", { class: "btn is-off", "aria-disabled": "true", title: "This shirt is priced from the price sheet. Change your_price in the sheet and the store follows within 15 minutes." }, "Price from sheet")
+      : p.priceVaries ? el("span", { class: "btn is-off", "aria-disabled": "true", title: "This product has different prices by size or option. Change it in Shopify." }, "Priced by size")
+      : el("button", { class: "btn ghost", type: "button", "data-act": "price", "aria-expanded": String(state.editing === p.id), onclick: () => { state.editing = state.editing === p.id ? null : p.id; draw(); } }, "Edit price");
     return el("div", { class: `prow${p.pending || p.pendingTag ? " pending" : ""}`, role: "listitem", "data-id": p.id },
       p.image ? el("img", { src: thumb(p.image), alt: "", width: "56", height: "56", loading: "lazy" }) : el("span", { class: "noimg", "aria-hidden": "true" }, "▢"),
       el("div", { class: "pinfo" },
@@ -90,8 +98,57 @@ export async function renderProducts() {
       el("div", { class: "pswitches" },
         el("label", { class: "plive" }, sw, el("span", {}, p.pending ? "Saving…" : p.live ? "Live" : "Off")),
         tagged),
-      el("div", { class: "pacts" }, view,
-        el("a", { class: "btn ghost", href: p.adminUrl, target: "_blank", rel: "noopener", "data-act": "edit" }, "Edit in Shopify", el("span", { class: "ext", "aria-hidden": "true" }, "↗"))));
+      el("div", { class: "pacts" }, view, priceBtn,
+        el("a", { class: "btn ghost", href: p.adminUrl, target: "_blank", rel: "noopener", "data-act": "edit" }, "Edit in Shopify", el("span", { class: "ext", "aria-hidden": "true" }, "↗"))),
+      state.editing === p.id ? priceEditor(p) : p.priceWas != null ? priceUndo(p) : null);
+  }
+
+  // The price box under a row. Save asks once more with both prices before anything changes on the live store.
+  function priceEditor(p) {
+    const storeAt = state.store;
+    const input = el("input", { class: "field", type: "number", min: "0.5", max: "5000", step: "0.01", inputmode: "decimal", value: Number(p.price).toFixed(2), "aria-label": `New price for ${p.title}`, "data-price-input": p.id });
+    const note = el("span", { class: "muted small", "aria-live": "polite" }, `Now ${money(p.price, p.currency)} on ${host(STORES[storeAt].site)}`);
+    const save = el("button", { class: "btn", type: "button", "data-act": "price-save" }, "Save price");
+    let armed = null, timer = null;
+    const disarm = () => { armed = null; save.textContent = "Save price"; save.classList.remove("armed"); };
+    input.addEventListener("input", disarm);
+    save.addEventListener("click", async () => {
+      const next = Number(input.value);
+      if (!Number.isFinite(next) || next < 0.5 || next > 5000) { note.textContent = "Type a price from 0.50 to 5000.00."; input.focus(); return; }
+      if (Math.abs(next - p.price) < 0.005) { note.textContent = "That is already the price."; return; }
+      if (armed !== next) {
+        armed = next; clearTimeout(timer); timer = setTimeout(disarm, 8000);
+        save.textContent = `Change ${money(p.price, p.currency)} to ${money(next, p.currency)}? Tap again`; save.classList.add("armed");
+        return;
+      }
+      clearTimeout(timer); save.disabled = true; note.textContent = "Saving…";
+      const was = p.price;
+      try {
+        const out = await api(API, { method: "POST", key: true, body: { store: storeAt, id: p.id, price: next.toFixed(2) } });
+        p.price = Number(out.price ?? next); p.priceWas = was; state.editing = null;
+        toast(`${p.title}: ${money(was, p.currency)} changed to ${money(p.price, p.currency)}`);
+      } catch (e) {
+        toast(e.code === "cancelled" ? e.message : `Couldn't change the price of ${p.title}: ${e.message}`);
+      } finally { if (state.store === storeAt) draw(); }
+    });
+    const cancel = el("button", { class: "btn ghost", type: "button", "data-act": "price-cancel", onclick: () => { state.editing = null; draw(); } }, "Cancel");
+    return el("div", { class: "pedit" }, el("label", { class: "small" }, "New price ", input), save, cancel, note);
+  }
+
+  // After a change the row keeps the old price and one button to put it back.
+  function priceUndo(p) {
+    const storeAt = state.store;
+    const undo = confirmButton(`Undo: back to ${money(p.priceWas, p.currency)}`, "Tap again to put the old price back", async () => {
+      const now = p.price;
+      try {
+        const out = await api(API, { method: "POST", key: true, body: { store: storeAt, id: p.id, price: Number(p.priceWas).toFixed(2) } });
+        p.price = Number(out.price ?? p.priceWas); p.priceWas = null;
+        toast(`${p.title}: back to ${money(p.price, p.currency)} (was ${money(now, p.currency)})`);
+      } catch (e) { toast(e.code === "cancelled" ? e.message : `Couldn't put the old price back: ${e.message}`); }
+      finally { if (state.store === storeAt) draw(); }
+    });
+    undo.dataset.act = "price-undo";
+    return el("div", { class: "pedit" }, el("span", { class: "muted small" }, `Price changed from ${money(p.priceWas, p.currency)} to ${money(p.price, p.currency)}.`), undo);
   }
 
   function draw() {

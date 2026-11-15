@@ -176,6 +176,11 @@ async function main() {
     if (req.headers()["x-console-key"] !== KEY) return json(401, { error: "Wrong or missing console key.", code: "bad_key" });
     await new Promise((r) => setTimeout(r, mode.postDelay));
     const p = PRODUCTS[body.store].find((x) => x.id === body.id);
+    if ("price" in body) {
+      if (p.title.startsWith("Broken")) return json(409, { error: "This product has different prices by size or option, so one price would overwrite them all. Change it in Shopify instead.", code: "mixed_prices" });
+      p.price = Number(body.price);
+      return json(200, { store: body.store, id: p.id, price: Number(body.price).toFixed(2), changed: 1 });
+    }
     if ("customizable" in body) {
       if (body.store !== "c3d") return json(400, { error: "Customizable is a Charleston 3D setting.", code: "wrong_store" });
       if (p.title.startsWith("Broken")) return json(422, { error: "Couldn't add the customizable tag: Tags is invalid", code: "shopify_rejected" });
@@ -1154,6 +1159,56 @@ async function main() {
     assert.match(await toastText(), /Rainbow Row Keychain now asks for a name to print/);
     assert.equal(await sw("Rainbow Row").getAttribute("aria-checked"), "true", "Live untouched");
     if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "products-c3d-customizable-1280.png"), fullPage: true }); }
+  });
+
+  // ---------- Edit price ----------
+  const prow = (title) => page.locator(".prow", { hasText: title });
+  await step("edit price: asks twice with both prices, saves, and leaves an Undo", async () => {
+    await clearToasts();
+    const before = posts.length;
+    await prow("Rainbow Row").locator('[data-act="price"]').click();
+    const input = prow("Rainbow Row").locator(".pedit input");
+    assert.equal(await input.inputValue(), "26.00");
+    await input.fill("31");
+    const save = prow("Rainbow Row").locator('[data-act="price-save"]');
+    await save.click();
+    assert.equal(posts.length, before, "the first click only asks");
+    assert.match(await save.textContent(), /Change \$26\.00 to \$31\.00\? Tap again/);
+    await save.click();
+    await page.waitForSelector('.prow:has-text("Rainbow Row") [data-act="price-undo"]');
+    assert.deepEqual(posts.at(-1).body, { store: "c3d", id: "gid://shopify/Product/102", price: "31.00" });
+    assert.equal(posts.at(-1).key, KEY);
+    assert.match(await toastText(), /Rainbow Row Keychain: \$26\.00 changed to \$31\.00/);
+    assert.match(await prow("Rainbow Row").locator(".pinfo").textContent(), /\$31\.00/);
+    if (SCREENS) { await clearToasts(); await page.screenshot({ path: path.join(SCREENS, "products-c3d-edit-price-1280.png"), fullPage: true }); }
+  });
+
+  await step("edit price: Undo puts the old price back after a second tap", async () => {
+    await clearToasts();
+    const undo = prow("Rainbow Row").locator('[data-act="price-undo"]');
+    await undo.click();
+    await undo.click();
+    await page.waitForFunction(() => !document.querySelector('.prow[data-id="gid://shopify/Product/102"] [data-act="price-undo"]'));
+    assert.deepEqual(posts.at(-1).body, { store: "c3d", id: "gid://shopify/Product/102", price: "26.00" });
+    assert.match(await prow("Rainbow Row").locator(".pinfo").textContent(), /\$26\.00/);
+  });
+
+  await step("edit price: a bad price never reaches the store, and a refusal shows the reason", async () => {
+    await clearToasts();
+    const before = posts.length;
+    await prow("Rainbow Row").locator('[data-act="price"]').click();
+    await prow("Rainbow Row").locator(".pedit input").fill("0");
+    await prow("Rainbow Row").locator('[data-act="price-save"]').click();
+    assert.equal(posts.length, before);
+    assert.match(await prow("Rainbow Row").locator(".pedit").textContent(), /from 0\.50 to 5000\.00/);
+    await prow("Rainbow Row").locator('[data-act="price-cancel"]').click();
+    await prow("Broken Publish").locator('[data-act="price"]').click();
+    await prow("Broken Publish").locator(".pedit input").fill("40");
+    const save = prow("Broken Publish").locator('[data-act="price-save"]');
+    await save.click(); await save.click();
+    await page.waitForSelector(".toast >> text=different prices by size");
+    assert.match(await prow("Broken Publish").locator(".pinfo").textContent(), /\$28\.00/, "the price on the row did not change");
+    await prow("Broken Publish").locator('[data-act="price-cancel"]').click().catch(() => {});
   });
 
   await step("customizable: Shopify refusal rolls the switch back with the reason", async () => {
