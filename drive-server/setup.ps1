@@ -6,6 +6,11 @@
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $data = Join-Path $env:LOCALAPPDATA "design-library"
+# If the folder was made from inside the Claude desktop app, it is in that app's private copy of AppData\Local
+# (see config.mjs): use it by its real path so this works the same inside and outside the app.
+$private = Get-ChildItem (Join-Path $env:LOCALAPPDATA "Packages") -Directory -Filter "Claude_*" -ErrorAction SilentlyContinue | Sort-Object Name |
+  ForEach-Object { Join-Path $_.FullName "LocalCache\Local\design-library" } | Where-Object { Test-Path $_ } | Select-Object -First 1
+if ($private) { $data = $private }
 $keyFile = Join-Path $data "studio-key.dpapi"
 $cfDir = Join-Path $env:USERPROFILE ".cloudflared"
 $tunnel = "design-library"

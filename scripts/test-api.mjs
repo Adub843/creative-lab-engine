@@ -4596,3 +4596,13 @@ test("worker: /api/drive reaches the drive library with DRIVE_ORIGIN from env, a
     assert.deepEqual(env.ASSETS.calls, [], "never falls through to the files");
   }, fakePC(seen));
 });
+
+test("drive-server: the data folder is the Claude app's private copy when that exists, else the usual one", async () => {
+  const { dataDir } = await import("../drive-server/config.mjs");
+  const env = { LOCALAPPDATA: "C:\L" };
+  const priv = path.join("C:\L", "Packages", "Claude_abc", "LocalCache", "Local", "design-library");
+  assert.equal(dataDir(env, (d) => d === priv, () => ["Microsoft.Foo", "Claude_abc"]), priv);
+  assert.equal(dataDir(env, () => false, () => ["Claude_abc"]), path.join("C:\L", "design-library"));
+  assert.equal(dataDir(env, () => true, () => { throw new Error("no folder"); }), path.join("C:\L", "design-library"));
+  assert.equal(dataDir({ ...env, DRIVE_DATA: "D:\x" }, () => true, () => ["Claude_abc"]), "D:\x");
+});
