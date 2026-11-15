@@ -101,6 +101,11 @@ if not (ROOT / "static/js/askmic.js").exists() or (ROOT / "static/js/askmic.js")
 patch("static/index.html", 'src="js/askmic.js"', '<script src="js/alice.js"></script>', '<script src="js/alice.js"></script>\n<script src="js/askmic.js"></script>')
 patch("static/js/core.js", "u.rate=1.2;", "u.rate=0.95;", "u.rate=1.2;")
 
+# 6. A Documents link: Aaron's document library (served from the NUC, Tailscale only).
+patch("static/index.html", 'id="docsLink"',
+      '>Chat with Steve</a>',
+      '>Chat with Steve</a>\n      <a class="btn" id="docsLink" href="https://nuc-skull.tailb3d313.ts.net:8446/" target="_blank" rel="noopener" title="Every document in one place (needs Tailscale on)">Documents</a>')
+
 for title, rows in (("changed", done), ("already there", skipped), ("NOT FOUND", missing)):
     for r in rows:
         print(f"{title}: {r}")

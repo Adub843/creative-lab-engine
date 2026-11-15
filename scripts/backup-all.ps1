@@ -1,9 +1,13 @@
 # Nightly backup of every machine to the Dell server (\\192.168.1.221\Files\Backups). Runs on the NUC at 2:15 AM
 # (task "Creative Lab nightly backup"). Nothing is ever deleted on a source machine.
 #
-#   Blink    Alice, Steve, the console copy and its data, the team board, all service files   -> Backups\Blink\blink-<date>.tgz
-#   GMKtec   its agent setup, scheduled tasks, desktop tools, the model's settings            -> Backups\GMKtec\k15-<date>.tgz
+#   Blink    Alice, Steve, the console copy and its data, the team board, all service files   -> Backups\Blink
+#   GMKtec   its agent setup, scheduled tasks, desktop tools, the model's settings            -> Backups\GMKtec
 #   NUC      Creative Lab HQ, Aaron-Data, Documents, the engine code, Claude's notes          -> Backups\NUC\<folder>\ (kept in step)
+#
+# No clutter (Aaron, 2026-11-15): each machine has ONE file that is replaced every night (<name>-latest.tgz) and one
+# weekly file (<name>-week-<date>.tgz) made when the newest weekly one is 7 days old. A weekly file is deleted once it is
+# 14 days old, so there are never more than three files per machine.
 #
 # Left out on purpose (rule 8, never copy secrets): key and password files (.env, auth.json, *.token, client_secret*.json,
 # SSH private keys, etsy-secrets.log, the VNC settings). After a restore those are typed in again; the list is in
@@ -22,7 +26,8 @@ $log = Join-Path $hq '00 Recovery\backup-log.txt'
 $blink = 'aaronlewis@100.70.128.45'
 $k15 = 'AI1@100.99.149.38'
 $stamp = Get-Date -Format 'yyyy-MM-dd'
-$keep = 7
+$weeklyEveryDays = 7
+$deleteAfterDays = 14
 
 if ($Install) {
   $vbs = Join-Path $repo 'scripts\run-hidden.vbs'
@@ -37,8 +42,21 @@ if ($Install) {
 }
 
 function Say($text) { $line = "{0}  {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm'), $text; Add-Content -Path $log -Value $line -Encoding utf8; $line }
-function Prune($folder, $pattern) {
-  Get-ChildItem $folder -Filter $pattern -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -Skip $keep | Remove-Item -Force -ErrorAction SilentlyContinue
+# Puts a finished archive in place: replaces <name>-latest.tgz, makes this week's file when it is due, and deletes
+# weekly files that are 14 days old or more. Returns the path of the latest file.
+function Store($file, $folder, $name) {
+  $latest = Join-Path $folder "$name-latest.tgz"
+  Move-Item $file $latest -Force
+  $weekly = Get-ChildItem $folder -Filter "$name-week-*.tgz" -ErrorAction SilentlyContinue | Sort-Object Name
+  $newest = $weekly | Select-Object -Last 1
+  $due = (-not $newest) -or (((Get-Date).Date - [datetime]::ParseExact($newest.BaseName.Substring($newest.BaseName.Length - 10), 'yyyy-MM-dd', $null)).Days -ge $weeklyEveryDays)
+  if ($due) { Copy-Item $latest (Join-Path $folder "$name-week-$stamp.tgz") -Force }
+  Get-ChildItem $folder -Filter "$name-week-*.tgz" -ErrorAction SilentlyContinue | Where-Object {
+    ((Get-Date).Date - [datetime]::ParseExact($_.BaseName.Substring($_.BaseName.Length - 10), 'yyyy-MM-dd', $null)).Days -ge $deleteAfterDays
+  } | Remove-Item -Force -ErrorAction SilentlyContinue
+  # files from the first day's naming (blink-2026-11-15.tgz) are folded into the scheme
+  Get-ChildItem $folder -Filter "$name-20*.tgz" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+  $latest
 }
 function Size($path) { '{0:N1} MB' -f ((Get-Item $path).Length / 1MB) }
 
@@ -60,9 +78,8 @@ if ($Only -in 'All', 'Blink') {
   & scp -q -o BatchMode=yes "${blink}:/tmp/blink-backup.tgz" $file 2>$null
   & ssh -o BatchMode=yes $blink 'rm -f /tmp/blink-backup.tgz' 2>$null
   if ((Test-Path $file) -and (Get-Item $file).Length -gt 1MB -and "$bytes" -eq "$((Get-Item $file).Length)") {
-    Move-Item $file (Join-Path $dest "Blink\blink-$stamp.tgz") -Force
-    Prune (Join-Path $dest 'Blink') 'blink-*.tgz'
-    Say "Blink backed up: $(Size (Join-Path $dest "Blink\blink-$stamp.tgz")) (Alice, Steve, console copy and data, team board, service files)."
+    $kept = Store $file (Join-Path $dest 'Blink') 'blink'
+    Say "Blink backed up: $(Size $kept) (Alice, Steve, console copy and data, team board, service files)."
   } else { $failed += 'Blink'; Say 'FAILED: the Blink backup did not come back whole. Is the Blink on?' }
 }
 
@@ -90,9 +107,8 @@ tar -czf k15-backup.tgz -C $s .
   $file = Join-Path $tmp "k15-$stamp.tgz"
   & scp -q -o BatchMode=yes "${k15}:C:/Users/AI1/k15-backup.tgz" $file 2>$null
   if ((Test-Path $file) -and (Get-Item $file).Length -gt 2KB -and "$bytes".Trim() -eq "$((Get-Item $file).Length)") {
-    Move-Item $file (Join-Path $dest "GMKtec\k15-$stamp.tgz") -Force
-    Prune (Join-Path $dest 'GMKtec') 'k15-*.tgz'
-    Say "GMKtec backed up: $(Size (Join-Path $dest "GMKtec\k15-$stamp.tgz")) (agent setup, scheduled tasks, desktop tools, model settings)."
+    $kept = Store $file (Join-Path $dest 'GMKtec') 'k15'
+    Say "GMKtec backed up: $(Size $kept) (agent setup, scheduled tasks, desktop tools, model settings)."
   } else { $failed += 'GMKtec'; Say 'FAILED: the GMKtec backup did not come back whole. Is the GMKtec on?' }
 }
 
