@@ -49,4 +49,4 @@ start, open, save, reopen, download, and open an agent draft.
 
 - SuperDoc: `npm i @harbour-enterprises/superdoc@<ver>`, copy `dist/superdoc.min.js` and `dist/style.css`.
 - Univer: bundle `@univerjs/presets`, `@univerjs/preset-sheets-core` (+ en-US locale and CSS) and `xlsx` with esbuild into one IIFE that sets `window.LabSheetsLib = { createUniver, LocaleType, mergeLocales, UniverSheetsCorePreset, enUS, XLSX }`.
-- miniPaint: copy `dist/` and `images/` from the GitHub repo; keep our `minipaint/index.html` head (theme, Lab colors).
+- miniPaint: copy `dist/` from the GitHub repo, then inline `images/` into `dist/bundle.js` as data URIs (the Lab artifact has a 512-file limit; see the commit "Inline miniPaint icons"); keep our `minipaint/index.html` head (theme, Lab colors).
