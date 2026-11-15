@@ -189,6 +189,19 @@ test("edit price: one size only, and a price that is already right writes nothin
   assert.ok(!same.calls.some((c) => c.op === "ConsoleEditPrice"));
 });
 
+test("edit price: one price is refused when the sizes have different prices", async () => {
+  const sh = priceShop({ variants: [{ id: VID, title: "Small", price: "12.00" }, { id: VID2, title: "Large", price: "24.99" }] });
+  const res = await handleProducts(post({ store: "c3d", id: PID, price: "15.00" }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 409);
+  assert.equal(res.body.code, "mixed_prices");
+  assert.ok(!sh.calls.some((c) => c.op === "ConsoleEditPrice"));
+  // two sizes at the same price are fine: both get the new price
+  const same = priceShop({ variants: [{ id: VID, title: "Small", price: "12.00" }, { id: VID2, title: "Large", price: "12.00" }] });
+  const ok = await handleProducts(post({ store: "c3d", id: PID, price: "15.00" }), { env: envOf(), fetch: same.fetch });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.changed, 2);
+});
+
 test("edit price: a sheet-priced Elevated Designs shirt is refused, an untagged one is not", async () => {
   for (const tags of [["Elevated Designs"], ["builder-blank"]]) {
     const sh = priceShop({ tags });
