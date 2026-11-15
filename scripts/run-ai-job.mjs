@@ -53,6 +53,12 @@ export function tidy(jobId, out, input) {
   if (jobId === "daily-brief" && out && Array.isArray(input?.needsYou)) out.needsYou = [...input.needsYou];
   // Topic tags are low stakes, so code tidies them instead of rejecting a good caption: one word each, # in front,
   // letters and numbers only, no repeats, three at most.
+  // The order number and the urgency are facts from the input, so code sets them; the model only sorts and drafts.
+  if (jobId === "request-triage" && out && typeof out === "object") {
+    out.order = input?.request?.order; out.urgency = input?.urgency; out.store = "c3d";
+    if (typeof out.missing === "string") out.missing = out.missing.trim() ? [out.missing] : [];
+    return out;
+  }
   if (jobId === "post-captions" && out && typeof out === "object") {
     const seen = new Set();
     out.topicTags = [].concat(out.topicTags ?? []).flatMap((t) => String(t).split(/[\s,]+/))
@@ -113,8 +119,32 @@ export function check(jobId, jobText, input, out) {
     const made = [...new Set(numbers((out.changes ?? []).map((c) => c?.change).join(" ")).filter((n) => !numbers(JSON.stringify(input)).includes(n)))];
     if (made.length) bad.push(`changes use numbers that no review gave (${made.join(", ")}); never state a time, count or price that is not in the input`);
   }
+  if (jobId === "request-triage") {
+    const r = input.request ?? {};
+    if (out.order !== r.order) bad.push(`order must be "${r.order}", unchanged`);
+    if (!["custom design", "item not in shop", "unclear"].includes(out.kind)) bad.push('kind must be "custom design", "item not in shop" or "unclear"');
+    if (!["yes", "maybe", "no"].includes(out.canDo)) bad.push('canDo must be "yes", "maybe" or "no"');
+    if (typeof out.why !== "string" || out.why.trim().length < 10) bad.push("why must be one sentence");
+    if (out.urgency !== input.urgency) bad.push(`urgency must be "${input.urgency}", from the input`);
+    const missing = Array.isArray(out.missing) ? out.missing : null;
+    if (!missing || missing.length > 3 || missing.some((q) => typeof q !== "string" || !q.trim())) bad.push("missing must be a list of at most 3 short questions (an empty list if nothing is missing)");
+    const reply = String(out.replyDraft ?? ""), words = reply.trim().split(/\s+/).filter(Boolean).length;
+    if (words < 40 || words > 110) bad.push(`replyDraft must be 40 to 110 words (is ${words})`);
+    if (/\$\s?\d|\b\d+\s?(?:dollars|bucks|% off|percent off)\b|\bfree of charge\b|\bdiscount/i.test(reply)) bad.push("replyDraft must not state a price or a discount; Aaron quotes");
+    if (/\b(?:we|i)(?: can|'ll| will) (?:have|get|deliver|ship|finish|make) (?:it|this|that|them|your \w+)[^.]{0,40}\b(?:by|before|in time|on time)\b|\bguarantee\w*|\bwill (?:arrive|be ready|be done) (?:by|before|in)\b/i.test(reply)) bad.push("replyDraft must not promise a delivery date or that it will be ready in time");
+    if (/https?:\/\/|www\./i.test(reply)) bad.push("replyDraft must not contain a link");
+    if (/\(?\b\d{3}\)?[-. ]\d{3}[-. ]\d{4}\b|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/.test(reply)) bad.push("replyDraft must not contain a phone number or an email address");
+    if (/\p{Extended_Pictographic}/u.test(reply)) bad.push("replyDraft must not contain emoji");
+    const have = numbers(JSON.stringify(input));
+    const made = [...new Set(numbers(reply).filter((n) => !have.some((h) => Math.abs(h - n) < 0.005)))];
+    if (made.length) bad.push(`replyDraft uses numbers that are not in the request (${made.join(", ")})`);
+    const given = [[/\bcolou?rs?\b/i, r.colors, "the colors"], [/\bhow many\b|\bquantity\b/i, r.quantity, "the quantity"], [/\bsize\b|\bhow (?:big|tall|wide|large)\b/i, r.size, "the size"],
+      [/\bdate\b|\bwhen\b|\bdeadline\b|\bneed(?:ed)?(?: it)? by\b/i, r.neededBy, "the date it is needed"]];
+    for (const q of missing ?? []) for (const [re, value, what] of given) if (value && re.test(q)) bad.push(`do not ask "${String(q).slice(0, 50)}": the request already gives ${what}`);
+    if (r.neededBy && /\b(?:confirm|tell us|let us know|share|what is)\b[^.?]{0,60}\b(?:date|when you need|deadline)\b/i.test(reply)) bad.push("replyDraft must not ask for the date: the request already gives it");
+  }
   if (jobId === "post-captions") {
-    const posts = Array.isArray(out.posts) ? out.posts : [];
+    const posts =Array.isArray(out.posts) ? out.posts : [];
     if (posts.map((p) => p?.platform).join(",") !== "instagram,facebook") bad.push('posts must be exactly two: "instagram" first, then "facebook"');
     if (out.product !== input.product?.title) bad.push(`product must be the input title, unchanged: "${input.product?.title}"`);
     const have = numbers(JSON.stringify(input));

@@ -3,6 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { handleProducts, clearTokenCache } from "../lib/shopify.mjs";
+import { handleRequests, normalizeRequests, scrub } from "../lib/requests.mjs";
 import { handleInsights, buildInsights, growthPct, forecast30, linearFit, addDays } from "../lib/insights.mjs";
 import { schemaErrors, variableErrors, checked } from "./schema/validate.mjs";
 import { fileURLToPath } from "node:url";
@@ -4760,4 +4761,48 @@ test("drive-server: the data folder is the Claude app's private copy when that e
   assert.equal(dataDir(env, () => false, () => ["Claude_abc"]), path.join("C:/L", "design-library"));
   assert.equal(dataDir(env, () => true, () => { throw new Error("no folder"); }), path.join("C:/L", "design-library"));
   assert.equal(dataDir({ ...env, DRIVE_DATA: "D:/x" }, () => true, () => ["Claude_abc"]), "D:/x");
+});
+
+// ---------- custom requests (Charleston 3D) ----------
+function fakeRequestsShopify(nodes) {
+  const calls = [];
+  const fetch = async (url, init) => {
+    const { query, variables } = JSON.parse(init.body);
+    calls.push({ url: String(url), op: /query\s+(\w+)/.exec(query)[1], variables });
+    checkGraphql(query, variables);
+    return new Response(JSON.stringify({ data: { orders: { pageInfo: { hasNextPage: false, endCursor: null }, nodes } } }), { status: 200 });
+  };
+  return { fetch, calls };
+}
+const requestOrder = (name, attrs, over = {}) => ({ id: `gid://shopify/Order/${name.slice(1)}`, name, createdAt: "2026-10-24T13:00:00Z", cancelledAt: null, closed: false, test: false,
+  lineItems: { nodes: [{ title: "Custom request", product: { handle: "custom-request", tags: ["request-product"] }, customAttributes: Object.entries(attrs).map(([key, value]) => ({ key, value })) }] }, ...over });
+
+test("requests: only the request itself is returned, never who sent it", async () => {
+  const sh = fakeRequestsShopify([
+    requestOrder("#1012", { "Request type": "Custom design", Request: "A sign for my boat, call me at 843-555-0199 or jo@example.com", "Example link": "https://example.com/sign", "Quantity wanted": "2", "Needed by": "2026-11-02", Size: "About 4 in tall", Colors: "Navy and white", "Photo 1": "https://cdn.shopify.com/uploads/a.jpg", "3D file": "https://cdn.shopify.com/uploads/b.stl", _Source: "app" }),
+    requestOrder("#1011", { Request: "Cancelled one" }, { cancelledAt: "2026-10-24T14:00:00Z" }),
+    requestOrder("#1010", { Request: "A test order" }, { test: true }),
+    { id: "gid://shopify/Order/1009", name: "#1009", createdAt: "2026-10-23T13:00:00Z", cancelledAt: null, closed: true, test: false, lineItems: { nodes: [{ title: "Rainbow Row Magnet", product: { handle: "magnet", tags: ["3d-printed"] }, customAttributes: [{ key: "Name", value: "Sam" }] }] } },
+  ]);
+  const res = await handleRequests(keyed({ days: "14" }), { env: envOf(), fetch: sh.fetch, now: () => NOW });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.store, "c3d");
+  assert.equal(res.body.since, "2026-10-11");
+  assert.deepEqual(res.body.requests, [{ order: "#1012", date: "2026-10-24", open: true, type: "Custom design", request: "A sign for my boat, call me at [phone removed] or [email removed]", exampleLink: true, quantity: 2, neededBy: "2026-11-02", size: "About 4 in tall", colors: "Navy and white", files: 2 }]);
+  assert.ok(!/cdn\.shopify|example\.com|555|customer|email"/i.test(JSON.stringify(res.body)), "no file links, contact details or customer fields");
+  assert.ok(sh.calls.every((c) => c.url.includes(ENV.C3D_SHOPIFY_DOMAIN)), "only the Charleston 3D store is read");
+  assert.equal(sh.calls[0].variables.q, "created_at:>=2026-10-11");
+});
+
+test("requests: needs the key, GET only, Charleston 3D only, sane days", async () => {
+  const sh = fakeRequestsShopify([]);
+  const ctx = { env: envOf(), fetch: sh.fetch, now: () => NOW };
+  assert.equal((await handleRequests(get({}), ctx)).status, 401);
+  assert.equal((await handleRequests(keyed({ store: "ed" }), ctx)).status, 400);
+  assert.equal((await handleRequests(keyed({ days: "0" }), ctx)).status, 400);
+  assert.equal((await handleRequests(keyed({ days: "365" }), ctx)).status, 400);
+  assert.equal((await handleRequests({ ...keyed({}), method: "POST" }, ctx)).status, 405);
+  assert.equal(sh.calls.length, 0, "a refused call never reaches the store");
+  assert.equal(scrub("Text 843.555.0199 or (843) 555-0199, mail a.b@c.io"), "Text [phone removed] or [phone removed], mail [email removed]");
+  assert.deepEqual(normalizeRequests([requestOrder("#1", { Request: "x", "Quantity wanted": "lots", "Needed by": "soon" })])[0].quantity, null);
 });

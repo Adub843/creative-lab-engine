@@ -7,6 +7,7 @@
     { "id": "listing-copy", "file": "listing-copy.md", "schedule": "on demand: when a listing is made", "engine": "local-small" },
     { "id": "seo-fix-picker", "file": "seo-fix-picker.md", "schedule": "weekly: Monday 12:15 UTC, once per store", "engine": "claude" },
     { "id": "review-summary", "file": "review-summary.md", "schedule": "weekly: Monday 12:30 UTC, once per store", "engine": "local-small" },
-    { "id": "post-captions", "file": "post-captions.md", "schedule": "nightly: 12:40 AM Eastern on the NUC, two products per store, drafts only", "engine": "local-small" }
+    { "id": "post-captions", "file": "post-captions.md", "schedule": "nightly: 12:40 AM Eastern on the NUC, two products per store, drafts only", "engine": "local-small" },
+    { "id": "request-triage", "file": "request-triage.md", "schedule": "hourly on the NUC, once per new Charleston 3D custom request, drafts only", "engine": "local-big" }
   ]
 }

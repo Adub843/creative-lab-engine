@@ -17,6 +17,7 @@
 // for the shirt app, lib/members.mjs), DRIVE_ORIGIN (the E: drive library's tunnel on Aaron's PC, lib/drive.mjs).
 import { handleProducts, HttpError, requireKey } from "../lib/shopify.mjs";
 import { handleInsights } from "../lib/insights.mjs";
+import { handleRequests } from "../lib/requests.mjs";
 import { handleListings, libraryReader } from "../lib/listings.mjs";
 import { handleC3dListings, MAX_PHOTO_BYTES } from "../lib/c3d-listings.mjs";
 import { handleImages, refreshPublicSnapshot, renewPublicSnapshot } from "../lib/images.mjs";
@@ -111,6 +112,7 @@ const imageStore = (env) => {
 
 const products = jsonRoute(handleProducts);
 const insights = jsonRoute(handleInsights);
+const requests = jsonRoute(handleRequests);
 const listings = jsonRoute(handleListings);
 const pricing = jsonRoute(handlePricing);
 const marketing = jsonRoute(handleMarketing);
@@ -132,6 +134,8 @@ export async function handleRequest(req, env) {
   try {
     if (pathname === "/api/products") return await products(req, env);
     if (pathname === "/api/insights") return await insights(req, env);
+    // Charleston 3D custom requests for the sorting job: request text only, never who sent it (lib/requests.mjs).
+    if (pathname === "/api/requests") return await requests(req, env);
     if (pathname === "/api/marketing") return await marketing(req, env, { kv: marketingKv(env) });
     // Promotions log their changes in the Marketing change log, so they share its KV.
     if (pathname === "/api/promotions") return await promotions(req, env, { kv: marketingKv(env) });

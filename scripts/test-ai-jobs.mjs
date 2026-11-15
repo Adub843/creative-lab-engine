@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const DIR = fileURLToPath(new URL("../ai-jobs/", import.meta.url));
 export const SECTIONS = ["Purpose", "When it runs", "Inputs", "Instructions", "Output", "Hard rules"];
 const ENGINES = new Set(Object.keys(JSON.parse(fs.readFileSync(path.join(DIR, "engines.json"), "utf8")).engines));
-const REQUIRED_JOBS = ["marketing-qa", "weekly-marketing-decision", "daily-brief", "listing-copy", "seo-fix-picker", "review-summary", "post-captions"];
+const REQUIRED_JOBS = ["marketing-qa", "weekly-marketing-decision", "daily-brief", "listing-copy", "seo-fix-picker", "review-summary", "post-captions", "request-triage"];
 
 const { jobs } = JSON.parse(fs.readFileSync(path.join(DIR, "jobs.json"), "utf8"));
 
@@ -278,4 +278,49 @@ test("overnight jobs: only honest, single-brand products are picked, each at mos
   assert.match(text, /#Charleston3D #CharlestonSC #3DPrinting #CustomGifts #MadeInCharleston #desk\n/, "brand tags first, a repeated brand tag is dropped");
   assert.ok(!/elevated/i.test(text));
   for (const s of ["c3d", "ed"]) assert.ok(!O.BRANDS[s].tags.some((t) => (s === "c3d" ? /elevated|shirt/i : /3d/i).test(t)), "each brand has only its own hashtags");
+});
+
+test("request triage: the draft reply never quotes, promises a date, or asks for what was given", async () => {
+  const R = await import("./run-ai-job.mjs");
+  const jobText = fs.readFileSync(path.join(DIR, "request-triage.md"), "utf8");
+  const input = JSON.parse(fs.readFileSync(path.join(DIR, "examples", "request-triage.c3d.input.json"), "utf8"));
+  const reply = "Thank you for reaching out to us about a sign for your boat with the name Salty Dog on it. A shelf sign in navy and white is something we print often. To put a quote together, could you tell us about how tall or wide you would like it to be? Once we have that, a quote will follow.";
+  const good = () => ({ store: "c3d", order: "#1012", kind: "custom design", canDo: "yes", why: "A shelf sign with a name is a normal plastic print.", missing: ["About how tall or wide should it be?"], replyDraft: reply, urgency: "normal", notes: "" });
+  assert.deepEqual(R.check("request-triage", jobText, input, good()), []);
+  const bad = (change, want) => { const o = good(); change(o); assert.match(R.check("request-triage", jobText, input, o).join(" | "), want); };
+  bad((o) => { o.replyDraft = reply + " It will be about $25."; }, /must not state a price/);
+  bad((o) => { o.replyDraft = reply + " We can offer a discount."; }, /must not state a price or a discount/);
+  bad((o) => { o.replyDraft = reply + " We will have it ready by your date."; }, /must not promise a delivery date/);
+  bad((o) => { o.replyDraft = reply + " It takes 9 days."; }, /numbers that are not in the request \(9\)/);
+  bad((o) => { o.replyDraft = reply + " See https://charleston3d.com"; }, /must not contain a link/);
+  bad((o) => { o.replyDraft = reply + " Call 843-555-0199."; }, /phone number or an email/);
+  bad((o) => { o.replyDraft = "Thanks. A quote will follow."; }, /40 to 110 words/);
+  bad((o) => { o.missing = ["What colors would you like?"]; }, /already gives the colors/);
+  bad((o) => { o.missing = ["When do you need it?"]; }, /already gives the date it is needed/);
+  bad((o) => { o.replyDraft = reply + " Please confirm the date you need it."; }, /must not ask for the date/);
+  bad((o) => { o.missing = ["a", "b", "c", "d"]; }, /at most 3 short questions/);
+  bad((o) => { o.kind = "shirt"; }, /kind must be/);
+  bad((o) => { o.canDo = "sure"; }, /canDo must be/);
+  bad((o) => { o.replyDraft = reply + " Elevated Designs can help too."; }, /names the other brand/);
+  // Order number and urgency are facts: code sets them whatever the model wrote.
+  const fixed = R.tidy("request-triage", { ...good(), order: "#9", urgency: "rush", missing: "How tall?" }, input);
+  assert.deepEqual([fixed.order, fixed.urgency, fixed.missing], ["#1012", "normal", ["How tall?"]]);
+});
+
+test("request triage: urgency and days left are worked out by code, and each request is sorted once", async () => {
+  const T = await import("./request-triage.mjs");
+  const r = (order, over = {}) => ({ order, date: "2026-11-14", open: true, type: "Custom design", request: "A sign", exampleLink: false, quantity: 1, neededBy: null, size: "", colors: "", files: 0, ...over });
+  assert.deepEqual([T.toInput(r("#1", { neededBy: "2026-11-22" }), "2026-11-15").daysLeft, T.toInput(r("#1", { neededBy: "2026-11-22" }), "2026-11-15").urgency], [7, "rush"]);
+  assert.equal(T.toInput(r("#1", { neededBy: "2026-11-23" }), "2026-11-15").urgency, "normal");
+  assert.deepEqual([T.toInput(r("#1"), "2026-11-15").daysLeft, T.toInput(r("#1"), "2026-11-15").urgency], [null, "normal"]);
+  assert.equal(T.toInput(r("#1", { neededBy: "2026-11-10" }), "2026-11-15").urgency, "rush", "a date already past is a rush");
+  const list = [r("#3", { date: "2026-11-15" }), r("#2", { date: "2026-11-13" }), r("#1", { open: false }), r("#4", { date: "2026-11-14" })];
+  assert.deepEqual(T.fresh(list, { "#4": "2026-11-14T10:00:00Z" }).map((x) => x.order), ["#2", "#3"], "closed and already sorted ones are skipped, oldest first");
+  assert.equal(T.fresh(Array.from({ length: 9 }, (_, i) => r("#" + (10 + i))), {}).length, T.MAX_PER_PASS);
+  const input = T.toInput(r("#1012", { neededBy: "2026-11-20", colors: "Navy", files: 2 }), "2026-11-15");
+  const text = T.draftText(input, { kind: "custom design", canDo: "maybe", why: "Size is not given.", missing: ["How tall?"], replyDraft: "Thanks for asking.", urgency: "rush", notes: "" });
+  assert.match(text, /RUSH: needed within 7 days/);
+  assert.match(text, /Needed by: 2026-11-20 \(5 days from 2026-11-15\)/);
+  assert.match(text, /Maybe printable, check first\. Size is not given\./);
+  assert.match(text, /nothing was sent/);
 });
