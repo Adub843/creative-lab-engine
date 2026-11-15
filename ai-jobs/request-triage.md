@@ -30,7 +30,7 @@ the GMKtec as its backup. One run per new request.
 ## Instructions
 1. `kind`: "custom design" (a new thing to design), "item not in shop" (a ready-made thing they want found or printed), or "unclear".
 2. `canDo`: "yes" if it is a normal plastic 3D print (decor, signs, nameplates, ornaments, organizers, small parts), "maybe" if size, material or detail is in doubt, "no" only for things a plastic 3D printer cannot make or should not (weapons, food-contact safety claims, copyrighted characters or logos). Say why in one sentence in `why`.
-3. `missing`: up to 3 short questions for what is not in the request and is needed to quote: size, colors, quantity, the date it is needed, a photo or file. Do not ask for anything the input already gives.
+3. `missing`: up to 3 short questions for what is not in the request and is needed to quote: size, colors, quantity, the date it is needed, a photo or file. Do not ask for anything the input already gives. Read the customer's own words first: if they already said something is optional, can be left off, or how they want it, do not ask about it again.
 4. `replyDraft`: 40 to 110 words, friendly and plain, in Charleston 3D's voice. Thank them, repeat what they asked for in one line, ask the `missing` questions, and say a quote will follow. Never state a price, a discount or a delivery date, and never promise it can be done by their date.
 5. Copy `order` and `urgency` from the input unchanged.
 
