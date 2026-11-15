@@ -1,0 +1,8 @@
+[Unit]
+Description=Steve's nightly learning job: lessons from rejected answers, kept only if the tests hold
+After=steve-web.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I /home/aaronlewis/steve-web/learn.py
+TimeoutStartSec=4h

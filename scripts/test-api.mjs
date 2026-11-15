@@ -156,6 +156,87 @@ test("publish: activates, publishes to Online Store, pings IndexNow, returns liv
   assert.equal(res.body.indexNow.sent, true);
 });
 
+// ---------- Edit price ----------
+const VID = "gid://shopify/ProductVariant/501", VID2 = "gid://shopify/ProductVariant/502";
+const priceShop = (o = {}) => fakeShopify({ override: {
+  ConsoleProductPrices: (v, data) => data({ product: o.missing ? null : { id: PID, title: "Mini Name Desk Plate", handle: "mini-name-desk-plate", tags: o.tags ?? [],
+    variants: { nodes: o.variants ?? [{ id: VID, title: "Default Title", price: "19.00" }] } } }),
+  ConsoleEditPrice: (v, data) => data({ productVariantsBulkUpdate: { productVariants: v.variants.map((x) => ({ id: x.id, title: "x", price: x.price })),
+    userErrors: o.userErrors ?? [] } }),
+} });
+
+test("edit price: changes the price and answers with before and after", async () => {
+  const sh = priceShop();
+  const res = await handleProducts(post({ store: "c3d", id: PID, price: "21.5" }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["ConsoleProductPrices", "ConsoleEditPrice"]);
+  assert.deepEqual(sh.calls.find((c) => c.op === "ConsoleEditPrice").variables, { productId: PID, variants: [{ id: VID, price: "21.50" }] });
+  assert.equal(res.body.changed, 1);
+  assert.deepEqual(res.body.before, [{ id: VID, title: "Default Title", price: "19.00" }]);
+  assert.deepEqual(res.body.after, [{ id: VID, title: "Default Title", price: "21.50" }]);
+  assert.equal(res.body.url, "https://charleston3d.com/products/mini-name-desk-plate");
+});
+
+test("edit price: one size only, and a price that is already right writes nothing", async () => {
+  const variants = [{ id: VID, title: "Small", price: "12.00" }, { id: VID2, title: "Large", price: "24.99" }];
+  const one = priceShop({ variants });
+  const res = await handleProducts(post({ store: "c3d", id: PID, variantId: VID2, price: 26 }), { env: envOf(), fetch: one.fetch });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(one.calls.find((c) => c.op === "ConsoleEditPrice").variables.variants, [{ id: VID2, price: "26.00" }]);
+  const same = priceShop({ variants });
+  const res2 = await handleProducts(post({ store: "c3d", id: PID, variantId: VID, price: "12.00" }), { env: envOf(), fetch: same.fetch });
+  assert.equal(res2.body.changed, 0);
+  assert.ok(!same.calls.some((c) => c.op === "ConsoleEditPrice"));
+});
+
+test("edit price: one price is refused when the sizes have different prices", async () => {
+  const sh = priceShop({ variants: [{ id: VID, title: "Small", price: "12.00" }, { id: VID2, title: "Large", price: "24.99" }] });
+  const res = await handleProducts(post({ store: "c3d", id: PID, price: "15.00" }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 409);
+  assert.equal(res.body.code, "mixed_prices");
+  assert.ok(!sh.calls.some((c) => c.op === "ConsoleEditPrice"));
+  // two sizes at the same price are fine: both get the new price
+  const same = priceShop({ variants: [{ id: VID, title: "Small", price: "12.00" }, { id: VID2, title: "Large", price: "12.00" }] });
+  const ok = await handleProducts(post({ store: "c3d", id: PID, price: "15.00" }), { env: envOf(), fetch: same.fetch });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.changed, 2);
+});
+
+test("edit price: a sheet-priced Elevated Designs shirt is refused, an untagged one is not", async () => {
+  for (const tags of [["Elevated Designs"], ["builder-blank"]]) {
+    const sh = priceShop({ tags });
+    const res = await handleProducts(post({ store: "ed", id: PID, price: "29.99" }), { env: envOf(), fetch: sh.fetch });
+    assert.equal(res.status, 409);
+    assert.equal(res.body.code, "sheet_priced");
+    assert.match(res.body.error, /price sheet/);
+    assert.ok(!sh.calls.some((c) => c.op === "ConsoleEditPrice"));
+  }
+  const free = priceShop({ tags: ["gift"] });
+  assert.equal((await handleProducts(post({ store: "ed", id: PID, price: "29.99" }), { env: envOf(), fetch: free.fetch })).status, 200);
+  // the same tags on Charleston 3D mean nothing: its prices are never synced from the sheet
+  const c3d = priceShop({ tags: ["Elevated Designs"] });
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, price: "29.99" }), { env: envOf(), fetch: c3d.fetch })).status, 200);
+});
+
+test("edit price: bad prices, bad ids, a missing product and a missing key are refused before anything is written", async () => {
+  for (const price of ["free", "", -3, 0, 0.25, 99999, "12.345", 12.345, null, "1e3"]) {
+    const sh = priceShop();
+    const res = await handleProducts(post({ store: "c3d", id: PID, price }), { env: envOf(), fetch: sh.fetch });
+    assert.equal(res.status, 400, `price ${JSON.stringify(price)}`);
+    assert.equal(sh.calls.length, 0);
+  }
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, price: "9.00", variantId: "502" }), { env: envOf(), fetch: priceShop().fetch })).status, 400);
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, price: "9.00", live: true }), { env: envOf(), fetch: priceShop().fetch })).status, 400);
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, price: "9.00" }), { env: envOf(), fetch: priceShop({ missing: true }).fetch })).status, 404);
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, price: "9.00", variantId: VID2 }), { env: envOf(), fetch: priceShop().fetch })).status, 404);
+  const noKey = priceShop();
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, price: "9.00" }, { "content-type": "application/json" }), { env: envOf(), fetch: noKey.fetch })).status, 401);
+  assert.equal(noKey.calls.length, 0);
+  const refused = priceShop({ userErrors: [{ field: ["variants"], message: "Price is invalid" }] });
+  const r = await handleProducts(post({ store: "c3d", id: PID, price: "9.00" }), { env: envOf(), fetch: refused.fetch });
+  assert.ok(r.status >= 400 && /Price is invalid/.test(JSON.stringify(r.body)));
+});
+
 test("publish: already active skips the status update", async () => {
   const sh = fakeShopify({ product: { status: "ACTIVE" } });
   const res = await handleProducts(post({ store: "c3d", id: PID, live: true }), { env: envOf(), fetch: sh.fetch });
@@ -4595,4 +4676,88 @@ test("worker: /api/drive reaches the drive library with DRIVE_ORIGIN from env, a
     assert.equal((await W.handleRequest(wreq("/api/drivex"), env)).status, 404);
     assert.deepEqual(env.ASSETS.calls, [], "never falls through to the files");
   }, fakePC(seen));
+});
+
+// ---------- Alice's mailbox (lib/alice-mail.mjs) ----------
+const AL = await import("../lib/alice-mail.mjs");
+function aliceR2() {
+  const m = new Map();
+  return { m,
+    async put(key, v) { m.set(key, { text: String(v), uploaded: new Date(aliceNow).toISOString() }); },
+    async get(key) { const o = m.get(key); return o ? { text: async () => o.text } : null; },
+    async head(key) { return m.has(key) ? { key } : null; },
+    async delete(keys) { for (const k of [].concat(keys)) m.delete(k); },
+    async list({ prefix = "" } = {}) { return { objects: [...m.keys()].filter((k) => k.startsWith(prefix)).sort().map((key) => ({ key, uploaded: m.get(key).uploaded })), truncated: false }; },
+  };
+}
+let aliceNow = Date.parse("2026-11-15T16:00:00Z");
+const alClock = () => new Date(aliceNow);
+const alReq = (method, body, query = {}, headers = { "content-type": "application/json", "x-console-key": "open-sesame-test-key-0001" }) =>
+  ({ method, query: new URLSearchParams(query), header: (k) => headers[k.toLowerCase()] ?? null, text: async () => JSON.stringify(body ?? {}) });
+
+test("alice mailbox: ask, the runner claims and answers, the console reads once and nothing is left behind", async () => {
+  const bucket = aliceR2(), ctx = { env: envOf(), bucket };
+  assert.equal((await AL.handleAlice(alReq("POST", { person: "Shana", text: "hi" }, {}, { "content-type": "application/json" }), ctx, "", alClock)).status, 401);
+  assert.equal((await AL.handleAlice(alReq("POST", { person: "Shana", text: "hi" }), { env: envOf(), bucket: null }, "", alClock)).status, 503);
+  assert.equal((await AL.handleAlice(alReq("POST", { person: "", text: "hi" }), ctx, "", alClock)).status, 400);
+  assert.equal((await AL.handleAlice(alReq("POST", { person: "Josh", text: "my key is shpat_abcdef123456" }), ctx, "", alClock)).status, 400, "keys are refused");
+  const a = await AL.handleAlice(alReq("POST", { person: "Shana", text: "What sells best?", private: true, history: [{ from: "alice", text: "Hi" }, { from: "x", text: "Hello" }] }), ctx, "", alClock);
+  assert.equal(a.status, 201);
+  const id = a.body.id;
+  assert.deepEqual((await AL.handleAlice(alReq("GET", null, { id }), ctx, "", alClock)).body, { status: "waiting" });
+  const n1 = await AL.handleAlice(alReq("GET"), ctx, "next", alClock);
+  assert.equal(n1.body.question.id, id);
+  assert.equal(n1.body.question.private, true);
+  assert.deepEqual(n1.body.question.history.map((h) => h.from), ["alice", "person"]);
+  assert.equal((await AL.handleAlice(alReq("GET"), ctx, "next", alClock)).body.question, null, "a claimed question isn't handed out twice");
+  aliceNow += AL.CLAIM_MS + 1000;
+  assert.equal((await AL.handleAlice(alReq("GET"), ctx, "next", alClock)).body.question.id, id, "a runner that died gives it back after the claim runs out");
+  assert.equal((await AL.handleAlice(alReq("POST", { id, text: "Rainbow Row tees." }), ctx, "answer", alClock)).status, 201);
+  assert.equal((await AL.handleAlice(alReq("GET"), ctx, "next", alClock)).body.question, null, "answered questions aren't handed out");
+  const got = await AL.handleAlice(alReq("GET", null, { id }), ctx, "", alClock);
+  assert.deepEqual([got.body.status, got.body.answer.text], ["answered", "Rainbow Row tees."]);
+  assert.equal(bucket.m.size, 0, "question, answer and claim are gone once read");
+  assert.equal((await AL.handleAlice(alReq("GET", null, { id }), ctx, "", alClock)).status, 404);
+  assert.equal((await AL.handleAlice(alReq("POST", { id, text: "late" }), ctx, "answer", alClock)).status, 404);
+});
+
+test("alice mailbox: oldest question first, stale ones dropped, and the runner's prompt keeps the rules", async () => {
+  const bucket = aliceR2(), ctx = { env: envOf(), bucket };
+  const first = (await AL.handleAlice(alReq("POST", { person: "Aaron", text: "old" }), ctx, "", alClock)).body.id;
+  aliceNow += AL.KEEP_MS + 1000;
+  const second = (await AL.handleAlice(alReq("POST", { person: "Josh", text: "new one" }), ctx, "", alClock)).body.id;
+  const third = (await AL.handleAlice(alReq("POST", { person: "Shana", text: "newest" }), ctx, "", () => new Date(aliceNow + 5))).body.id;
+  const n = await AL.handleAlice(alReq("GET"), ctx, "next", alClock);
+  assert.equal(n.body.question.id, second);
+  assert.ok(![...bucket.m.keys()].some((k) => k.includes(first)), "the 3-day-old question was dropped");
+  assert.ok([...bucket.m.keys()].some((k) => k.includes(third)));
+  const MB = await import("./alice-mailbox.mjs");
+  const msgs = MB.messagesFor({ person: "Josh", text: "Price for the tee?", private: true, history: [{ from: "alice", text: "Hey Josh" }] });
+  assert.equal(msgs[0].role, "system");
+  assert.match(msgs[0].content, /Never invent prices/);
+  assert.match(msgs[0].content, /private question/);
+  assert.deepEqual(msgs.slice(1).map((x) => x.role), ["assistant", "user"]);
+  assert.equal(msgs.at(-1).content, "Josh: Price for the tee?");
+  const lm = (body) => async () => ({ ok: true, json: async () => body });
+  assert.equal(await MB.loadedModel("x", lm({ data: [{ id: "big", state: "not-loaded" }, { id: "qwen-4b", state: "loaded", type: "llm" }] })), "qwen-4b");
+  assert.equal(await MB.loadedModel("x", lm({ data: [{ id: "big", state: "not-loaded" }] })), null, "never picks a model that would have to load");
+});
+
+test("worker: /api/alice is routed with the RESULTS bucket and needs the key", async () => {
+  const env = workerEnv({ RESULTS: aliceR2() });
+  assert.equal((await W.handleRequest(wreq("/api/alice/next"), env)).status, 401);
+  const r = await W.handleRequest(wreq("/api/alice/next", { headers: KEYH }), env);
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { question: null });
+});
+
+test("drive-server: the data folder is the Claude app's private copy when that exists, else the usual one", async () => {
+  const { dataDir } = await import("../drive-server/config.mjs");
+  const path = await import("node:path");
+  const env = { LOCALAPPDATA: "C:/L" };
+  const priv = path.join("C:/L", "Packages", "Claude_abc", "LocalCache", "Local", "design-library");
+  assert.equal(dataDir(env, (d) => d === priv, () => ["Microsoft.Foo", "Claude_abc"]), priv);
+  assert.equal(dataDir(env, () => false, () => ["Claude_abc"]), path.join("C:/L", "design-library"));
+  assert.equal(dataDir(env, () => true, () => { throw new Error("no folder"); }), path.join("C:/L", "design-library"));
+  assert.equal(dataDir({ ...env, DRIVE_DATA: "D:/x" }, () => true, () => ["Claude_abc"]), "D:/x");
 });

@@ -114,7 +114,7 @@ export function check(jobId, jobText, input, out) {
     const flat = (t) => String(t ?? "").replace(/\s+/g, " ");
     if (input.numbers && !flat(out.brief).includes(flat(input.numbers))) bad.push(`the brief must contain this sentence word for word: "${input.numbers}"`);
     const shop = input.digest?.shop ?? {};
-    for (const [field, words] of [["sessions", "sessions|visits|visitors|traffic"], ["orders", "orders"], ["sales", "sales"]]) {
+    for (const [field, words] of [["sessions", "sessions|visits|visitors|traffic|activity"], ["orders", "orders"], ["sales", "sales"]]) {
       if (shop[field] > 0 && new RegExp(`\\b(?:no|zero|0)\\s+(?:${words})\\b`, "i").test(`${out.brief} ${[].concat(out.needsYou ?? []).join(" ")} ${out.notes ?? ""}`)) bad.push(`the input has ${shop[field]} ${field}, so do not say there were none`);
     }
     if (Array.isArray(input.needsYou) && JSON.stringify(out.needsYou) !== JSON.stringify(input.needsYou)) bad.push("needsYou must be the input's needsYou list, unchanged");
@@ -145,7 +145,7 @@ export function buildMessages(jobText, input, problems, lastAnswer) {
 
 const freePort = () => new Promise((res, rej) => { const s = net.createServer(); s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => res(p)); }); s.on("error", rej); });
 
-async function withForward(engine, fn) {
+export async function withForward(engine, fn) {
   const local = await freePort();
   const ssh = spawn("ssh", ["-N", "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes", "-o", "ConnectTimeout=10", "-L", `${local}:127.0.0.1:${engine.port}`, engine.ssh], { stdio: "ignore" });
   try {
@@ -168,6 +168,15 @@ async function ask(base, engine, messages) {
   return (await r.json()).choices?.[0]?.message?.content ?? "";
 }
 
+// The order engines are tried in: the job's engine, then each fallback once. The two local engines point at each
+// other, so the walk stops when it comes back round, and a job no local engine could do ends at claude.
+export function engineChain(start, fallback, engines) {
+  const chain = [];
+  for (let n = start; n && !chain.includes(n); n = fallback[n]) chain.push(n);
+  if (engines.claude && !chain.includes("claude")) chain.push("claude");
+  return chain;
+}
+
 export async function runJob(jobId, input, { engineName, log = () => {} } = {}) {
   const { jobs } = JSON.parse(fs.readFileSync(path.join(DIR, "jobs.json"), "utf8"));
   const { engines, fallback } = JSON.parse(fs.readFileSync(path.join(DIR, "engines.json"), "utf8"));
@@ -175,7 +184,7 @@ export async function runJob(jobId, input, { engineName, log = () => {} } = {}) 
   if (!job) throw new Error(`no job "${jobId}" in jobs.json`);
   const jobText = fs.readFileSync(path.join(DIR, job.file), "utf8");
   const tries = [];
-  for (let name = engineName ?? job.engine; name; name = fallback[name]) {
+  for (const name of engineChain(engineName ?? job.engine, fallback, engines)) {
     const engine = engines[name];
     if (!engine) throw new Error(`no engine "${name}" in engines.json`);
     if (engine.manual) return { ok: false, engine: name, needsClaude: true, tries };
@@ -190,6 +199,7 @@ export async function runJob(jobId, input, { engineName, log = () => {} } = {}) 
       const t = { engine: name, model: engine.model, attempt, seconds: +((Date.now() - t0) / 1000).toFixed(1), problems, raw };
       tries.push(t); log(`${name} try ${attempt}: ${t.seconds}s ${problems.length ? "REJECTED: " + problems.join("; ") : "passed"}`);
       if (!problems.length) return { ok: true, engine: name, output: out, tries };
+      if (/^cannot reach /.test(problems[0])) break; // that PC is off or asleep: go straight to the next engine
     }
   }
   return { ok: false, tries };

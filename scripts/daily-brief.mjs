@@ -8,6 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 import { readKey } from "../drive-server/key.mjs";
 import { runJob, saveRun, BRAND } from "./run-ai-job.mjs";
 
@@ -62,6 +63,23 @@ export function briefInput(store, digest, yesterday) {
 }
 
 // One handoff for the board from a run's result. The board keeps fields short, so a long brief ends on a whole sentence.
+// What the local agents should know about this run, for the team notes board on the Blink (agents/team-notes).
+// Nothing is posted for a normal run: only when the first PC could not do it, or when no local PC could.
+export function teamNoteFor(store, result) {
+  const brand = BRAND[store] ?? store;
+  const who = { "local-big": "the Blink", "local-small": "the GMKtec" };
+  const first = result.tries?.[0]?.engine;
+  if (!result.ok) return `Daily brief for ${brand}: no local PC could write it today, so it is waiting for Claude.`;
+  if (first && first !== result.engine) return `Daily brief for ${brand}: ${who[first] ?? first} did not answer or failed its checks, so ${who[result.engine] ?? result.engine} wrote it. Check ${who[first] ?? first}.`;
+  return null;
+}
+
+// Posts one note to the board. The text goes on standard input; a Blink that is off just means no note.
+export function postTeamNote(text, run = spawnSync) {
+  const r = run("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "aaronlewis@100.70.128.45", "python3 ~/team-notes/post_note.py job nuc"], { input: text, encoding: "utf8", timeout: 30000 });
+  return /posted|skipped/.test(String(r.stdout ?? ""));
+}
+
 export function handoffFor(store, date, result) {
   const fit = (t, max) => { t = String(t).replace(/\s+/g, " ").trim(); if (t.length <= max) return t; const c = t.slice(0, max); const stop = c.lastIndexOf(". "); return stop > 80 ? c.slice(0, stop + 1) : c.slice(0, c.lastIndexOf(" ")); };
   const base = { lane: "console", store, task: `Daily brief ${date} (local model)` };
@@ -102,6 +120,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     if (!args.includes("--no-handoff")) {
       const r = await fetch(ENGINE + "/api/handoffs", { method: "POST", headers: { "content-type": "application/json", "x-console-key": key }, body: JSON.stringify(handoffFor(store, digest.date, result)) });
       if (!r.ok) { console.error(`${store}: the handoff was refused (${r.status}): ${(await r.text()).slice(0, 200)}`); failed++; }
+      const note = teamNoteFor(store, result);
+      if (note && !postTeamNote(note)) console.error(`${store}: the team note could not be posted.`);
     }
   }
   process.exit(failed ? 2 : 0);
