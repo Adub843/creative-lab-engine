@@ -69,9 +69,13 @@ SMALLTALK_RE = re.compile(
 
 def needs_web(message):
     m = message or ""
-    if PRIVATE_RE.search(m) or ABOUT_HIM_RE.search(m) or SMALLTALK_RE.search(m) or len(m.split()) < 3:
+    if PRIVATE_RE.search(m) or ABOUT_HIM_RE.search(m):
         return False
-    return bool(LOOKUP_RE.search(m) or QUESTION_RE.search(m))
+    # "hey how are you doing today, can you find ..." is a greeting AND a real question: judge what is left after the greeting.
+    rest = SMALLTALK_RE.sub(" ", m)
+    if len(rest.split()) < 3:
+        return False
+    return bool(LOOKUP_RE.search(rest) or QUESTION_RE.search(rest))
 
 
 HOME_CITY = "Charleston, SC"   # the city only, which is already public on both stores
