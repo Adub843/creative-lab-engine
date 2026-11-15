@@ -107,8 +107,16 @@ export function check(jobId, jobText, input, out) {
     const words = String(out.brief ?? "").trim().split(/\s+/).filter(Boolean).length;
     if (words < 15 || words >= 120) bad.push(`brief must be under 120 words of plain text (is ${words})`);
     if (!Array.isArray(out.needsYou)) bad.push("needsYou must be a list of short sentences (an empty list if nothing)");
-    const day = input.digest?.siteCheck?.date;
+    const day = input.date ?? input.digest?.siteCheck?.date;
     if (day ? out.date !== day : !/^\d{4}-\d{2}-\d{2}$/.test(out.date ?? "")) bad.push(`date must be ${day ?? "YYYY-MM-DD, the digest's date"}`);
+    const flat = (t) => String(t ?? "").replace(/\s+/g, " ");
+    if (input.numbers && !flat(out.brief).includes(flat(input.numbers))) bad.push(`the brief must contain this sentence word for word: "${input.numbers}"`);
+    const shop = input.digest?.shop ?? {};
+    for (const [field, words] of [["sessions", "sessions|visits|visitors|traffic"], ["orders", "orders"], ["sales", "sales"]]) {
+      if (shop[field] > 0 && new RegExp(`\\b(?:no|zero|0)\\s+(?:${words})\\b`, "i").test(`${out.brief} ${[].concat(out.needsYou ?? []).join(" ")} ${out.notes ?? ""}`)) bad.push(`the input has ${shop[field]} ${field}, so do not say there were none`);
+    }
+    const sc = input.digest?.siteCheck;
+    if (sc && sc.today === false && sc.date && !flat(out.brief).includes(sc.date)) bad.push(`the site check is an older one: say in the brief that it is from ${sc.date}`);
     // Every number in the brief has to be in the input (or be a plain difference of two input numbers).
     const nums = (t) => (String(t).replace(/,(?=\d{3})/g, "").match(/\d+(?:\.\d+)?/g) ?? []).map(Number);
     const have = nums(JSON.stringify(input));
@@ -122,7 +130,7 @@ export function check(jobId, jobText, input, out) {
 export function buildMessages(jobText, input, problems, lastAnswer) {
   const system = `You run one job for a small business. Follow the instructions and hard rules exactly.\n\n## Instructions\n${section(jobText, "Instructions")}\n\n## Output\n${section(jobText, "Output")}\n\n## Hard rules\n${section(jobText, "Hard rules")}`;
   const brand = BRAND[input.store];
-  const user = `${brand ? `The brand name for store "${input.store}" is "${brand}"; use that name in text people read, but keep "store": "${input.store}" exactly. ` : ""}Write the SEO description as 26 to 30 words in two or three sentences. Input JSON:\n${JSON.stringify(input, null, 2)}\n\nThe dates and numbers shown in the Output shape are placeholders: take every date and number from the input. \"notes\" is one text string. Answer with one JSON object only, in the Output shape. No other text.`;
+  const user = `${brand ? `The brand name for store "${input.store}" is "${brand}"; use that name in text people read, but keep "store": "${input.store}" exactly. ` : ""}${/listing-copy/.test(jobText.slice(0, 40)) ? "Write the SEO description as 26 to 30 words in two or three sentences. " : ""}Input JSON:\n${JSON.stringify(input, null, 2)}\n\nThe dates and numbers shown in the Output shape are placeholders: take every date and number from the input. \"notes\" is one text string. Answer with one JSON object only, in the Output shape. No other text.`;
   const messages = [{ role: "system", content: system }, { role: "user", content: user }];
   if (problems?.length) {
     if (lastAnswer) messages.push({ role: "assistant", content: lastAnswer });
@@ -183,7 +191,7 @@ export async function runJob(jobId, input, { engineName, log = () => {} } = {}) 
   return { ok: false, tries };
 }
 
-function saveRun(jobId, input, result) {
+export function saveRun(jobId, input, result) {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   fs.mkdirSync(path.join(RUNS, "needs-claude"), { recursive: true });
   fs.writeFileSync(path.join(RUNS, `${stamp} ${jobId}.json`), JSON.stringify({ job: jobId, at: new Date().toISOString(), input, ...result }, null, 2));

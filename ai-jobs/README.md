@@ -50,3 +50,19 @@ that every file has all six sections.
 - Ads: $2 a day per campaign at most.
 - Never spend money, publish, or message a customer without Aaron's typed approval. Jobs recommend; they don't act.
 - No secrets in any input, output or file.
+
+## The daily brief on a schedule (local model)
+`scripts/daily-brief.mjs` reads the engine's live digest (`GET /api/digest`, and yesterday's), builds the
+daily-brief input for each brand on its own, runs the job on the local model with the runner's checks and
+fallbacks, saves the result in `ai-jobs/runs/daily-brief/<store>/<date>.json` and `latest.json`, and writes one
+handoff per brand to the board (lane `console`). A day that is already done is skipped (`--force` runs it again;
+`--no-handoff` and `--store c3d|ed` are for testing).
+
+- Code writes the numbers sentence (visits, orders, sales, change from yesterday) and the model must copy it word
+  for word, because a small model miscounts. Code also rejects "no visits/orders/sales" when the digest has some,
+  and a brief that does not say an older site check is old.
+- The console key is the one `drive-server/setup.ps1` stored. It is only sent to the engine as a header.
+- `scripts/schedule-daily-brief.ps1` registers the Windows task "Creative Lab daily brief" (7:50 AM daily, as the
+  signed-in user). If the key was saved from inside the Claude desktop app, the key file is in that app's private
+  copy of `AppData\Local`; the script finds it and points the task there (`DRIVE_DATA`).
+- When the job, a rule or a check changes, change `daily-brief.md`, the example input and the tests the same day.

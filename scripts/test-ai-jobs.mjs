@@ -121,7 +121,7 @@ test("runner: review-summary only passes quotes that are word for word from the 
 const DB = fs.readFileSync(path.join(DIR, "daily-brief.md"), "utf8");
 const DB_IN = JSON.parse(fs.readFileSync(path.join(DIR, "examples/daily-brief.c3d.input.json"), "utf8"));
 const DB_GOOD = { store: "c3d", date: "2026-11-14", needsYou: ["Pause the Hype chains Facebook ad."],
-  brief: "One ad should be paused today and one product page is missing its description. Over 7 days the shop had 412 visits, 5 orders and $96.45 in sales, up 24 visits and 1 order from yesterday. The automatic fixes made 3 changes and undid 1.", notes: "" };
+  brief: "One ad should be paused today and one product page is missing its description. Over the last 7 days the shop had 412 visits, 5 orders and $96.45 in sales. Visits are up 24 from yesterday's count of 388. The automatic fixes made 3 changes and undid 1.", notes: "" };
 
 test("runner: daily-brief rejects numbers that are not in the digest, and long briefs", () => {
   assert.deepEqual(R.check("daily-brief", DB, DB_IN, DB_GOOD), []);
@@ -130,6 +130,25 @@ test("runner: daily-brief rejects numbers that are not in the digest, and long b
   assert.match(bad({ brief: "word ".repeat(130) }), /under 120 words/);
   assert.match(bad({ needsYou: "Pause the ad" }), /needsYou must be a list/);
   assert.match(bad({ date: "2026-11-08" }), /date must be 2026-11-14/);
+  assert.match(bad({ brief: DB_GOOD.brief.replace("412 visits", "412 sessions") }), /word for word/);
+  assert.match(bad({ notes: "There were no orders this week" }), /do not say there were none/);
+  const old = { ...DB_IN, digest: { ...DB_IN.digest, siteCheck: { ...DB_IN.digest.siteCheck, date: "2026-11-12", today: false } } };
+  assert.match(R.check("daily-brief", DB, old, DB_GOOD).join("; "), /older one.*2026-11-12/);
+});
+
+test("daily brief run: the input, numbers sentence and handoff are built by code", async () => {
+  const D = await import("./daily-brief.mjs");
+  assert.equal(D.numbersLine({ days: 7, sessions: 55, orders: 0, sales: 0 }, { sessions: 66 }), "Over the last 7 days the shop had 55 visits, 0 orders and $0.00 in sales. Visits are down 11 from yesterday's count of 66.");
+  assert.equal(D.numbersLine({ days: 7, sessions: 1250, orders: 3, sales: 1096.5 }, null), "Over the last 7 days the shop had 1,250 visits, 3 orders and $1,096.50 in sales.");
+  const digest = { date: "2026-11-14", stores: { c3d: { name: "Charleston 3D", shop: { days: 7, sessions: 55, orders: 0, sales: 0 }, ranks: { avgPosition: null } }, ed: { name: "Elevated Designs", shop: { days: 7, sessions: 98, orders: 0, sales: 0 }, pricing: { phase: "idle", report: { changed: 0, variants: 48095 }, applied: "1410" } } } };
+  const c3d = D.briefInput("c3d", digest, { date: "2026-11-13", stores: { c3d: { shop: { sessions: 66 } } } });
+  assert.equal(c3d.date, "2026-11-14"); assert.match(c3d.numbers, /down 11/); assert.equal("avgPosition" in c3d.digest.ranks, false);
+  assert.doesNotMatch(JSON.stringify(c3d), /Elevated|98/, "one brand per input");
+  const ed = D.briefInput("ed", digest, null);
+  assert.equal(ed.yesterday, null); assert.deepEqual(ed.digest.pricing, { phase: "idle", changed: 0 });
+  const h = D.handoffFor("c3d", "2026-11-14", { ok: true, engine: "local-small", output: { brief: "Short brief. ".repeat(60), needsYou: ["Fix the IndexNow key."] } });
+  assert.equal(h.lane, "console"); assert.equal(h.store, "c3d"); assert.ok(h.did.length <= 400 && h.did.endsWith(".")); assert.equal(h.needsAaron, "Fix the IndexNow key.");
+  assert.equal(D.handoffFor("ed", "2026-11-14", { ok: false, tries: [] }).status, "partial");
 });
 
 test("every job on a local engine has an example input and its own checks", () => {
