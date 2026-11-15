@@ -1,0 +1,9 @@
+[Unit]
+Description=Hourly Lab database copies
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target

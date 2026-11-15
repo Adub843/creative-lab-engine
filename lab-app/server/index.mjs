@@ -8,7 +8,8 @@ import { join, resolve, extname, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Store, allowed } from "./db.mjs";
 import { Auth, SESSION_DAYS } from "./auth.mjs";
-import { Assets, ID } from "./assets.mjs";
+import { Assets, ID, sendRanged } from "./assets.mjs";
+import { realpathSync, readdirSync } from "node:fs";
 import { makeAI } from "./ai.mjs";
 import { Runner } from "./runner.mjs";
 import { makeConnectors } from "./connectors.mjs";
@@ -21,6 +22,9 @@ const MIME = {
   ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".ico": "image/x-icon",
   ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".wasm": "application/wasm", ".txt": "text/plain; charset=utf-8",
   ".webmanifest": "application/manifest+json", ".map": "application/json", ".glb": "model/gltf-binary", ".stl": "model/stl",
+  ".3mf": "model/3mf", ".obj": "model/obj", ".step": "application/step", ".stp": "application/step", ".mp4": "video/mp4", ".webm": "video/webm",
+  ".mov": "video/quicktime", ".mkv": "video/x-matroska", ".mp3": "audio/mpeg", ".wav": "audio/wav", ".pdf": "application/pdf", ".psd": "image/vnd.adobe.photoshop",
+  ".ai": "application/postscript", ".eps": "application/postscript", ".zip": "application/zip", ".avif": "image/avif", ".tif": "image/tiff", ".tiff": "image/tiff",
 };
 // the rules the Lab artifact declared on claude.ai
 export const LAB_RULES = [
@@ -30,7 +34,7 @@ export const LAB_RULES = [
   { path: "data/users/{self}", write: "interact" },
 ];
 
-export function loadConfig(file = process.env.LAB_CONFIG || resolve(HERE, "../lab.config.json")) {
+export function loadConfig(file = process.env.LAB_CONFIG || (existsSync("/etc/lab/lab.config.json") ? "/etc/lab/lab.config.json" : resolve(HERE, "../lab.config.json"))) {
   return withDefaults(existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {});
 }
 export function withDefaults(cfg) {
@@ -146,6 +150,21 @@ export function makeServer(cfg) {
     if (path === "/sw.js") { res.setHeader("service-worker-allowed", "/"); return serveFile(req, res, WEB, "/sw.js"); }
     if (path === "/_lab/health") return send(res, 200, { ok: true });
 
+    // Agents use a bearer key, not a cookie, so a web page elsewhere can't borrow them: no origin check needed.
+    /* ---- agents (Stacy's runner through lab-mcp.mjs, Alice's scripts): bearer key, only their scopes ---- */
+    if (path.startsWith("/_lab/api/")) {
+      const a = agentOf(req);
+      if (!a) return send(res, 401, { error: { code: "bad_key", message: "A Lab agent key is needed." } });
+      const scope = path.slice(10).split("/")[0];
+      if (!a.scopes.includes(scope) && !a.scopes.includes("*")) return send(res, 403, { error: { code: "no_scope", message: `This key can't use ${scope}.` } });
+      try {
+        if (scope === "db") return send(res, 200, dbOp(a, await body(req)));
+        if (scope === "assets" && req.method === "PUT") return send(res, 200, await assets.put(req, { type: req.headers["content-type"], by: a.agent, name: url.searchParams.get("name") }));
+        if (scope === "assets") return send(res, 200, assets.list());
+        return send(res, 404, { error: { code: "not_found", message: "no such API" } });
+      } catch (e) { return fail(res, e); }
+    }
+
     if (!sameOrigin(req)) return send(res, 403, { error: { code: "bad_origin", message: "This request didn't come from the Lab." } });
 
     /* ---- sign-in ---- */
@@ -187,24 +206,10 @@ export function makeServer(cfg) {
       } catch (e) { return fail(res, e); }
     }
 
-    /* ---- agents (Stacy's runner through lab-mcp.mjs, Alice's scripts): bearer key, only their scopes ---- */
-    if (path.startsWith("/_lab/api/")) {
-      const a = agentOf(req);
-      if (!a) return send(res, 401, { error: { code: "bad_key", message: "A Lab agent key is needed." } });
-      const scope = path.slice(10).split("/")[0];
-      if (!a.scopes.includes(scope) && !a.scopes.includes("*")) return send(res, 403, { error: { code: "no_scope", message: `This key can't use ${scope}.` } });
-      try {
-        if (scope === "db") return send(res, 200, dbOp(a, await body(req)));
-        if (scope === "assets" && req.method === "PUT") return send(res, 200, await assets.put(req, { type: req.headers["content-type"], by: a.agent, name: url.searchParams.get("name") }));
-        if (scope === "assets") return send(res, 200, assets.list());
-        return send(res, 404, { error: { code: "not_found", message: "no such API" } });
-      } catch (e) { return fail(res, e); }
-    }
-
     /* ---- everything below needs a signed-in person ---- */
     const who = whoOf(req);
     if (!who) {
-      if (path.startsWith("/_lab/") || path.startsWith("/_blob/")) return send(res, 401, { error: { code: "signed_out", message: "Signed out." } });
+      if (path.startsWith("/_lab/") || path.startsWith("/_blob/") || path.startsWith("/_lib/")) return send(res, 401, { error: { code: "signed_out", message: "Signed out." } });
       res.writeHead(302, { location: "/_lab/login?next=" + encodeURIComponent(path + url.search), "cache-control": "no-store" });
       return res.end();
     }
@@ -221,6 +226,30 @@ export function makeServer(cfg) {
         const ping = setInterval(() => res.write(": ping\n\n"), 25000);
         req.on("close", () => { clearInterval(ping); clients.delete(c); });
         return;
+      }
+      // Big libraries: folders on the NAS (videos, 3D models, the full-size E: drive art), read-only.
+      // GET /_lab/lib lists them; /_lab/lib/<name>/<folder> lists a folder; /_lib/<name>/<file> sends a file.
+      if (path === "/_lab/lib") return send(res, 200, { libraries: (cfg.libraries || []).map(l => ({ name: l.name, label: l.label || l.name })) });
+      if (path.startsWith("/_lab/lib/") || path.startsWith("/_lib/")) {
+        const listing = path.startsWith("/_lab/lib/");
+        const rest = decodeURIComponent(path.slice(listing ? 10 : 6)); const name = rest.split("/")[0];
+        const lib = (cfg.libraries || []).find(l => l.name === name);
+        if (!lib) return send(res, 404, { error: { code: "not_found", message: "no such library" } });
+        const root = realpathSync(lib.dir); let target;
+        try { target = realpathSync(resolve(root, "." + rest.slice(name.length))); } catch { return send(res, 404, { error: { code: "not_found", message: "not found" } }); }
+        if (target !== root && !target.startsWith(root + "/")) return send(res, 404, { error: { code: "not_found", message: "not found" } });
+        const st = statSync(target);
+        if (listing) {
+          if (!st.isDirectory()) return send(res, 400, { error: { code: "invalid_argument", message: "not a folder" } });
+          const items = readdirSync(target, { withFileTypes: true }).filter(e => !e.name.startsWith(".")).slice(0, 5000).map(e => {
+            const full = join(target, e.name); let size = 0, mtime = 0; try { const s2 = statSync(full); size = s2.size; mtime = s2.mtimeMs; } catch {}
+            const rel = full.slice(root.length);
+            return { name: e.name, folder: e.isDirectory(), size, modified: new Date(mtime).toISOString(), url: e.isDirectory() ? null : "/_lib/" + name + rel.split("/").map(encodeURIComponent).join("/") };
+          });
+          return send(res, 200, { library: name, path: target.slice(root.length) || "/", items });
+        }
+        if (!st.isFile()) return send(res, 404, { error: { code: "not_found", message: "not found" } });
+        return sendRanged(target, MIME[extname(target).toLowerCase()] || "application/octet-stream", req, res);
       }
       if (path === "/_lab/user") return send(res, 200, { me: { ...who.person }, people: auth.people() });
 

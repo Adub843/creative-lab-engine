@@ -58,25 +58,28 @@ export class Assets {
   serve(id, req, res) {
     const m = this.meta(id);
     if (!m || !existsSync(this.file(id))) { res.writeHead(404, { "content-type": "text/plain" }); return res.end("not found"); }
-    const size = statSync(this.file(id)).size;
-    const headers = {
-      "content-type": m.type, "accept-ranges": "bytes", "cache-control": "private, max-age=31536000, immutable",
-      "x-content-type-options": "nosniff",
-      // an uploaded SVG or HTML file can never run script in the Lab's origin
-      "content-security-policy": "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; media-src 'self'; sandbox",
-    };
-    if (/^(text\/html|image\/svg\+xml)$/.test(m.type) && req.headers["sec-fetch-dest"] === "document") headers["content-disposition"] = "attachment";
-    const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || "");
-    if (range && (range[1] || range[2])) {
-      let start = range[1] ? +range[1] : Math.max(0, size - +range[2]);
-      let end = range[1] && range[2] ? Math.min(+range[2], size - 1) : size - 1;
-      if (start >= size || start > end) { res.writeHead(416, { "content-range": `bytes */${size}` }); return res.end(); }
-      res.writeHead(206, { ...headers, "content-range": `bytes ${start}-${end}/${size}`, "content-length": end - start + 1 });
-      if (req.method === "HEAD") return res.end();
-      return createReadStream(this.file(id), { start, end }).pipe(res);
-    }
-    res.writeHead(200, { ...headers, "content-length": size });
-    if (req.method === "HEAD") return res.end();
-    createReadStream(this.file(id)).pipe(res);
+    sendRanged(this.file(id), m.type, req, res, "private, max-age=31536000, immutable");
   }
+}
+
+// Sends a file with Range support and headers that stop an uploaded SVG or HTML file running script in the Lab.
+export function sendRanged(file, type, req, res, cache = "private, no-cache") {
+  const size = statSync(file).size;
+  const headers = {
+    "content-type": type, "accept-ranges": "bytes", "cache-control": cache, "x-content-type-options": "nosniff",
+    "content-security-policy": "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; media-src 'self'; sandbox",
+  };
+  if (/^(text\/html|image\/svg\+xml)$/.test(type) && req.headers["sec-fetch-dest"] === "document") headers["content-disposition"] = "attachment";
+  const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || "");
+  if (range && (range[1] || range[2])) {
+    const start = range[1] ? +range[1] : Math.max(0, size - +range[2]);
+    const end = range[1] && range[2] ? Math.min(+range[2], size - 1) : size - 1;
+    if (start >= size || start > end) { res.writeHead(416, { "content-range": `bytes */${size}` }); return res.end(); }
+    res.writeHead(206, { ...headers, "content-range": `bytes ${start}-${end}/${size}`, "content-length": end - start + 1 });
+    if (req.method === "HEAD") return res.end();
+    return createReadStream(file, { start, end }).pipe(res);
+  }
+  res.writeHead(200, { ...headers, "content-length": size });
+  if (req.method === "HEAD") return res.end();
+  createReadStream(file).pipe(res);
 }

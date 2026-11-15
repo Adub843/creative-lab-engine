@@ -1,0 +1,12 @@
+[Unit]
+Description=Lab database copies to the NAS
+RequiresMountsFor=/mnt/nas
+
+[Service]
+Type=oneshot
+User=lab
+WorkingDirectory=/srv/lab/app/lab-app
+EnvironmentFile=/etc/lab/lab.env
+ExecStart=/usr/bin/node server/admin.mjs backup /mnt/nas/lab-backups/db
+# keep 14 days of hourly copies
+ExecStartPost=/usr/bin/find /mnt/nas/lab-backups/db -name "*.db" -mtime +14 -delete

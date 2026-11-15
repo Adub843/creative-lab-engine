@@ -15,7 +15,9 @@ before(async () => {
   writeFileSync(join(dir, "site/js/boot.js"), "window.booted=1");
   const cfg = { port: 0, host: "127.0.0.1", origin: "http://localhost:1", dataDir: join(dir, "data"), labDir: join(dir, "site"),
     people: [{ id: "aaron", name: "Aaron", level: "owner" }, { id: "shana", name: "Shana", level: "interact" }],
-    cloudflare: { accountId: "acc1", queueId: "q1" } };
+    cloudflare: { accountId: "acc1", queueId: "q1" }, libraries: [{ name: "video", dir: join(dir, "nas-video") }] };
+  mkdirSync(join(dir, "nas-video/YouTube"), { recursive: true }); writeFileSync(join(dir, "nas-video/YouTube/clip one.mp4"), Buffer.alloc(5000, 7));
+  writeFileSync(join(dir, "secret.txt"), "outside");
   srv = makeServer(cfg);
   await new Promise(r => srv.server.listen(0, "127.0.0.1", r));
   base = `http://127.0.0.1:${srv.server.address().port}`;
@@ -165,4 +167,56 @@ test("cron: Eastern-time schedules and next run", () => {
   assert.ok(parseCron("0 9 * * 1-5").matches(new Date("2026-11-16T09:00:00Z"))); // Monday
   assert.ok(!parseCron("0 9 * * 1-5").matches(new Date("2026-11-15T09:00:00Z"))); // Sunday
   assert.throws(() => parseCron("bad"));
+});
+
+test("admin import: an ArtifactData export folder, with claude.ai ids swapped for the Lab's", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const dir = mkdtempSync(join(tmpdir(), "labimp-"));
+  mkdirSync(join(dir, "export/rules"), { recursive: true }); mkdirSync(join(dir, "export/data/users/u_abc"), { recursive: true });
+  writeFileSync(join(dir, "export/rules/global.json"), JSON.stringify({ note: "hi", by: "u_abc" }));
+  writeFileSync(join(dir, "export/data/users/u_abc/pin.json"), JSON.stringify({ names: {} }));
+  writeFileSync(join(dir, "lab.config.json"), JSON.stringify({ dataDir: join(dir, "data") }));
+  const out = execFileSync(process.execPath, ["server/admin.mjs", "import-db", join(dir, "export"), "u_abc=aaron"], { env: { ...process.env, LAB_CONFIG: join(dir, "lab.config.json") }, stderr: "ignore" }).toString();
+  assert.match(out, /2 documents imported/);
+  const { Store } = await import("../server/db.mjs");
+  const st = new Store(join(dir, "data/lab.db"), []);
+  assert.deepEqual(st.get({ id: "aaron", level: "owner" }, "rules/global").data, { note: "hi", by: "aaron" });
+  assert.equal(st.get({ id: "aaron", level: "owner" }, "data/users/aaron/pin").exists, true);
+  st.close();
+});
+
+test("Stacy's lab tools (lab-mcp) read and write the Lab with an agent key", async t => {
+  const { spawn } = await import("node:child_process");
+  const key = srv.auth.newAgentKey("stacy", "aaron", ["db", "assets"]);
+  const p = spawn(process.execPath, ["server/lab-mcp.mjs"], { env: { ...process.env, LAB_URL: base, LAB_AGENT_KEY: key } });
+  t.after(() => p.kill());
+  const replies = []; let buf = "";
+  p.stdout.on("data", d => { buf += d; let i; while ((i = buf.indexOf("\n")) >= 0) { replies.push(JSON.parse(buf.slice(0, i))); buf = buf.slice(i + 1); } });
+  const send = m => p.stdin.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\n");
+  const wait = id => new Promise((r, no) => { setTimeout(() => no(new Error("no reply " + id)), 5000); const t = setInterval(() => { const x = replies.find(y => y.id === id); if (x) { clearInterval(t); r(x); } }, 10); });
+  send({ id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } });
+  assert.equal((await wait(1)).result.serverInfo.name, "lab");
+  send({ id: 2, method: "tools/list" });
+  assert.deepEqual((await wait(2)).result.tools.map(t => t.name), ["get", "list", "set", "update", "delete", "upload_file"]);
+  send({ id: 3, method: "tools/call", params: { name: "set", arguments: { path: "brief/todo", data: { items: ["a"] } } } });
+  await wait(3);
+  send({ id: 4, method: "tools/call", params: { name: "get", arguments: { path: "brief/todo" } } });
+  assert.deepEqual(JSON.parse((await wait(4)).result.content[0].text).data, { items: ["a"] });
+  send({ id: 5, method: "tools/call", params: { name: "list", arguments: { collection: "brief" } } });
+  assert.equal(JSON.parse((await wait(5)).result.content[0].text).docs.length, 1);
+  p.kill();
+});
+
+test("big libraries: list NAS folders and stream files, never outside the folder", async () => {
+  assert.deepEqual((await req("/_lab/lib", { who: S }).then(r => r.json())).libraries, [{ name: "video", label: "video" }]);
+  const top = await req("/_lab/lib/video", { who: S }).then(r => r.json());
+  assert.deepEqual(top.items.map(i => [i.name, i.folder]), [["YouTube", true]]);
+  const yt = await req("/_lab/lib/video/YouTube", { who: S }).then(r => r.json());
+  assert.equal(yt.items[0].url, "/_lib/video/YouTube/clip%20one.mp4");
+  const part = await req(yt.items[0].url, { who: S, headers: { range: "bytes=0-99" } });
+  assert.equal(part.status, 206); assert.equal(part.headers.get("content-type"), "video/mp4"); assert.equal((await part.arrayBuffer()).byteLength, 100);
+  assert.equal((await req("/_lib/video/../secret.txt", { who: A })).status, 404);
+  assert.equal((await req("/_lib/video/%2e%2e/secret.txt", { who: A })).status, 404);
+  assert.equal((await req("/_lab/lib/nope", { who: A })).status, 404);
+  assert.equal((await req(yt.items[0].url)).status, 401);
 });
