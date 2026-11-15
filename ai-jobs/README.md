@@ -47,7 +47,7 @@ that every file has all six sections.
 - One brand per run. Charleston 3D (`c3d`) and Elevated Designs (`ed`) are never in the same input, output or file.
 - Nothing fake: real product photos only, no invented reviews, numbers, badges or claims.
 - Prices only from the price sheet (Elevated Designs) or the Charleston 3D rule (market price minus $2). Never invent a price.
-- Ads: $2 a day per campaign at most.
+- Ads: a hard $2 a day in total across both brands, not per campaign, with one ad live at a time.
 - Never spend money, publish, or message a customer without Aaron's typed approval. Jobs recommend; they don't act.
 - No secrets in any input, output or file.
 

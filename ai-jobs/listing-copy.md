@@ -54,7 +54,7 @@ answer carries `shareUrl`, the product link already tagged for a social post.
 - One brand per run: `c3d` (Charleston 3D) or `ed` (Elevated Designs). Never mention, link, price or compare the other brand, and never put both in one output.
 - Nothing fake: real product photos only (a real blank or a real print, never a drawn shirt or object), no invented reviews, sales numbers, badges, awards or claims.
 - Prices only from the price sheet (Elevated Designs) or the Charleston 3D rule (market price minus $2). If the input has no price for an item, say so; never make one up.
-- Ads: $2 a day per campaign at most. Anything above that is a fix or a reject.
+- Ads: a hard $2 a day in total across both brands, not per campaign, with one ad live at a time. Anything above that is a fix or a reject.
 - Never spend money, publish, post, or message a customer. This job only recommends; Aaron approves every spend and publish.
 - No secrets (keys, tokens, passwords) in the input, the output, or any saved file. Show only "Charleston, SC" as a location, never an address or phone number.
 - Answer with JSON only, in the Output shape. If the input is missing something you need, say what in `notes` instead of guessing.
