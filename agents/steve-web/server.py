@@ -31,6 +31,7 @@ for _p in (Path.home() / "team-notes", Path(__file__).resolve().parent.parent / 
 import prices            # noqa: E402  live prices from the two stores
 import rules_check       # noqa: E402  the rule checker
 import team_notes        # noqa: E402  the board every agent reads on its next answer
+import price_change      # noqa: E402  "change the price of X to $Y", with a spoken confirm step
 
 HERE = Path(__file__).resolve().parent
 HERMES = Path.home() / ".hermes"
@@ -103,6 +104,10 @@ def ensure_model():
 
 def ask_steve(asked, session, spoken=False, call=call_hermes):
     """One checked turn. Returns {reply, checked, fixed, blocked, problems}."""
+    # A price change is handled by code from start to finish (find the product, ask, confirm, change); no model.
+    changed = price_change.handle(asked, session, note=lambda kind, text: team_notes.add(kind, text, by="steve"))
+    if changed is not None:
+        return {"reply": changed, "checked": False, "fixed": False, "blocked": False, "problems": []}
     if call is call_hermes and not ensure_model():
         return {"reply": "My model is not loaded on the Blink right now, so I can't answer. It usually comes back within "
                          "five minutes by itself. If it does not, see the recovery guide: Steve does not answer.",

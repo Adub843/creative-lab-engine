@@ -220,6 +220,84 @@ class TeamNotes(unittest.TestCase):
         self.assertIn("not on the live store", seen[-1])
 
 
+class PriceByVoice(unittest.TestCase):
+    """"Change the price of X to $Y": found in the live list, confirmed out loud, then changed. No model involved."""
+
+    def setUp(self):
+        Prices.setUp(self)
+        import price_change
+        self.P = price_change
+        self.P.PENDING.clear()
+        self.P.LOG = HERE / "_test-price-changes.jsonl"
+        self.addCleanup(lambda: self.P.LOG.unlink(missing_ok=True))
+        for store in ("c3d", "ed"):
+            for n, item in enumerate(server.prices._cache[store]["items"], 1):
+                item["id"] = 100 * (1 if store == "c3d" else 2) + n
+        self.posts, self.notes, self.clock = [], [], [1000.0]
+
+    def say(self, text, key="a-console-key-of-16+", fail=None):
+        def post(store, pid, price, k):
+            if fail:
+                raise ValueError(fail)
+            self.posts.append((store, pid, price, k))
+            return {"changed": 1}
+        return self.P.handle(text, "s1", now=lambda: self.clock[0], post=post, key=lambda: key, note=lambda k, t: self.notes.append((k, t)))
+
+    def test_understands_the_sentence_and_ignores_others(self):
+        self.assertEqual(self.P.parse("Change the price of the mini name desk plate to 21 dollars"), ("mini name desk plate", 21.0))
+        self.assertEqual(self.P.parse("set the price for Lowcountry Tee to $26.50."), ("Lowcountry Tee", 26.5))
+        for text in ("What is the price of the desk plate?", "Write a caption about our prices", "change the caption to shorter"):
+            self.assertIsNone(self.P.parse(text))
+            self.assertIsNone(self.say(text))
+
+    def test_asks_first_and_changes_only_after_yes(self):
+        ask = self.say("Change the price of the Charleston3D mini name desk plate to 21 dollars")
+        self.assertIn("from $16.99 to $21.00", ask)
+        self.assertIn("yes, change it", ask)
+        self.assertEqual(self.posts, [])
+        done = self.say("Yes, change it")
+        self.assertEqual(self.posts, [("c3d", 101, 21.0, "a-console-key-of-16+")])
+        self.assertIn("is now $21.00 (was $16.99)", done)
+        self.assertEqual(self.notes[0][0], "price")
+        self.assertTrue(self.P.LOG.exists())
+        self.assertIsNone(self.say("yes, change it"), "a second yes does nothing: nothing is waiting")
+
+    def test_cancel_another_topic_or_waiting_too_long_changes_nothing(self):
+        self.say("change the price of the mini name desk plate to 21")
+        self.assertIn("Cancelled", self.say("cancel"))
+        self.say("change the price of the mini name desk plate to 21")
+        self.assertIsNone(self.say("what is rule 2?"))
+        self.assertIsNone(self.say("yes, change it"))
+        self.say("change the price of the mini name desk plate to 21")
+        self.clock[0] += 121
+        self.assertIsNone(self.say("yes, change it"))
+        self.assertEqual(self.posts, [])
+
+    def test_refuses_what_it_cannot_safely_change(self):
+        self.assertIn("could not find", self.say("change the price of the dragon statue to 30"))
+        self.assertIn("different prices by size", self.say("change the price of the hype chain to 15"))
+        self.assertIn("already $16.99", self.say("change the price of the mini name desk plate to 16.99"))
+        self.assertIn("from $0.50 to $5,000.00", self.say("change the price of the mini name desk plate to 0.10"))
+        self.assertIn("console key has not been set", self.say("change the price of the mini name desk plate to 21", key=None))
+        self.assertEqual(self.P.PENDING, {})
+        self.assertEqual(self.posts, [])
+
+    def test_the_engines_refusal_is_repeated_and_nothing_is_logged(self):
+        self.say("change the price of the Elevated Designs lowcountry tee to 30")
+        out = self.say("yes", fail="This shirt is priced from the price sheet, and the sync would put the sheet's price back.")
+        self.assertIn("did not change", out)
+        self.assertIn("price sheet", out)
+        self.assertEqual(self.notes, [])
+        self.assertFalse(self.P.LOG.exists())
+
+    def test_steve_answers_a_price_change_without_the_model(self):
+        self.P.read_key = lambda: None
+        calls = []
+        out = server.ask_steve("Change the price of the mini name desk plate to 21", "s9", call=lambda m, s: calls.append(m) or "x")
+        self.assertEqual(calls, [])
+        self.assertIn("console key has not been set", out["reply"])
+
+
 class Learning(unittest.TestCase):
     ROWS = [{"asked": "Draft a Facebook post for an Elevated Designs tee.", "at": "2026-11-15T07:00:00-05:00",
              "first_problems": ["Rule 1: these links are not real pages on the store: elevatedshirts.com/x. Use a real link."]},

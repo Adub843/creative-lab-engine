@@ -35,7 +35,7 @@ def fetch_store(store, opener=urllib.request.urlopen):
                 continue
             prices = sorted({round(float(v["price"]), 2) for v in p.get("variants", []) if v.get("price") not in (None, "")})
             if prices:
-                out.append({"title": p.get("title", ""), "url": f"{base}/products/{p.get('handle', '')}", "prices": prices})
+                out.append({"id": p.get("id"), "title": p.get("title", ""), "url": f"{base}/products/{p.get('handle', '')}", "prices": prices})
         if len(products) < 250:
             break
     return out
