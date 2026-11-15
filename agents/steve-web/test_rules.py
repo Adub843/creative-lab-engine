@@ -139,6 +139,8 @@ class CheckedTurn(unittest.TestCase):
     def setUp(self):
         Prices.setUp(self)
         server.LOG = HERE / "_test-checker-log.jsonl"
+        server.team_notes.BOARD = HERE / "_test-team-notes.jsonl"
+        self.addCleanup(lambda: server.team_notes.BOARD.unlink(missing_ok=True))
         self.addCleanup(lambda: server.LOG.unlink(missing_ok=True))
 
     def turn(self, answers, asked):
@@ -169,6 +171,53 @@ class CheckedTurn(unittest.TestCase):
         self.assertIn("Rule 10", out["reply"])
         self.assertNotIn("$19.99", out["reply"])
         self.assertTrue(server.LOG.exists())
+
+
+class TeamNotes(unittest.TestCase):
+    """The shared board: code writes a note, every agent has it on its very next answer."""
+
+    def setUp(self):
+        Prices.setUp(self)
+        self.T = server.team_notes
+        self.T.BOARD = HERE / "_test-team-notes.jsonl"
+        self.T.BOARD.unlink(missing_ok=True)
+        server.LOG = HERE / "_test-checker-log.jsonl"
+        self.addCleanup(lambda: (self.T.BOARD.unlink(missing_ok=True), server.LOG.unlink(missing_ok=True)))
+
+    def test_a_note_is_on_the_board_at_once_and_repeats_are_dropped(self):
+        self.assertIsNotNone(self.T.add("aaron", "Nameplates are 10 percent off this week.", by="aaron"))
+        self.assertIsNone(self.T.add("aaron", "Nameplates are 10 percent off this week.", by="aaron"))
+        self.assertIn("Nameplates are 10 percent off", self.T.prefix_for("Write a Charleston3D caption"))
+        self.assertEqual(self.T.prefix_for("What is the weather like?"), "")           # not a business question
+        self.assertIn("Nameplates", self.T.prefix_for("anything", always=True))
+
+    def test_secrets_never_go_on_the_board(self):
+        for text in ("The Shopify password is hunter2", "api key sk-123", "card 4111 1111 1111 1111"):
+            self.assertIsNone(self.T.add("aaron", text))
+        self.assertEqual(self.T.read(), [])
+
+    def test_tell_the_team_is_understood(self):
+        self.assertEqual(self.T.told("Tell the team: no more Rainbow Row designs."), "no more Rainbow Row designs.")
+        self.assertEqual(self.T.told("Hey Steve, let everyone know that the market is Saturday"), "the market is Saturday")
+        self.assertIsNone(self.T.told("Tell me about the team page."))
+        self.assertIsNone(self.T.told("Write a caption for the team"))
+
+    def test_steve_posts_aarons_note_and_does_not_ask_the_model(self):
+        calls = []
+        out = server.ask_steve("Tell the team: the Saturday market is cancelled.", "t", call=lambda m, s: calls.append(m) or "x")
+        self.assertEqual(calls, [])
+        self.assertIn("Posted to the team board", out["reply"])
+        self.assertEqual(self.T.read()[-1]["text"], "the Saturday market is cancelled.")
+
+    def test_a_rejected_answer_becomes_a_lesson_the_next_question_sees(self):
+        answers = ["It is $19.99.", "The Mini Name Desk Plate is $16.99.", "Sure."]
+        seen = []
+        ask = lambda q: server.ask_steve(q, "t", call=lambda m, s: (seen.append(m), answers.pop(0))[1])
+        ask("How much is the Charleston3D desk plate?")
+        self.assertEqual(self.T.read()[-1]["kind"], "lesson")
+        ask("Write a Charleston3D caption for the desk plate.")
+        self.assertIn("[Team notes", seen[-1])
+        self.assertIn("not on the live store", seen[-1])
 
 
 class Learning(unittest.TestCase):

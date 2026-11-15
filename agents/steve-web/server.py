@@ -23,8 +23,14 @@ import threading
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+# The shared team notes board: ~/team-notes on the Blink, agents/team-notes in the repo.
+for _p in (Path.home() / "team-notes", Path(__file__).resolve().parent.parent / "team-notes"):
+    if (_p / "team_notes.py").exists():
+        sys.path.insert(0, str(_p))
+        break
 import prices            # noqa: E402  live prices from the two stores
 import rules_check       # noqa: E402  the rule checker
+import team_notes        # noqa: E402  the board every agent reads on its next answer
 
 HERE = Path(__file__).resolve().parent
 HERMES = Path.home() / ".hermes"
@@ -101,12 +107,19 @@ def ask_steve(asked, session, spoken=False, call=call_hermes):
         return {"reply": "My model is not loaded on the Blink right now, so I can't answer. It usually comes back within "
                          "five minutes by itself. If it does not, see the recovery guide: Steve does not answer.",
                 "checked": False, "fixed": False, "blocked": True, "problems": ["model not loaded"]}
+    # "Tell the team: ..." posts Aaron's words to the board every agent reads on its next answer.
+    for_team = team_notes.told(asked)
+    if for_team:
+        posted = team_notes.add("aaron", for_team, by="aaron")
+        return {"reply": ("Posted to the team board. Alice and I will both see it on our next answer: " + for_team) if posted
+                         else "I did not post that: it is already on the board, or it looks like a password or key, which never goes there.",
+                "checked": False, "fixed": False, "blocked": False, "problems": []}
     stores = sorted(rules_check.brands(asked)) or ["c3d", "ed"]
     # A price question may only use the prices of the products it was shown; anything else, any listed price.
     note, shown = prices.price_facts(asked, stores)
     allowed = shown if shown is not None else prices.allowed_prices(stores)
     urls = prices.product_urls()
-    message = note + (SPOKEN if spoken else "") + asked
+    message = team_notes.prefix_for(asked, always=True) + note + (SPOKEN if spoken else "") + asked
     reply = call(message, session)
     first = rules_check.check(reply, asked, allowed, urls)
     problems, fixed = first, False
@@ -120,6 +133,10 @@ def ask_steve(asked, session, spoken=False, call=call_hermes):
     if first:
         log_check({"at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"), "asked": asked[:2000],
                    "first_problems": first, "fixed": fixed, "blocked": blocked, "final_problems": problems})
+        # The lesson goes on the team board this second, so the next answer from ANY agent already has it.
+        for p in first:
+            if not p.startswith("That was a tool call"):
+                team_notes.add("lesson", f'On a request like "{asked[:70]}": ' + re.sub(r"^Rule \d+: ", "", p)[:150], by="steve")
     return {"reply": rules_check.blocked_message(problems) if blocked else reply, "checked": True,
             "fixed": fixed, "blocked": blocked, "problems": problems if blocked else []}
 
