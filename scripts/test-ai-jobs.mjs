@@ -61,6 +61,10 @@ test("runner: engines.json has a fallback chain that ends at claude and holds no
   for (const [from, to] of Object.entries(fallback)) { assert.ok(engines[from], from); assert.ok(engines[to], to); }
   assert.equal(engines.claude.manual, true);
   assert.doesNotMatch(JSON.stringify(engines), /password|secret|api.?key|bearer/i);
+  // Each local engine falls back to the other one once, then to claude: never a loop.
+  assert.deepEqual(R.engineChain("local-big", fallback, engines), ["local-big", "local-small", "claude"]);
+  assert.deepEqual(R.engineChain("local-small", fallback, engines), ["local-small", "local-big", "claude"]);
+  assert.deepEqual(R.engineChain("claude", fallback, engines), ["claude"]);
 });
 
 test("runner: reads the Output keys and pulls JSON out of a chatty answer", () => {
@@ -135,6 +139,7 @@ test("runner: daily-brief rejects numbers that are not in the digest, and long b
   assert.match(bad({ date: "2026-11-08" }), /date must be 2026-11-14/);
   assert.match(bad({ brief: DB_GOOD.brief.replace("412 visits", "412 sessions") }), /word for word/);
   assert.match(bad({ notes: "There were no orders this week" }), /do not say there were none/);
+  assert.match(bad({ brief: "All data shows no activity or traffic." }), /do not say there were none/);
   const old = { ...DB_IN, digest: { ...DB_IN.digest, siteCheck: { ...DB_IN.digest.siteCheck, date: "2026-11-12", today: false } } };
   assert.match(R.check("daily-brief", DB, old, DB_GOOD).join("; "), /older one.*2026-11-12/);
 });

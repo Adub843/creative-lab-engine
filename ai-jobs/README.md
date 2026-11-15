@@ -16,7 +16,7 @@ scorecard, cost math, flags, the digest, saving files) is plain code in `lib/` a
 - `jobs.json` lists every job: `{ "id", "file", "schedule", "engine" }`.
   `engine` is the per-job switch, one of the engines in `engines.json`: `"local-small"`, `"local-big"` or `"claude"`. Move one job at a time.
 - `engines.json` says where each engine runs and which engine a job falls back to when its answer fails the checks
-  (`local-small` to `local-big` to `claude`). No keys: the local models listen only on their own machine and are reached over SSH.
+  (the two local engines back each other up, then `claude`). No keys: the local models listen only on their own machine and are reached over SSH.
 - `scripts/run-ai-job.mjs` is the local runner: `node scripts/run-ai-job.mjs listing-copy --input ai-jobs/examples/listing-copy.c3d.input.json`.
   It checks every answer (Output shape, one brand, price unchanged, length limits), retries with the list of problems, then falls back.
   Every run is saved in `ai-jobs/runs/` (this PC only, not in git); a job no local model could pass is saved in `ai-jobs/runs/needs-claude/`.
