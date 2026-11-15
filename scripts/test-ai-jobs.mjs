@@ -176,6 +176,51 @@ test("daily brief run: the team board only hears about a fallback or a failure",
   assert.equal(D.postTeamNote("x", () => ({ stdout: "" })), false);
 });
 
+test("price requests: a confirmed request is checked again before the store is touched", async () => {
+  const P = await import("./price-requests.mjs");
+  const now = Date.parse("2026-11-15T17:00:00Z");
+  const req = { id: "0123456789ab", store: "c3d", product_id: 101, title: "Mini Name Desk Plate", old: 19, new: 21, at: "2026-11-15T16:58:00Z" };
+  assert.equal(P.requestProblem(req, now), null);
+  assert.match(P.requestProblem({ ...req, at: "2026-11-15T16:40:00Z" }, now), /10 minutes old/);
+  assert.match(P.requestProblem({ ...req, store: "other" }, now), /store that does not exist/);
+  assert.match(P.requestProblem({ ...req, new: 0.1 }, now), /must be from 0\.50/);
+  assert.match(P.requestProblem({ ...req, new: 19 }, now), /same as the old one/);
+  assert.match(P.requestProblem({ ...req, product_id: "101" }, now), /no product id/);
+  assert.match(P.requestProblem({ ...req, id: "../x" }, now), /not readable/);
+
+  const products = [{ id: 101, variants: [{ price: "19.00" }] }, { id: 102, variants: [{ price: "12.00" }, { price: "24.99" }] }];
+  assert.equal(P.livePriceProblem(products, req), null);
+  assert.match(P.livePriceProblem(products, { ...req, old: 18 }), /live price is now \$19\.00, not the \$18\.00/);
+  assert.match(P.livePriceProblem(products, { ...req, product_id: 102 }), /different prices by size/);
+  assert.match(P.livePriceProblem(products, { ...req, product_id: 999 }), /no longer in the store/);
+
+  // the whole pass, with the store and the engine faked
+  const calls = [];
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method ?? "GET", key: init.headers?.["x-console-key"], body: init.body });
+    if (String(url).includes("/products.json")) return new Response(JSON.stringify({ products }), { status: 200 });
+    if (String(url).endsWith("/api/products")) return new Response(JSON.stringify({ changed: 1, price: "21.00" }), { status: 200 });
+    return new Response("{}", { status: 404 });
+  };
+  const done = await P.carryOut(req, { key: "a-test-key-000000000", fetchImpl, now });
+  assert.deepEqual(done, { ok: true, changed: 1 });
+  const post = calls.find((c) => c.method === "POST");
+  assert.equal(post.url, "https://creative-lab-engine.business-console.workers.dev/api/products");
+  assert.deepEqual(JSON.parse(post.body), { store: "c3d", id: "gid://shopify/Product/101", price: "21.00" });
+  assert.equal(post.key, "a-test-key-000000000");
+  assert.ok(calls[0].url.startsWith("https://charleston3d.com/products.json"), "the Charleston 3D store is the only one read");
+
+  // a stale price never reaches the engine
+  calls.length = 0;
+  const stale = await P.carryOut({ ...req, old: 18 }, { key: "k", fetchImpl, now });
+  assert.equal(stale.ok, false);
+  assert.ok(!calls.some((c) => c.method === "POST"));
+  // the engine's refusal is passed on in its own words
+  const refuse = async (url, init = {}) => String(url).includes("/products.json") ? new Response(JSON.stringify({ products }), { status: 200 })
+    : new Response(JSON.stringify({ error: "This shirt is priced from the price sheet.", code: "sheet_priced" }), { status: 409 });
+  assert.match((await P.carryOut(req, { key: "k", fetchImpl: refuse, now })).reason, /priced from the price sheet\. Nothing was changed/);
+});
+
 test("every job on a local engine has an example input and its own checks", () => {
   for (const j of jobs.filter((x) => x.engine.startsWith("local"))) {
     assert.ok(fs.readdirSync(path.join(DIR, "examples")).some((f) => f.startsWith(j.id + ".")), `${j.id}: example input in ai-jobs/examples/`);

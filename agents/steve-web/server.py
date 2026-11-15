@@ -105,9 +105,10 @@ def ensure_model():
 def ask_steve(asked, session, spoken=False, call=call_hermes):
     """One checked turn. Returns {reply, checked, fixed, blocked, problems}."""
     # A price change is handled by code from start to finish (find the product, ask, confirm, change); no model.
-    changed = price_change.handle(asked, session, note=lambda kind, text: team_notes.add(kind, text, by="steve"))
+    news = price_change.updates(session)          # the result of a change he confirmed earlier, told once
+    changed = price_change.handle(asked, session)
     if changed is not None:
-        return {"reply": changed, "checked": False, "fixed": False, "blocked": False, "problems": []}
+        return {"reply": news + changed, "checked": False, "fixed": False, "blocked": False, "problems": []}
     if call is call_hermes and not ensure_model():
         return {"reply": "My model is not loaded on the Blink right now, so I can't answer. It usually comes back within "
                          "five minutes by itself. If it does not, see the recovery guide: Steve does not answer.",
@@ -142,7 +143,7 @@ def ask_steve(asked, session, spoken=False, call=call_hermes):
         for p in first:
             if not p.startswith("That was a tool call"):
                 team_notes.add("lesson", f'On a request like "{asked[:70]}": ' + re.sub(r"^Rule \d+: ", "", p)[:150], by="steve")
-    return {"reply": rules_check.blocked_message(problems) if blocked else reply, "checked": True,
+    return {"reply": news + (rules_check.blocked_message(problems) if blocked else reply), "checked": True,
             "fixed": fixed, "blocked": blocked, "problems": problems if blocked else []}
 
 

@@ -221,27 +221,28 @@ class TeamNotes(unittest.TestCase):
 
 
 class PriceByVoice(unittest.TestCase):
-    """"Change the price of X to $Y": found in the live list, confirmed out loud, then changed. No model involved."""
+    """"Change the price of X to $Y": found in the live list, confirmed out loud, then handed to the NUC. No model, no key here."""
 
     def setUp(self):
         Prices.setUp(self)
         import price_change
         self.P = price_change
         self.P.PENDING.clear()
+        self.P.REQUESTS = HERE / "_test-price-requests"
         self.P.LOG = HERE / "_test-price-changes.jsonl"
-        self.addCleanup(lambda: self.P.LOG.unlink(missing_ok=True))
+        import shutil
+        shutil.rmtree(self.P.REQUESTS, ignore_errors=True)
+        self.addCleanup(lambda: (shutil.rmtree(self.P.REQUESTS, ignore_errors=True), self.P.LOG.unlink(missing_ok=True)))
         for store in ("c3d", "ed"):
             for n, item in enumerate(server.prices._cache[store]["items"], 1):
                 item["id"] = 100 * (1 if store == "c3d" else 2) + n
-        self.posts, self.notes, self.clock = [], [], [1000.0]
+        self.clock = [1000.0]
 
-    def say(self, text, key="a-console-key-of-16+", fail=None):
-        def post(store, pid, price, k):
-            if fail:
-                raise ValueError(fail)
-            self.posts.append((store, pid, price, k))
-            return {"changed": 1}
-        return self.P.handle(text, "s1", now=lambda: self.clock[0], post=post, key=lambda: key, note=lambda k, t: self.notes.append((k, t)))
+    def say(self, text, session="s1"):
+        return self.P.handle(text, session, now=lambda: self.clock[0])
+
+    def confirmed(self):
+        return [r for r in self.P.all_requests() if r["status"] == "confirmed"]
 
     def test_understands_the_sentence_and_ignores_others(self):
         self.assertEqual(self.P.parse("Change the price of the mini name desk plate to 21 dollars"), ("mini name desk plate", 21.0))
@@ -250,19 +251,44 @@ class PriceByVoice(unittest.TestCase):
             self.assertIsNone(self.P.parse(text))
             self.assertIsNone(self.say(text))
 
-    def test_asks_first_and_changes_only_after_yes(self):
+    def test_asks_first_and_files_a_request_only_after_yes(self):
         ask = self.say("Change the price of the Charleston3D mini name desk plate to 21 dollars")
         self.assertIn("from $16.99 to $21.00", ask)
         self.assertIn("yes, change it", ask)
-        self.assertEqual(self.posts, [])
-        done = self.say("Yes, change it")
-        self.assertEqual(self.posts, [("c3d", 101, 21.0, "a-console-key-of-16+")])
-        self.assertIn("is now $21.00 (was $16.99)", done)
-        self.assertEqual(self.notes[0][0], "price")
-        self.assertTrue(self.P.LOG.exists())
+        self.assertEqual(self.confirmed(), [])
+        self.assertIn("Confirmed", self.say("Yes, change it"))
+        req = self.confirmed()
+        self.assertEqual(len(req), 1)
+        self.assertEqual((req[0]["store"], req[0]["product_id"], req[0]["old"], req[0]["new"], req[0]["session"]), ("c3d", 101, 16.99, 21.0, "s1"))
         self.assertIsNone(self.say("yes, change it"), "a second yes does nothing: nothing is waiting")
+        self.assertEqual(len(self.confirmed()), 1)
 
-    def test_cancel_another_topic_or_waiting_too_long_changes_nothing(self):
+    def test_the_result_is_told_once_on_the_next_message_and_logged(self):
+        self.say("change the price of the mini name desk plate to 21")
+        self.say("yes")
+        rid = self.confirmed()[0]["id"]
+        self.assertIn("still being changed", self.say("did the price change go through?"))
+        self.assertEqual(self.P.updates("s1"), "")
+        notes = []
+        self.assertTrue(self.P.finish(rid, "done", note=lambda k, t: notes.append((k, t))))
+        self.assertFalse(self.P.finish(rid, "done"), "an outcome is recorded once")
+        self.assertIn("is now $21.00 (was $16.99)", self.P.updates("s1"))
+        self.assertEqual(self.P.updates("s1"), "", "told once")
+        self.assertEqual(self.P.updates("someone-else"), "")
+        self.assertEqual(notes[0][0], "price")
+        self.assertTrue(self.P.LOG.exists())
+
+    def test_a_refusal_from_the_store_is_repeated_and_not_logged(self):
+        self.say("change the price of the Elevated Designs lowcountry tee to 30")
+        self.say("yes")
+        rid = self.confirmed()[0]["id"]
+        self.P.finish(rid, "failed", "This shirt is priced from the price sheet, and the sync would put the sheet's price back.")
+        news = self.P.updates("s1")
+        self.assertIn("did NOT change", news)
+        self.assertIn("price sheet", news)
+        self.assertFalse(self.P.LOG.exists())
+
+    def test_cancel_another_topic_or_waiting_too_long_files_nothing(self):
         self.say("change the price of the mini name desk plate to 21")
         self.assertIn("Cancelled", self.say("cancel"))
         self.say("change the price of the mini name desk plate to 21")
@@ -271,31 +297,26 @@ class PriceByVoice(unittest.TestCase):
         self.say("change the price of the mini name desk plate to 21")
         self.clock[0] += 121
         self.assertIsNone(self.say("yes, change it"))
-        self.assertEqual(self.posts, [])
+        self.assertEqual(self.P.all_requests(), [])
 
     def test_refuses_what_it_cannot_safely_change(self):
         self.assertIn("could not find", self.say("change the price of the dragon statue to 30"))
         self.assertIn("different prices by size", self.say("change the price of the hype chain to 15"))
         self.assertIn("already $16.99", self.say("change the price of the mini name desk plate to 16.99"))
         self.assertIn("from $0.50 to $5,000.00", self.say("change the price of the mini name desk plate to 0.10"))
-        self.assertIn("console key has not been set", self.say("change the price of the mini name desk plate to 21", key=None))
         self.assertEqual(self.P.PENDING, {})
-        self.assertEqual(self.posts, [])
+        self.assertEqual(self.P.all_requests(), [])
 
-    def test_the_engines_refusal_is_repeated_and_nothing_is_logged(self):
-        self.say("change the price of the Elevated Designs lowcountry tee to 30")
-        out = self.say("yes", fail="This shirt is priced from the price sheet, and the sync would put the sheet's price back.")
-        self.assertIn("did not change", out)
-        self.assertIn("price sheet", out)
-        self.assertEqual(self.notes, [])
-        self.assertFalse(self.P.LOG.exists())
-
-    def test_steve_answers_a_price_change_without_the_model(self):
-        self.P.read_key = lambda: None
+    def test_steve_handles_it_without_the_model_and_tells_the_result_later(self):
         calls = []
-        out = server.ask_steve("Change the price of the mini name desk plate to 21", "s9", call=lambda m, s: calls.append(m) or "x")
+        ask = lambda t: server.ask_steve(t, "s9", call=lambda m, s: calls.append(m) or "A normal answer.")
+        self.assertIn("yes, change it", ask("Change the price of the mini name desk plate to 21")["reply"])
+        self.assertIn("Confirmed", ask("yes, change it")["reply"])
         self.assertEqual(calls, [])
-        self.assertIn("console key has not been set", out["reply"])
+        self.P.finish(self.confirmed()[0]["id"], "done")
+        out = ask("What is rule 2?")["reply"]
+        self.assertTrue(out.startswith("Price update: Mini Name Desk Plate is now $21.00"))
+        self.assertIn("A normal answer.", out)
 
 
 class Learning(unittest.TestCase):

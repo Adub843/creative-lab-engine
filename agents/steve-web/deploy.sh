@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 B=aaronlewis@100.70.128.45
 python -m unittest test_rules.py
 scp -q -o BatchMode=yes server.py rules_check.py prices.py index.html icon.svg manifest.webmanifest \
-  trick-questions.json run_trick_questions.py learn.py askmic.js patch_console_web.py patch_console_map.py price_change.py set-console-key.sh SOUL.md "$B:steve-web/"
+  trick-questions.json run_trick_questions.py learn.py askmic.js patch_console_web.py patch_console_map.py price_change.py SOUL.md "$B:steve-web/"
 scp -q -o BatchMode=yes steve-web.service steve-learn.service steve-learn.timer "$B:.config/systemd/user/"
 ssh -o BatchMode=yes "$B" 'mkdir -p ~/team-notes'
 scp -q -o BatchMode=yes ../team-notes/team_notes.py ../team-notes/patch_alice.py ../team-notes/post_note.py "$B:team-notes/"
