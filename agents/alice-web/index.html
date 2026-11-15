@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#130e1d">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Alice">
 <title>Chat with Alice</title>
 <style>
 :root{--bg:#09070d;--panel:#130e1d;--line:#2b2040;--fg:#f0ebf8;--muted:#a698bf;--me:#6a3fd0;--accent:#8b5cf6}
@@ -88,7 +93,7 @@ form button:disabled{opacity:.5}
 </head>
 <body>
 <header><img class="av" src="/avatar.png" alt="Alice"><div><b>Alice</b><small id="st">Local Qwen on the Blink · private to your tailnet</small></div><button id="menu" type="button" aria-expanded="false" aria-controls="acts">Menu</button><button id="voice" type="button" aria-pressed="false" style="margin-left:0">Voice off</button><button id="new" type="button" style="margin-left:0">New chat</button></header>
-<div id="stage"><div id="face"><img src="/avatar.png" alt="Alice"><video class="idle" src="/alice-idle.mp4" muted loop playsinline preload="auto" poster="/avatar.png" aria-hidden="true"></video><video class="talk" src="/alice-talk.mp4" muted loop playsinline preload="auto" poster="/avatar.png" aria-hidden="true"></video></div><small id="mood">Here with you.</small><div id="acts" role="group" aria-label="Quick actions"><button type="button" data-send="What do you remember about me?">What you remember<small>The things I asked you to keep</small></button><button type="button" data-notes="1">Notes and tasks<small>What I have saved with you</small></button><button type="button" data-fill="Remember that ">Remember something<small>Saved for good</small></button><button type="button" data-fill="Find ">Look something up<small>Searches the web, with links</small></button><button type="button" data-fill="Tell the team: ">Tell the team<small>A note Steve will also see</small></button><button type="button" data-send="What is on my calendar today and tomorrow?">My calendar<small>Today and tomorrow</small></button><button type="button" data-send="Any important new email I should know about?">My mail<small>Anything that needs me</small></button><button type="button" data-go="/talk">Notes mode<small>Talk page: saves notes, does tasks</small></button></div></div>
+<div id="stage"><div id="face"><img src="/avatar.png" alt="Alice"></div><small id="mood">Here with you.</small><div id="acts" role="group" aria-label="Quick actions"><button type="button" data-send="What do you remember about me?">What you remember<small>The things I asked you to keep</small></button><button type="button" data-notes="1">Notes and tasks<small>What I have saved with you</small></button><button type="button" data-fill="Remember that ">Remember something<small>Saved for good</small></button><button type="button" data-fill="Find ">Look something up<small>Searches the web, with links</small></button><button type="button" data-fill="Tell the team: ">Tell the team<small>A note Steve will also see</small></button><button type="button" data-send="What is on my calendar today and tomorrow?">My calendar<small>Today and tomorrow</small></button><button type="button" data-send="Any important new email I should know about?">My mail<small>Anything that needs me</small></button><button type="button" data-go="/talk">Notes mode<small>Talk page: saves notes, does tasks</small></button></div></div>
 <div id="log" aria-live="polite"></div>
 <form id="f"><button id="mic" type="button" aria-label="Talk to Alice" title="Talk to Alice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/></svg></button><textarea id="q" placeholder="Message Alice…" rows="1" aria-label="Message Alice"></textarea><button id="go">Send</button></form>
 <script>
