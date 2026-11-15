@@ -145,7 +145,7 @@ export function buildMessages(jobText, input, problems, lastAnswer) {
 
 const freePort = () => new Promise((res, rej) => { const s = net.createServer(); s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => res(p)); }); s.on("error", rej); });
 
-async function withForward(engine, fn) {
+export async function withForward(engine, fn) {
   const local = await freePort();
   const ssh = spawn("ssh", ["-N", "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes", "-o", "ConnectTimeout=10", "-L", `${local}:127.0.0.1:${engine.port}`, engine.ssh], { stdio: "ignore" });
   try {

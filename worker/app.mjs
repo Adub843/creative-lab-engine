@@ -32,6 +32,7 @@ import { handlePromotions } from "../lib/promotions.mjs";
 import { handleTeam } from "../lib/team.mjs";
 import { handlePicture } from "../lib/picture.mjs";
 import { handleHandoffs } from "../lib/handoffs.mjs";
+import { handleAlice } from "../lib/alice-mail.mjs";
 import { runScheduledSnapshots } from "../lib/tracker.mjs";
 import { syncKittlLibrary, STATE_KEY as KITTL_STATE_KEY, SYNC_DEBOUNCE_MS } from "../lib/kittl-sync.mjs";
 import { buildDigest, saveDigest, digestKey, isDigestDate, DIGEST_LATEST } from "../lib/digest.mjs";
@@ -117,6 +118,7 @@ const promotions = jsonRoute(handlePromotions);
 const team = jsonRoute(handleTeam);
 const scorecard = jsonRoute(handleScorecard);
 const handoffs = jsonRoute(handleHandoffs);
+const alice = jsonRoute((r, ctx) => handleAlice(r, ctx, ctx.sub));
 const taxes = jsonRoute(handleTaxes);
 const marketingKv = (env) => (env?.MARKETING && typeof env.MARKETING.get === "function" ? env.MARKETING : null);
 
@@ -137,6 +139,9 @@ export async function handleRequest(req, env) {
     if (pathname === "/api/team") return await team(req, env, { kv: marketingKv(env) });
     // The agents' handoff board and the manager run's brief, in the same KV under "handoffs".
     if (pathname === "/api/handoffs") return await handoffs(req, env, { kv: marketingKv(env) });
+    // Alice's mailbox: the console asks, a runner on Aaron's PC answers with the Blink's local model (lib/alice-mail.mjs).
+    if (pathname === "/api/alice" || pathname.startsWith("/api/alice/"))
+      return await alice(req, env, { bucket: env?.RESULTS && typeof env.RESULTS.get === "function" ? env.RESULTS : null, sub: pathname.slice("/api/alice".length).replace(/^\//, "") });
     // Taxi, the tax agent: the year's sales ledger, her reports and the records in the same KV under "tax:*",
     // receipt photos and PDFs in IMAGES under their own prefix (never in the image list).
     if (pathname === "/api/taxes") return await taxes(req, env, { kv: marketingKv(env), files: env?.IMAGES ? kvBlobStore(env.IMAGES, "tax-file:") : null });

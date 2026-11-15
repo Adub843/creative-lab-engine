@@ -4596,3 +4596,76 @@ test("worker: /api/drive reaches the drive library with DRIVE_ORIGIN from env, a
     assert.deepEqual(env.ASSETS.calls, [], "never falls through to the files");
   }, fakePC(seen));
 });
+
+// ---------- Alice's mailbox (lib/alice-mail.mjs) ----------
+const AL = await import("../lib/alice-mail.mjs");
+function aliceR2() {
+  const m = new Map();
+  return { m,
+    async put(key, v) { m.set(key, { text: String(v), uploaded: new Date(aliceNow).toISOString() }); },
+    async get(key) { const o = m.get(key); return o ? { text: async () => o.text } : null; },
+    async head(key) { return m.has(key) ? { key } : null; },
+    async delete(keys) { for (const k of [].concat(keys)) m.delete(k); },
+    async list({ prefix = "" } = {}) { return { objects: [...m.keys()].filter((k) => k.startsWith(prefix)).sort().map((key) => ({ key, uploaded: m.get(key).uploaded })), truncated: false }; },
+  };
+}
+let aliceNow = Date.parse("2026-11-15T16:00:00Z");
+const alClock = () => new Date(aliceNow);
+const alReq = (method, body, query = {}, headers = { "content-type": "application/json", "x-console-key": "open-sesame-test-key-0001" }) =>
+  ({ method, query: new URLSearchParams(query), header: (k) => headers[k.toLowerCase()] ?? null, text: async () => JSON.stringify(body ?? {}) });
+
+test("alice mailbox: ask, the runner claims and answers, the console reads once and nothing is left behind", async () => {
+  const bucket = aliceR2(), ctx = { env: envOf(), bucket };
+  assert.equal((await AL.handleAlice(alReq("POST", { person: "Shana", text: "hi" }, {}, { "content-type": "application/json" }), ctx, "", alClock)).status, 401);
+  assert.equal((await AL.handleAlice(alReq("POST", { person: "Shana", text: "hi" }), { env: envOf(), bucket: null }, "", alClock)).status, 503);
+  assert.equal((await AL.handleAlice(alReq("POST", { person: "", text: "hi" }), ctx, "", alClock)).status, 400);
+  assert.equal((await AL.handleAlice(alReq("POST", { person: "Josh", text: "my key is shpat_abcdef123456" }), ctx, "", alClock)).status, 400, "keys are refused");
+  const a = await AL.handleAlice(alReq("POST", { person: "Shana", text: "What sells best?", private: true, history: [{ from: "alice", text: "Hi" }, { from: "x", text: "Hello" }] }), ctx, "", alClock);
+  assert.equal(a.status, 201);
+  const id = a.body.id;
+  assert.deepEqual((await AL.handleAlice(alReq("GET", null, { id }), ctx, "", alClock)).body, { status: "waiting" });
+  const n1 = await AL.handleAlice(alReq("GET"), ctx, "next", alClock);
+  assert.equal(n1.body.question.id, id);
+  assert.equal(n1.body.question.private, true);
+  assert.deepEqual(n1.body.question.history.map((h) => h.from), ["alice", "person"]);
+  assert.equal((await AL.handleAlice(alReq("GET"), ctx, "next", alClock)).body.question, null, "a claimed question isn't handed out twice");
+  aliceNow += AL.CLAIM_MS + 1000;
+  assert.equal((await AL.handleAlice(alReq("GET"), ctx, "next", alClock)).body.question.id, id, "a runner that died gives it back after the claim runs out");
+  assert.equal((await AL.handleAlice(alReq("POST", { id, text: "Rainbow Row tees." }), ctx, "answer", alClock)).status, 201);
+  assert.equal((await AL.handleAlice(alReq("GET"), ctx, "next", alClock)).body.question, null, "answered questions aren't handed out");
+  const got = await AL.handleAlice(alReq("GET", null, { id }), ctx, "", alClock);
+  assert.deepEqual([got.body.status, got.body.answer.text], ["answered", "Rainbow Row tees."]);
+  assert.equal(bucket.m.size, 0, "question, answer and claim are gone once read");
+  assert.equal((await AL.handleAlice(alReq("GET", null, { id }), ctx, "", alClock)).status, 404);
+  assert.equal((await AL.handleAlice(alReq("POST", { id, text: "late" }), ctx, "answer", alClock)).status, 404);
+});
+
+test("alice mailbox: oldest question first, stale ones dropped, and the runner's prompt keeps the rules", async () => {
+  const bucket = aliceR2(), ctx = { env: envOf(), bucket };
+  const first = (await AL.handleAlice(alReq("POST", { person: "Aaron", text: "old" }), ctx, "", alClock)).body.id;
+  aliceNow += AL.KEEP_MS + 1000;
+  const second = (await AL.handleAlice(alReq("POST", { person: "Josh", text: "new one" }), ctx, "", alClock)).body.id;
+  const third = (await AL.handleAlice(alReq("POST", { person: "Shana", text: "newest" }), ctx, "", () => new Date(aliceNow + 5))).body.id;
+  const n = await AL.handleAlice(alReq("GET"), ctx, "next", alClock);
+  assert.equal(n.body.question.id, second);
+  assert.ok(![...bucket.m.keys()].some((k) => k.includes(first)), "the 3-day-old question was dropped");
+  assert.ok([...bucket.m.keys()].some((k) => k.includes(third)));
+  const MB = await import("./alice-mailbox.mjs");
+  const msgs = MB.messagesFor({ person: "Josh", text: "Price for the tee?", private: true, history: [{ from: "alice", text: "Hey Josh" }] });
+  assert.equal(msgs[0].role, "system");
+  assert.match(msgs[0].content, /Never invent prices/);
+  assert.match(msgs[0].content, /private question/);
+  assert.deepEqual(msgs.slice(1).map((x) => x.role), ["assistant", "user"]);
+  assert.equal(msgs.at(-1).content, "Josh: Price for the tee?");
+  const lm = (body) => async () => ({ ok: true, json: async () => body });
+  assert.equal(await MB.loadedModel("x", lm({ data: [{ id: "big", state: "not-loaded" }, { id: "qwen-4b", state: "loaded", type: "llm" }] })), "qwen-4b");
+  assert.equal(await MB.loadedModel("x", lm({ data: [{ id: "big", state: "not-loaded" }] })), null, "never picks a model that would have to load");
+});
+
+test("worker: /api/alice is routed with the RESULTS bucket and needs the key", async () => {
+  const env = workerEnv({ RESULTS: aliceR2() });
+  assert.equal((await W.handleRequest(wreq("/api/alice/next"), env)).status, 401);
+  const r = await W.handleRequest(wreq("/api/alice/next", { headers: KEYH }), env);
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { question: null });
+});
