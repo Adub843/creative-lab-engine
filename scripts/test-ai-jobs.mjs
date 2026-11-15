@@ -163,6 +163,19 @@ test("daily brief run: the input, numbers sentence and handoff are built by code
   assert.equal(D.handoffFor("ed", "2026-11-14", { ok: false, tries: [] }).status, "partial");
 });
 
+test("daily brief run: the team board only hears about a fallback or a failure", async () => {
+  const D = await import("./daily-brief.mjs");
+  assert.equal(D.teamNoteFor("c3d", { ok: true, engine: "local-big", tries: [{ engine: "local-big" }] }), null);
+  const fell = D.teamNoteFor("c3d", { ok: true, engine: "local-small", tries: [{ engine: "local-big" }, { engine: "local-small" }] });
+  assert.match(fell, /Charleston 3D: the Blink did not answer or failed its checks, so the GMKtec wrote it/);
+  assert.doesNotMatch(fell, /Elevated/);
+  assert.match(D.teamNoteFor("ed", { ok: false, tries: [{ engine: "local-big" }] }), /Elevated Designs: no local PC could write it today/);
+  const calls = [];
+  assert.equal(D.postTeamNote("x", (cmd, args, opts) => { calls.push([cmd, args.at(-1), opts.input]); return { stdout: "posted\n" }; }), true);
+  assert.deepEqual(calls, [["ssh", "python3 ~/team-notes/post_note.py job nuc", "x"]]);
+  assert.equal(D.postTeamNote("x", () => ({ stdout: "" })), false);
+});
+
 test("every job on a local engine has an example input and its own checks", () => {
   for (const j of jobs.filter((x) => x.engine.startsWith("local"))) {
     assert.ok(fs.readdirSync(path.join(DIR, "examples")).some((f) => f.startsWith(j.id + ".")), `${j.id}: example input in ai-jobs/examples/`);
