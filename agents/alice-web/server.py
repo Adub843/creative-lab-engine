@@ -222,6 +222,11 @@ def now_iso():
     return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+ACTION_RE = re.compile(r"\b(send|e-?mail (?:him|her|them|to)|reply|forward|schedule|book|add (?:it |this |that |an? )?(?:to|event|appointment|meeting)|"
+                       r"put (?:it|this|that) on|create (?:an? )?(?:event|appointment|meeting)|cancel|delete|move|reschedule|remind me|"
+                       r"set (?:a |an )?(?:reminder|alarm|meeting|appointment))\b", re.I)
+
+
 def handle_talk(text, session):
     _t = team_notes.told(text)
     if _t:
@@ -280,6 +285,11 @@ def handle_talk(text, session):
         if box.get("tools"):
             update_log(e["id"], status="done", by="alice", reply=box["reply"][:2000], secs=secs)
             return {"id": e["id"], "kind": "task", "status": "done", "reply": box["reply"]}
+        # Only a real action (send, schedule, reply, delete ...) is handed to Claude when her tools did nothing.
+        # A question she simply answered is shown as her answer.
+        if not ACTION_RE.search(text):
+            update_log(e["id"], status="answered", by="alice", reply=box["reply"][:2000], secs=secs)
+            return {"id": e["id"], "kind": "chat", "status": "chat", "reply": box["reply"]}
         update_log(e["id"], status="handoff", handoff_at=now_iso(), why="Alice answered without using a tool",
                    alice_said=box["reply"][:1000])
         return {"id": e["id"], "kind": "task", "status": "handoff",

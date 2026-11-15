@@ -53,11 +53,25 @@ ABOUT_HIM_RE = re.compile(
     r"draft|reply to|delete|cancel|turn (?:on|off))\b", re.I)
 
 
+# Any real question about the world gets a search, not only the ones with a keyword from the list above.
+# (2026-11-15: "what are some good concerts playing in Charleston in the next 2 months" was missed and handed off.)
+QUESTION_RE = re.compile(
+    r"\?\s*$|^\s*(?:hey |hi |ok |okay |so |well |and |alice[, ]+|please |can you |could you |would you )*"
+    r"(?:what|where|when|which|who|whose|how|why|is there|are there|any|do you know|tell me|give me|show me|find|look|search|"
+    r"recommend|suggest|list|name)\b|\b(?:what are|what is|what's|whats|any good|some good|where can|where to|how much|how many|"
+    r"going on|happening|playing|coming up|events?|concerts?|shows?|tickets?|festival\w*|movies?|games?)\b", re.I)
+# Talk about her, or plain small talk, is not a search.
+SMALLTALK_RE = re.compile(
+    r"\b(?:how are you|how(?:'s| is) it going|how you doing|what'?s up|who are you|what are you|what can you do|what do you (?:think|remember|know|do)|"
+    r"are you (?:there|ok|okay|working|listening)|can you hear me|why did you|why can'?t you|why are you|thank you|thanks|good (?:morning|night|evening|afternoon)|"
+    r"what did (?:i|you) (?:say|just)|say that again|repeat that|never ?mind)\b", re.I)
+
+
 def needs_web(message):
     m = message or ""
-    if PRIVATE_RE.search(m) or ABOUT_HIM_RE.search(m) or len(m.split()) < 3:
+    if PRIVATE_RE.search(m) or ABOUT_HIM_RE.search(m) or SMALLTALK_RE.search(m) or len(m.split()) < 3:
         return False
-    return bool(LOOKUP_RE.search(m))
+    return bool(LOOKUP_RE.search(m) or QUESTION_RE.search(m))
 
 
 HOME_CITY = "Charleston, SC"   # the city only, which is already public on both stores
