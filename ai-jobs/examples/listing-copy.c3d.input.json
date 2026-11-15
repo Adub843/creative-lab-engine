@@ -1,0 +1,13 @@
+{
+  "store": "c3d",
+  "product": {
+    "kind": "3d-print",
+    "workingTitle": "Desk organizer with phone stand",
+    "facts": ["3D printed in PLA plastic", "three pen slots and one angled phone stand", "about 6 inches wide, 4 inches deep, 3 inches tall", "available in black, white and teal", "printed to order in Charleston, SC"],
+    "tags": ["desk", "organizer", "phone stand"],
+    "price": 16.99, "priceSource": "c3d-market-minus-2",
+    "images": [{ "url": "https://example.invalid/organizer-front.jpg", "what": "front photo of the black organizer holding three pens and a phone" }]
+  },
+  "keywords": ["3d printed desk organizer", "custom 3d printing charleston sc", "phone stand"],
+  "voice": "Friendly, plain and local. Short sentences. No hype words."
+}

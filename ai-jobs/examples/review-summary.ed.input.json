@@ -1,0 +1,11 @@
+{
+  "store": "ed",
+  "reviews": [
+    { "date": "2026-11-02", "rating": 5, "text": "The print is crisp and the shirt is really soft. Fits true to size.", "product": "holy-city-skyline-tee", "where": "shopify" },
+    { "date": "2026-11-03", "rating": 4, "text": "Love the design. Shipping took nine days which felt long.", "product": "holy-city-skyline-tee", "where": "shopify" },
+    { "date": "2026-11-04", "rating": 5, "text": "Colors look just like the photo. Great gift.", "product": "lowcountry-oak-tee", "where": "google" },
+    { "date": "2026-11-05", "rating": 3, "text": "Nice shirt but it runs small. I should have ordered a size up.", "product": "lowcountry-oak-tee", "where": "shopify" },
+    { "date": "2026-11-06", "rating": 5, "text": "Fast answer when I asked about sizes. Print has held up after three washes.", "product": null, "where": "facebook" },
+    { "date": "2026-11-07", "rating": 2, "text": "The shirt ran small and there was no size chart on the page.", "product": "lowcountry-oak-tee", "where": "shopify" }
+  ]
+}

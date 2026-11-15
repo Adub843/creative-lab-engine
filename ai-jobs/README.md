@@ -1,7 +1,7 @@
 # AI jobs
 
 Every step in the marketing loop that needs judgment is written here as a plain job file, so any model can run it.
-Today the engine is `claude`. Later it is `alice`, Aaron's own local model. Everything else (fetching numbers, the
+The engine is one of Aaron's own local models first (`local-small` on the GMKtec, `local-big` on the Blink) and `claude` only for judgment calls, for now. Everything else (fetching numbers, the
 scorecard, cost math, flags, the digest, saving files) is plain code in `lib/` and never needs a model.
 
 ## The loop
@@ -14,7 +14,15 @@ scorecard, cost math, flags, the digest, saving files) is plain code in `lib/` a
 ## Files
 
 - `jobs.json` lists every job: `{ "id", "file", "schedule", "engine" }`.
-  `engine` is the per-job switch: `"claude"` now, `"alice"` once Alice takes that job over. Change one job at a time.
+  `engine` is the per-job switch, one of the engines in `engines.json`: `"local-small"`, `"local-big"` or `"claude"`. Move one job at a time.
+- `engines.json` says where each engine runs and which engine a job falls back to when its answer fails the checks
+  (`local-small` to `local-big` to `claude`). No keys: the local models listen only on their own machine and are reached over SSH.
+- `scripts/run-ai-job.mjs` is the local runner: `node scripts/run-ai-job.mjs listing-copy --input ai-jobs/examples/listing-copy.c3d.input.json`.
+  It checks every answer (Output shape, one brand, price unchanged, length limits), retries with the list of problems, then falls back.
+  Every run is saved in `ai-jobs/runs/` (this PC only, not in git); a job no local model could pass is saved in `ai-jobs/runs/needs-claude/`.
+- **Keeping the local model current (rule 20):** when a job file, rule or check changes, change it here, add or update an
+  example input in `examples/` and a test in `scripts/test-ai-jobs.mjs` the same day, and re-run the job on the local engines.
+  When Claude makes a judgment call on a job, save the input, the decision and the reason as an example so the local model can learn it.
 - `<job>.md` is one job. Every file has the same sections, in this order:
   - `## Purpose`: what the job is for, in a sentence or two.
   - `## When it runs`: the trigger or schedule.
@@ -42,3 +50,21 @@ that every file has all six sections.
 - Ads: $2 a day per campaign at most.
 - Never spend money, publish, or message a customer without Aaron's typed approval. Jobs recommend; they don't act.
 - No secrets in any input, output or file.
+
+## The daily brief on a schedule (local model)
+`scripts/daily-brief.mjs` reads the engine's live digest (`GET /api/digest`, and yesterday's), builds the
+daily-brief input for each brand on its own, runs the job on the local model with the runner's checks and
+fallbacks, saves the result in `ai-jobs/runs/daily-brief/<store>/<date>.json` and `latest.json`, and writes one
+handoff per brand to the board (lane `console`). A day that is already done is skipped (`--force` runs it again;
+`--no-handoff` and `--store c3d|ed` are for testing).
+
+- Code builds the "needs you" list from the digest (ads to pause, over the cap, site check fails, failed syncs,
+  missing scopes) and replaces whatever the model wrote, so it is never padded.
+- Code writes the numbers sentence (visits, orders, sales, change from yesterday) and the model must copy it word
+  for word, because a small model miscounts. Code also rejects "no visits/orders/sales" when the digest has some,
+  and a brief that does not say an older site check is old.
+- The console key is the one `drive-server/setup.ps1` stored. It is only sent to the engine as a header.
+- `scripts/schedule-daily-brief.ps1` registers the Windows task "Creative Lab daily brief" (7:50 AM daily, as the
+  signed-in user). If the key was saved from inside the Claude desktop app, the key file is in that app's private
+  copy of `AppData\Local`; the script finds it and points the task there (`DRIVE_DATA`).
+- When the job, a rule or a check changes, change `daily-brief.md`, the example input and the tests the same day.
