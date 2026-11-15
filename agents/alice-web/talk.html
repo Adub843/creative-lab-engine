@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+<title>Alice</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" href="/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Alice">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#130e1d">
+<style>
+:root{--bg:#09070d;--panel:#130e1d;--line:#2b2040;--fg:#f0ebf8;--muted:#a698bf;--me:#6a3fd0;--accent:#8b5cf6;--rec:#d64545;--ok:#5fb37a;--warn:#e0a84a}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:16px/1.45 system-ui,-apple-system,sans-serif;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+header{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--line)}
+header img{width:46px;height:46px;border-radius:50%;object-fit:cover;border:2px solid var(--accent);flex:none}
+header img.talking{box-shadow:0 0 0 4px rgba(93,122,140,.5)}
+header b{display:block;font-size:18px}
+header small{color:var(--muted);font-size:13px}
+.hb{margin-left:auto;display:flex;gap:6px}
+.hb button{background:none;border:1px solid var(--line);color:var(--fg);border-radius:10px;padding:7px 9px;font:inherit;font-size:13px;cursor:pointer;white-space:nowrap}
+.hb button[aria-pressed=true]{background:var(--accent);border-color:var(--accent)}
+#stage{flex:none;display:grid;place-items:center;padding:12px 14px 4px;background:radial-gradient(60% 120% at 50% 0%,#24133f 0%,transparent 70%)}
+#face{position:relative;width:min(36vh,300px);aspect-ratio:1;border-radius:50%;overflow:hidden;border:2px solid #3a2a5c}
+#face.talking{border-color:var(--accent);box-shadow:0 0 0 6px rgba(139,92,246,.18)}
+#face img,#face video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+#face video{opacity:0;transition:opacity .25s}
+#face.live img{opacity:0}
+#face.live video.idle{opacity:1}
+#face.live.talking video.idle{opacity:0}
+#face.live.talking video.talk{opacity:1}
+@media (max-height:560px){#stage{display:none}}
+#log{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;max-width:760px;width:100%;margin:0 auto}
+.m{max-width:86%;padding:10px 13px;border-radius:14px;white-space:pre-wrap;word-wrap:break-word}
+.a{background:var(--panel);border:1px solid var(--line);align-self:flex-start}
+.u{background:var(--me);align-self:flex-end}
+.t{color:var(--muted);font-style:italic}
+.e{color:#ff7b7b;align-self:center;font-size:14px}
+.tag{display:inline-block;font-size:12px;font-weight:600;border-radius:999px;padding:1px 8px;margin-bottom:4px;background:#36454F}
+.tag.note{background:#3d5a4a}.tag.action{background:#5a4d32}.tag.handoff{background:#6b3d3d}
+.bar{padding:10px 14px;background:var(--panel);border-top:1px solid var(--line)}
+.bar .in{display:flex;gap:8px;max-width:760px;margin:0 auto;align-items:flex-end}
+textarea{flex:1;resize:none;min-height:46px;max-height:150px;padding:11px 12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:inherit}
+.bar button{border:0;border-radius:12px;min-width:50px;height:46px;font:inherit;font-weight:600;color:#fff;cursor:pointer}
+#mic{background:var(--accent);font-size:20px}
+#mic.on{background:var(--rec);animation:p 1.2s infinite}
+@keyframes p{50%{opacity:.7}}
+#go{background:#4a5d68;padding:0 14px}
+button:disabled{opacity:.5}
+#panel{position:fixed;inset:0;background:var(--bg);display:none;flex-direction:column;z-index:5;padding-top:env(safe-area-inset-top)}
+#panel.open{display:flex}
+#panel .ph{display:flex;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+#panel .ph b{font-size:17px}
+#panel .ph button{margin-left:auto;background:none;border:1px solid var(--line);color:var(--fg);border-radius:10px;padding:7px 12px;font:inherit}
+#items{overflow-y:auto;padding:14px;max-width:760px;width:100%;margin:0 auto}
+.it{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}
+.it .top{display:flex;gap:6px;flex-wrap:wrap;font-size:12px;color:var(--muted);align-items:center}
+.it b{display:block;margin:4px 0 2px}.it p{margin:0;color:var(--muted);font-size:14px}
+
+/* When the conversation needs the room, Alice shrinks up into the top bar (tap her small picture to bring her back). */
+#stage{transition:max-height .3s ease,padding .3s ease,opacity .25s ease;max-height:70vh;overflow:hidden}
+@media (max-width:979px){
+ body.compact #stage{max-height:0;padding-top:0;padding-bottom:0;opacity:0}
+ body.compact header #av{width:52px;height:52px;border:2px solid #3a2a5c;transition:border-color .2s,box-shadow .2s;cursor:pointer}
+ body.compact.speaking header #av{border-color:var(--accent);box-shadow:0 0 0 4px rgba(139,92,246,.25)}
+}
+</style>
+</head>
+<body>
+<header><img id="av" src="/avatar.png" alt="Alice"><div><b>Alice</b><small id="sub">Talk or type. Notes get saved, tasks get done.</small></div>
+<div class="hb"><button id="voice" type="button" aria-pressed="false">🔈 Voice off</button><button id="list" type="button">Notes</button></div></header>
+<div id="stage"><div id="face"><img src="/avatar.png" alt="Alice"><video class="idle" src="/alice-idle.mp4" muted loop playsinline preload="auto" poster="/avatar.png" aria-hidden="true"></video><video class="talk" src="/alice-talk.mp4" muted loop playsinline preload="auto" poster="/avatar.png" aria-hidden="true"></video></div></div>
+<div id="log" aria-live="polite"></div>
+<div class="bar"><form class="in" id="f"><button id="mic" type="button" aria-label="Talk">🎤</button><textarea id="q" rows="1" placeholder="Message Alice…" aria-label="Message Alice"></textarea><button id="go">Send</button></form></div>
+<div id="panel" role="dialog" aria-label="Notes and tasks"><div class="ph"><b>Notes &amp; tasks</b><button id="close" type="button">Close</button></div><div id="items"></div></div>
+<script>
+// Alice on screen: the resting clip plays always; the talking clip shows while her voice plays.
+function talking(on){const f=document.getElementById('face');if(!f)return;f.classList.toggle('talking',on);const t=f.querySelector('video.talk');if(!t)return;if(on){t.currentTime=0;t.play().catch(()=>{})}else t.pause()}
+addEventListener('DOMContentLoaded',()=>{const i=document.querySelector('#face video.idle');if(!i)return;i.addEventListener('playing',()=>document.getElementById('face').classList.add('live'),{once:true});i.play().catch(()=>{})});
+const $=id=>document.getElementById(id);
+const log=$('log'),q=$('q'),go=$('go'),mic=$('mic'),vbtn=$('voice'),av=$('av');
+const KEY='alice-phone';
+let st;try{st=JSON.parse(localStorage.getItem(KEY))}catch{}
+if(!st||!st.session)st={session:Math.random().toString(36).slice(2,12)+Date.now().toString(36),msgs:[],voice:false};
+function save(){try{st.msgs=st.msgs.slice(-80);localStorage.setItem(KEY,JSON.stringify(st))}catch{}}
+function esc(s){const d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML}
+const TAG={note:['note','Saved to notes'],action:['action','Task'],handoff:['handoff','Handed to Claude']};
+function add(m){const d=document.createElement('div');d.className='m '+(m.r==='u'?'u':m.r==='e'?'e':m.r==='t'?'a t':'a');
+  const tg=m.tag&&TAG[m.tag];d.innerHTML=(tg?`<span class="tag ${tg[0]}">${tg[1]}</span>\n`:'')+esc(m.t);log.append(d);log.scrollTop=log.scrollHeight;return d}
+function paint(){log.textContent='';if(!st.msgs.length)add({r:'a',t:"Hi Aaron, it's Alice. Tell me anything: I'll save notes, do tasks, or just chat."});st.msgs.forEach(add)}
+paint();
+/* voice replies */
+function paintVoice(){vbtn.setAttribute('aria-pressed',st.voice?'true':'false');vbtn.textContent=st.voice?'🔊 Voice on':'🔈 Voice off'}
+paintVoice();
+let VOICE=null;function pickVoice(){const vs=speechSynthesis.getVoices().filter(v=>/^en/i.test(v.lang));VOICE=vs.find(v=>/samantha|female|zira|jenny|aria|google us english/i.test(v.name))||vs[0]||null}
+if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pickVoice}else{vbtn.hidden=true}
+function speak(t){if(!st.voice||!('speechSynthesis' in window))return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(String(t).replace(/[*_#`>]/g,'').slice(0,1200));if(VOICE)u.voice=VOICE;u.rate=1.2;u.onstart=()=>{av.classList.add('talking');talking(true)};u.onend=u.onerror=()=>{av.classList.remove('talking');talking(false)};speechSynthesis.speak(u)}
+vbtn.onclick=()=>{st.voice=!st.voice;save();paintVoice();if(st.voice){speak('Voice is on.')}else if('speechSynthesis' in window)speechSynthesis.cancel()};
+/* voice input */
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,listening=false,base='',autoSend=false;
+if(!SR){mic.onclick=()=>{q.focus();$('sub').textContent='Tap the mic on your keyboard to talk.'}}
+else mic.onclick=()=>{if(listening){autoSend=true;rec.stop();return}
+  if('speechSynthesis' in window)speechSynthesis.cancel();
+  rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=true;base=q.value.trim()?q.value.trim()+' ':'';autoSend=false;
+  rec.onresult=e=>{let s='';for(let i=0;i<e.results.length;i++)s+=e.results[i][0].transcript;q.value=base+s;grow()};
+  rec.onerror=e=>{$('sub').textContent=e.error==='not-allowed'?'Mic blocked: allow it for this page, or use the keyboard mic.':'Mic: '+e.error};
+  rec.onend=()=>{listening=false;mic.classList.remove('on');mic.textContent='🎤';if(autoSend&&q.value.trim())$('f').requestSubmit()};
+  try{rec.start();listening=true;mic.classList.add('on');mic.textContent='⏹';$('sub').textContent='Listening… tap ⏹ to send.'}catch(err){$('sub').textContent='Mic: '+err.message}};
+function grow(){q.style.height='auto';q.style.height=Math.min(q.scrollHeight,150)+'px'}
+q.addEventListener('input',grow);
+q.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!/Mobi/i.test(navigator.userAgent)){e.preventDefault();$('f').requestSubmit()}});
+$('f').onsubmit=async e=>{e.preventDefault();if(listening){autoSend=false;rec.stop()}
+  const text=q.value.trim();if(!text||go.disabled)return;
+  q.value='';grow();const um={r:'u',t:text};st.msgs.push(um);save();add(um);
+  const wait=add({r:'t',t:'Alice is on it…'});go.disabled=true;$('sub').textContent='Talk or type. Notes get saved, tasks get done.';
+  try{const r=await fetch('/api/talk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,session:st.session})});
+    const j=await r.json();wait.remove();if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
+    const m={r:'a',t:j.reply,tag:j.status==='handoff'?'handoff':({note:'note',task:'action'})[j.kind]||null};st.msgs.push(m);save();add(m);speak(j.reply);
+    if(j.kind==='slow')waitLate(j.id);
+  }catch(err){wait.remove();const m={r:'e',t:"Didn't go through: "+err.message};add(m);q.value=text;grow()}
+  go.disabled=false};
+/* Alice answered after the minute: show it when it arrives */
+function waitLate(id){let n=0;const t=setInterval(async()=>{if(++n>60){clearInterval(t);return}
+  try{const j=await (await fetch('/api/late/'+encodeURIComponent(id))).json();if(!j.late)return;clearInterval(t);
+    const L=j.late,m={r:'a',t:L.reply,tag:'action'};st.msgs.push(m);save();add(m);speak(L.reply)}catch{}},10000)}
+/* notes & tasks list */
+const SL={saved:'saved',alice:'Alice is working',done:'✓ done by Alice',done_late:'✓ done by Alice',handoff:'with Claude',claude_done:'✓ done by Claude',chat:'answered'};
+async function loadItems(){const box=$('items');box.innerHTML='<p style="color:var(--muted)">Loading…</p>';
+  try{const j=await (await fetch('/api/log')).json();
+    box.innerHTML=j.entries.map(x=>`<div class="it"><div class="top"><span class="tag ${x.kind==='note'?'note':'action'}">${x.kind==='note'?esc(x.category||'Note'):'Task'}</span><span>${esc(x.when)}</span><span>${esc(SL[x.status]||x.status||'')}${x.kind==='note'?(x.console?' · in the studio':''):''}</span></div><b>${esc(x.title||x.said)}</b><p>${esc(x.kind==='note'?(x.clean||x.said):(x.claude_result||(x.status==='handoff'?'With Claude: '+(x.clean||x.said):(x.reply||x.said))))}</p></div>`).join('')||'<p style="color:var(--muted)">Nothing yet.</p>'}
+  catch{box.innerHTML='<p style="color:var(--muted)">Can\'t reach the Blink. Is Tailscale on?</p>'}}
+$('list').onclick=()=>{$('panel').classList.add('open');loadItems()};$('close').onclick=()=>$('panel').classList.remove('open');
+
+// Alice shrinks into the top bar once the messages fill the screen or you scroll; she comes back at the top of an empty chat.
+(function(){
+  const logEl=document.getElementById('log'),stage=document.getElementById('stage'),head=document.querySelector('header #av');
+  if(!logEl||!stage)return;
+  let pinnedOpen=false;
+  function fit(){
+    if(pinnedOpen)return;
+    // Once the chat has a few messages she moves up and stays up, so the page never flips back and forth.
+    const busy=logEl.querySelectorAll('.m').length>=3;
+    if(busy||logEl.scrollTop>8)document.body.classList.add('compact');
+    else if(!busy&&logEl.scrollTop<=8&&logEl.scrollHeight<=logEl.clientHeight+8)document.body.classList.remove('compact');
+  }
+  logEl.addEventListener('scroll',()=>{if(logEl.scrollTop>8){pinnedOpen=false;fit()}},{passive:true});
+  new MutationObserver(()=>{pinnedOpen=false;fit()}).observe(logEl,{childList:true});
+  addEventListener('resize',fit);
+  if(head)head.addEventListener('click',()=>{pinnedOpen=document.body.classList.contains('compact');document.body.classList.toggle('compact',!pinnedOpen)});
+  if('speechSynthesis' in window)setInterval(()=>document.body.classList.toggle('speaking',speechSynthesis.speaking),300);
+  fit();
+})();
+</script>
+</body>
+</html>
