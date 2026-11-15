@@ -1,6 +1,6 @@
 #!/bin/bash
 # One-step install of the Lab on the server (Ubuntu Server 24.04 on the OptiPlex).
-# Run once, as an admin:  curl -fsSL <raw link to this file> | sudo bash   (or: sudo bash install.sh)
+# Run once, as an admin: copy this file to the server, then  sudo bash install.sh   (the repo is private, so a raw link needs a sign-in)
 # It never asks for or stores a password or key; those go in /etc/lab/lab.env, typed by Aaron.
 set -euo pipefail
 REPO=git@github.com:Adub843/creative-lab-engine.git
