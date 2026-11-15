@@ -81,6 +81,26 @@ patch(JS, 'from:toSteve?"steve":"alice"',
 patch(JS, '(toSteve?"Steve":"Alice")+" couldn',
       'ans.textContent = "Alice couldn\'t answer just now ("', 'ans.textContent = (toSteve?"Steve":"Alice")+" couldn\'t answer just now ("')
 
+# 4. Claude in the picker: the question is filed as a request handed to Claude (GET /api/handoffs lists them).
+patch("static/index.html", '<option value="claude">',
+      '<option value="steve">Steve</option></select>',
+      '<option value="steve">Steve</option><option value="claude">Claude</option></select>')
+patch(JS, 'value==="claude"',
+      'const toSteve=($("#askWho")||{}).value==="steve";',
+      'if(($("#askWho")||{}).value==="claude"){ const wb=$("#ansWho"); if(wb) wb.textContent="Claude"; const now=new Date().toISOString();\n'
+      '    try{ if(!db) throw new Error("no database"); await db.collection("requests").add({for:"claude", by:me().toLowerCase(), status:"handoff", at:now, what:q.slice(0,1500), asked:q.slice(0,600), handoff:{to:"claude", why:"Asked Claude from the Ask box", at:now}});\n'
+      '      const r="Sent to Claude. Claude is not live in this box: it picks this up on its next check, morning or evening, and the answer appears under Requests."; ans.textContent=r; speak(r); $("#askInput").value=""; }\n'
+      '    catch(err){ ans.textContent="That did not save ("+((err&&err.message)||"error")+"). Try again."; }\n'
+      '    return; }\n'
+      '  const toSteve=($("#askWho")||{}).value==="steve";')
+
+# 5. A Talk button in the Ask box, and a quicker reading voice.
+if not (ROOT / "static/js/askmic.js").exists() or (ROOT / "static/js/askmic.js").read_text() != (Path(__file__).resolve().parent / "askmic.js").read_text():
+    shutil.copy2(Path(__file__).resolve().parent / "askmic.js", ROOT / "static/js/askmic.js")
+    done.append("static/js/askmic.js: copied")
+patch("static/index.html", 'src="js/askmic.js"', '<script src="js/alice.js"></script>', '<script src="js/alice.js"></script>\n<script src="js/askmic.js"></script>')
+patch("static/js/core.js", "u.rate=1.2;", "u.rate=0.95;", "u.rate=1.2;")
+
 for title, rows in (("changed", done), ("already there", skipped), ("NOT FOUND", missing)):
     for r in rows:
         print(f"{title}: {r}")

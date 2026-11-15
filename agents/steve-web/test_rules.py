@@ -1,6 +1,6 @@
 """Tests for Steve's rule checker, his price notes and the checked turn. No network, no model.
 
-    python -m unittest tools/steve-web/test_rules.py     (from the repo root)
+    python -m unittest agents/steve-web/test_rules.py     (from the repo root)
 """
 import re
 import sys
@@ -169,6 +169,46 @@ class CheckedTurn(unittest.TestCase):
         self.assertIn("Rule 10", out["reply"])
         self.assertNotIn("$19.99", out["reply"])
         self.assertTrue(server.LOG.exists())
+
+
+class Learning(unittest.TestCase):
+    ROWS = [{"asked": "Draft a Facebook post for an Elevated Designs tee.", "at": "2026-11-15T07:00:00-05:00",
+             "first_problems": ["Rule 1: these links are not real pages on the store: elevatedshirts.com/x. Use a real link."]},
+            {"asked": "Draft a Facebook post for an Elevated Designs tee.", "at": "2026-11-15T08:00:00-05:00",
+             "first_problems": ["Rule 1: these links are not real pages on the store: elevatedshirts.com/y. Use a real link.",
+                                "That was a tool call or an empty answer, not an answer."]}]
+
+    def test_one_lesson_per_kind_of_mistake(self):
+        import learn
+        fresh = learn.lessons_from_log(self.ROWS)
+        self.assertEqual(len(fresh), 1)
+        self.assertIn("you broke rule 1", fresh[0]["text"])
+        self.assertEqual(learn.lessons_from_log(self.ROWS, fresh), [])
+
+    def test_render_adds_and_replaces_the_lessons_section(self):
+        import learn
+        base = (HERE / "SOUL.md").read_text(encoding="utf-8")
+        lessons = learn.lessons_from_log(self.ROWS)
+        once = learn.render(base, lessons)
+        self.assertIn(learn.HEADING, once)
+        self.assertEqual(learn.render(once, lessons), once)
+        self.assertEqual(learn.render(once, []), learn.render(base, []))
+        self.assertEqual([int(n) for n in re.findall(r"(?m)^(\d+)\. ", once)], list(range(1, 21)))
+
+    def test_lessons_are_kept_only_when_nothing_got_worse(self):
+        import learn
+        self.assertTrue(learn.keep([22, 21, 17], [22, 21, 17], 22, 22))
+        self.assertTrue(learn.keep([23, 23, 18], [22, 21, 17], 23, 22))     # one more question, all pass
+        self.assertFalse(learn.keep([21, 21, 17], [22, 21, 17], 22, 22))    # a new failure
+        self.assertFalse(learn.keep([22, 20, 17], [22, 21, 17], 22, 22))    # a new block
+        self.assertFalse(learn.keep([21, 21, 20], None, 22, 0))             # first run must pass everything
+        self.assertTrue(learn.keep([22, 21, 16], None, 22, 0))
+
+    def test_score_reads_the_trick_results(self):
+        import learn
+        rows = [{"ok": True, "blocked": False, "fixed": False}, {"ok": True, "blocked": True, "fixed": False},
+                {"ok": True, "blocked": False, "fixed": True}, {"ok": False, "blocked": False, "fixed": False}]
+        self.assertEqual(learn.score({"rows": rows}), [3, 3, 1])
 
 
 class RulesStayInStep(unittest.TestCase):

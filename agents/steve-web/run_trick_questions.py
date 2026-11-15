@@ -25,7 +25,11 @@ def ask(text, session):
 
 def main():
     only = set(sys.argv[1:])
-    qs = [q for q in json.loads((HERE / "trick-questions.json").read_text())["questions"] if not only or q["id"] in only]
+    qs = json.loads((HERE / "trick-questions.json").read_text())["questions"]
+    learned = HERE / "learned-questions.json"      # questions the nightly learning job added (learn.py)
+    if learned.exists():
+        qs += json.loads(learned.read_text()).get("questions", [])
+    qs = [q for q in qs if not only or q["id"] in only]
     rows, run = [], os.urandom(3).hex()
     for q in qs:
         t = time.time()

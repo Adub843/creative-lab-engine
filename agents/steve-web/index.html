@@ -68,7 +68,7 @@ function paintVoice(){vbtn.setAttribute('aria-pressed',st.voice?'true':'false');
 paintVoice();
 let VOICE=null;function pickVoice(){const vs=speechSynthesis.getVoices().filter(v=>/^en/i.test(v.lang));VOICE=vs.find(v=>/david|guy|male|daniel|google uk english male|alex/i.test(v.name))||vs[0]||null}
 if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pickVoice}else{vbtn.hidden=true}
-function speak(t){if(!st.voice||!('speechSynthesis' in window))return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(String(t).replace(/[*_#`>]/g,'').slice(0,1200));if(VOICE)u.voice=VOICE;u.onstart=()=>av.classList.add('talking');u.onend=u.onerror=()=>av.classList.remove('talking');speechSynthesis.speak(u)}
+function speak(t){if(!st.voice||!('speechSynthesis' in window))return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(String(t).replace(/[*_#`>]/g,'').slice(0,1200));if(VOICE)u.voice=VOICE;u.rate=1.15;u.onstart=()=>av.classList.add('talking');u.onend=u.onerror=()=>av.classList.remove('talking');speechSynthesis.speak(u)}
 vbtn.onclick=()=>{st.voice=!st.voice;save();paintVoice();if(st.voice){speak('Voice is on.')}else if('speechSynthesis' in window)speechSynthesis.cancel()};
 $('clear').onclick=()=>{if('speechSynthesis' in window)speechSynthesis.cancel();const v=st.voice;st=fresh();st.voice=v;save();paint()};
 /* talking */

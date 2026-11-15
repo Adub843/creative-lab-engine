@@ -156,6 +156,74 @@ test("publish: activates, publishes to Online Store, pings IndexNow, returns liv
   assert.equal(res.body.indexNow.sent, true);
 });
 
+// ---------- Edit price ----------
+const VID = "gid://shopify/ProductVariant/501", VID2 = "gid://shopify/ProductVariant/502";
+const priceShop = (o = {}) => fakeShopify({ override: {
+  ConsoleProductPrices: (v, data) => data({ product: o.missing ? null : { id: PID, title: "Mini Name Desk Plate", handle: "mini-name-desk-plate", tags: o.tags ?? [],
+    variants: { nodes: o.variants ?? [{ id: VID, title: "Default Title", price: "19.00" }] } } }),
+  ConsoleEditPrice: (v, data) => data({ productVariantsBulkUpdate: { productVariants: v.variants.map((x) => ({ id: x.id, title: "x", price: x.price })),
+    userErrors: o.userErrors ?? [] } }),
+} });
+
+test("edit price: changes the price and answers with before and after", async () => {
+  const sh = priceShop();
+  const res = await handleProducts(post({ store: "c3d", id: PID, price: "21.5" }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["ConsoleProductPrices", "ConsoleEditPrice"]);
+  assert.deepEqual(sh.calls.find((c) => c.op === "ConsoleEditPrice").variables, { productId: PID, variants: [{ id: VID, price: "21.50" }] });
+  assert.equal(res.body.changed, 1);
+  assert.deepEqual(res.body.before, [{ id: VID, title: "Default Title", price: "19.00" }]);
+  assert.deepEqual(res.body.after, [{ id: VID, title: "Default Title", price: "21.50" }]);
+  assert.equal(res.body.url, "https://charleston3d.com/products/mini-name-desk-plate");
+});
+
+test("edit price: one size only, and a price that is already right writes nothing", async () => {
+  const variants = [{ id: VID, title: "Small", price: "12.00" }, { id: VID2, title: "Large", price: "24.99" }];
+  const one = priceShop({ variants });
+  const res = await handleProducts(post({ store: "c3d", id: PID, variantId: VID2, price: 26 }), { env: envOf(), fetch: one.fetch });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(one.calls.find((c) => c.op === "ConsoleEditPrice").variables.variants, [{ id: VID2, price: "26.00" }]);
+  const same = priceShop({ variants });
+  const res2 = await handleProducts(post({ store: "c3d", id: PID, variantId: VID, price: "12.00" }), { env: envOf(), fetch: same.fetch });
+  assert.equal(res2.body.changed, 0);
+  assert.ok(!same.calls.some((c) => c.op === "ConsoleEditPrice"));
+});
+
+test("edit price: a sheet-priced Elevated Designs shirt is refused, an untagged one is not", async () => {
+  for (const tags of [["Elevated Designs"], ["builder-blank"]]) {
+    const sh = priceShop({ tags });
+    const res = await handleProducts(post({ store: "ed", id: PID, price: "29.99" }), { env: envOf(), fetch: sh.fetch });
+    assert.equal(res.status, 409);
+    assert.equal(res.body.code, "sheet_priced");
+    assert.match(res.body.error, /price sheet/);
+    assert.ok(!sh.calls.some((c) => c.op === "ConsoleEditPrice"));
+  }
+  const free = priceShop({ tags: ["gift"] });
+  assert.equal((await handleProducts(post({ store: "ed", id: PID, price: "29.99" }), { env: envOf(), fetch: free.fetch })).status, 200);
+  // the same tags on Charleston 3D mean nothing: its prices are never synced from the sheet
+  const c3d = priceShop({ tags: ["Elevated Designs"] });
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, price: "29.99" }), { env: envOf(), fetch: c3d.fetch })).status, 200);
+});
+
+test("edit price: bad prices, bad ids, a missing product and a missing key are refused before anything is written", async () => {
+  for (const price of ["free", "", -3, 0, 0.25, 99999, "12.345", 12.345, null, "1e3"]) {
+    const sh = priceShop();
+    const res = await handleProducts(post({ store: "c3d", id: PID, price }), { env: envOf(), fetch: sh.fetch });
+    assert.equal(res.status, 400, `price ${JSON.stringify(price)}`);
+    assert.equal(sh.calls.length, 0);
+  }
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, price: "9.00", variantId: "502" }), { env: envOf(), fetch: priceShop().fetch })).status, 400);
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, price: "9.00", live: true }), { env: envOf(), fetch: priceShop().fetch })).status, 400);
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, price: "9.00" }), { env: envOf(), fetch: priceShop({ missing: true }).fetch })).status, 404);
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, price: "9.00", variantId: VID2 }), { env: envOf(), fetch: priceShop().fetch })).status, 404);
+  const noKey = priceShop();
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, price: "9.00" }, { "content-type": "application/json" }), { env: envOf(), fetch: noKey.fetch })).status, 401);
+  assert.equal(noKey.calls.length, 0);
+  const refused = priceShop({ userErrors: [{ field: ["variants"], message: "Price is invalid" }] });
+  const r = await handleProducts(post({ store: "c3d", id: PID, price: "9.00" }), { env: envOf(), fetch: refused.fetch });
+  assert.ok(r.status >= 400 && /Price is invalid/.test(JSON.stringify(r.body)));
+});
+
 test("publish: already active skips the status update", async () => {
   const sh = fakeShopify({ product: { status: "ACTIVE" } });
   const res = await handleProducts(post({ store: "c3d", id: PID, live: true }), { env: envOf(), fetch: sh.fetch });
