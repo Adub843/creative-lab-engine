@@ -45,6 +45,7 @@ START_HERE = [
     (HQ / "03 Business Admin" / "Business License" / "Master Document - Elevated Designs & Charleston3D.xlsx", "Master sheet"),
     (HQ / "00 Recovery" / "1 System recovery guide.html", "Recovery guide 1: the system"),
     (HQ / "00 Recovery" / "2 Network and remote access guide.html", "Recovery guide 2: network and remote access"),
+    (HQ / "00 Recovery" / "3 Change the Zima server password.html", "Guide 3: change the Zima server password"),
     (HQ / "OPEN-ITEMS.md", "Open items: the one to-do list"),
     (HQ / "00 READ ME FIRST.md", "Read me first: where everything is"),
     (HQ / "CLAUDE.md", "Your rules for every agent"),
