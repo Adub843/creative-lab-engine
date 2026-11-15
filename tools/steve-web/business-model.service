@@ -1,0 +1,16 @@
+[Unit]
+Description=Load the 8B model for the business agent (console-8b) into LM Studio
+After=lmstudio-server.service
+Requires=lmstudio-server.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=PATH=%h/.lmstudio/bin:/usr/local/bin:/usr/bin:/bin
+# "-" so a failed load never blocks anything else.
+ExecStart=-%h/.lmstudio/bin/lms load qwen/qwen3-8b --context-length 32768 --gpu max --identifier console-8b --yes
+ExecStop=-%h/.lmstudio/bin/lms unload console-8b
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target
