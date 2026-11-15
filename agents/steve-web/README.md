@@ -24,6 +24,7 @@ Last updated: 2026-11-15.
 | `patch_console_web.py` | Adds Steve to the console's Ask box on the Blink. Safe to run again. |
 | `learn.py` | The nightly learning job (3:30 AM on the Blink): lessons from rejected answers, kept only if the tests hold. |
 | `askmic.js` | The Talk button for the console's Ask box. |
+| `blink-health-steve.sh` | Runs every five minutes on the Blink and reloads Steve's model if the graphics chip dropped it. |
 | `deploy.sh` | Runs the tests, copies everything to the Blink and restarts the page. |
 | `steve-web.service`, `business-model.service`, `steve-learn.service`, `steve-learn.timer` | The Blink's start-up units for the page and the model. |
 

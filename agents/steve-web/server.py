@@ -17,6 +17,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import datetime
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -70,8 +71,36 @@ def log_check(row):
         pass
 
 
+MODEL_ID = "console-8b"        # Steve's own model in LM Studio (business-model.service loads it)
+
+
+def model_loaded(model=MODEL_ID):
+    """True when Steve's own model is loaded. If it is not, LM Studio would quietly answer with whatever model is
+    loaded (Alice's), so Steve refuses instead: the two agents never share a model by accident."""
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:1234/api/v0/models", timeout=5) as r:
+            return any(m.get("id") == model and m.get("state") == "loaded" for m in json.load(r).get("data", []))
+    except Exception:
+        return False
+
+
+def ensure_model():
+    """Start the model loader once if the model is missing (the graphics chip can drop it), then say whether it is up."""
+    if model_loaded():
+        return True
+    try:
+        subprocess.run(["systemctl", "--user", "restart", "business-model.service"], timeout=240, check=False)
+    except Exception:
+        pass
+    return model_loaded()
+
+
 def ask_steve(asked, session, spoken=False, call=call_hermes):
     """One checked turn. Returns {reply, checked, fixed, blocked, problems}."""
+    if call is call_hermes and not ensure_model():
+        return {"reply": "My model is not loaded on the Blink right now, so I can't answer. It usually comes back within "
+                         "five minutes by itself. If it does not, see the recovery guide: Steve does not answer.",
+                "checked": False, "fixed": False, "blocked": True, "problems": ["model not loaded"]}
     stores = sorted(rules_check.brands(asked)) or ["c3d", "ed"]
     # A price question may only use the prices of the products it was shown; anything else, any listed price.
     note, shown = prices.price_facts(asked, stores)
