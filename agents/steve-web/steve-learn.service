@@ -1,6 +1,6 @@
 [Unit]
 Description=Steve's nightly learning job: lessons from rejected answers, kept only if the tests hold
-After=steve-web.service business-model.service
+After=steve-web.service
 
 [Service]
 Type=oneshot

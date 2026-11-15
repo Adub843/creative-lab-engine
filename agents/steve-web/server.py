@@ -71,12 +71,12 @@ def log_check(row):
         pass
 
 
-MODEL_ID = "console-8b"        # Steve's own model in LM Studio (business-model.service loads it)
+MODEL_ID = "qwen/qwen3-4b-2507"   # the ONE model loaded on the Blink; Alice and Steve share it (separate profiles, folders and memory)
 
 
 def model_loaded(model=MODEL_ID):
-    """True when Steve's own model is loaded. If it is not, LM Studio would quietly answer with whatever model is
-    loaded (Alice's), so Steve refuses instead: the two agents never share a model by accident."""
+    """True when the Blink's model is loaded. Only one model is kept loaded there (two overloaded its graphics
+    memory on 2026-11-15), so a missing model means nothing can answer."""
     try:
         with urllib.request.urlopen("http://127.0.0.1:1234/api/v0/models", timeout=5) as r:
             return any(m.get("id") == model and m.get("state") == "loaded" for m in json.load(r).get("data", []))
@@ -85,11 +85,11 @@ def model_loaded(model=MODEL_ID):
 
 
 def ensure_model():
-    """Start the model loader once if the model is missing (the graphics chip can drop it), then say whether it is up."""
+    """Run the Blink's health check once if the model is missing (it reloads it), then say whether it is up."""
     if model_loaded():
         return True
     try:
-        subprocess.run(["systemctl", "--user", "restart", "business-model.service"], timeout=240, check=False)
+        subprocess.run(["systemctl", "--user", "start", "blink-health.service"], timeout=240, check=False)
     except Exception:
         pass
     return model_loaded()

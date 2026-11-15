@@ -1,7 +1,7 @@
 # Steve, the business agent
 
 Steve is the local business agent for Elevated Designs and Charleston3D. He runs on the Blink (Hermes profile
-`business`, model `console-8b` in LM Studio on the Blink's graphics chip) and only drafts and answers: he has no
+`business`, on the Blink's one loaded model, `qwen/qwen3-4b-2507`, which he shares with Alice; each has its own profile, folder and memory) and only drafts and answers: he has no
 tools to publish, spend, message a customer, or reach Aaron's personal mail, calendar or Alice's files.
 
 Last updated: 2026-11-15.
@@ -24,9 +24,12 @@ Last updated: 2026-11-15.
 | `patch_console_web.py` | Adds Steve to the console's Ask box on the Blink. Safe to run again. |
 | `learn.py` | The nightly learning job (3:30 AM on the Blink): lessons from rejected answers, kept only if the tests hold. |
 | `askmic.js` | The Talk button for the console's Ask box. |
-| `blink-health-steve.sh` | Runs every five minutes on the Blink and reloads Steve's model if the graphics chip dropped it. |
 | `deploy.sh` | Runs the tests, copies everything to the Blink and restarts the page. |
-| `steve-web.service`, `business-model.service`, `steve-learn.service`, `steve-learn.timer` | The Blink's start-up units for the page and the model. |
+| `steve-web.service`, `steve-learn.service`, `steve-learn.timer` | The Blink's start-up units for the page and the model. |
+
+## One model on the Blink
+
+The Blink keeps exactly one model loaded. On 2026-11-15 a second model (an 8B for Steve) pushed its graphics memory to 12.2 of 13.7 GB; the kernel logged "Not enough memory for command submission" and the model crashed, twice. Do not load a second model there.
 
 ## How a turn works
 

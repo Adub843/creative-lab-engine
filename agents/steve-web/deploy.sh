@@ -8,8 +8,7 @@ B=aaronlewis@100.70.128.45
 python -m unittest test_rules.py
 scp -q -o BatchMode=yes server.py rules_check.py prices.py index.html icon.svg manifest.webmanifest \
   trick-questions.json run_trick_questions.py learn.py askmic.js patch_console_web.py SOUL.md "$B:steve-web/"
-scp -q -o BatchMode=yes steve-web.service business-model.service steve-learn.service steve-learn.timer "$B:.config/systemd/user/"
-scp -q -o BatchMode=yes blink-health-steve.sh "$B:.local/bin/"
+scp -q -o BatchMode=yes steve-web.service steve-learn.service steve-learn.timer "$B:.config/systemd/user/"
 ssh -o BatchMode=yes "$B" 'python3 ~/steve-web/learn.py --apply && chmod 600 ~/.hermes/profiles/business/SOUL.md \
   && python3 -m py_compile ~/steve-web/server.py && systemctl --user daemon-reload \
   && systemctl --user enable --now steve-learn.timer >/dev/null 2>&1 \
