@@ -68,7 +68,9 @@ start "Design library tunnel" /min "$cf" tunnel --config "$(Join-Path $data "tun
 # The task runs watch-library.ps1 at sign-in and every 5 minutes: it starts the server or the tunnel only when one
 # isn't running, so a crash or a dropped tunnel comes back by itself (start-library.cmd stays for starting by hand).
 $watch = Join-Path $here "watch-library.ps1"
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watch`""
+# No window: "powershell -WindowStyle Hidden" still flashes one each run, so the task starts through scripts\run-hidden.vbs.
+$hidden = Join-Path (Split-Path -Parent $here) "scripts\run-hidden.vbs"
+$action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "//B //Nologo `"$hidden`" powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$watch`""
 $triggers = @(
   (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME),
   (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5))
