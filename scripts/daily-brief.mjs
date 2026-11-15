@@ -34,6 +34,21 @@ export function numbersLine(shop, before) {
   return t;
 }
 
+// What Aaron has to act on today, built by code from the digest so nothing is padded or missed: ads to pause,
+// budgets over the cap, site check fails (not warnings), a failed price or library sync, and missing app scopes.
+// Low visits or no sales is never on this list. Add a plain name here when the site check gets a new fail id.
+const FAIL_NAMES = { "indexnow-key": "The site check failed on the IndexNow key: set it in the console's Site settings." };
+export function needsYouList(s) {
+  const out = [], sc = s?.scorecard ?? {};
+  for (const c of sc.pauseRecommended ?? []) out.push(`Pause the ad "${c}".`);
+  for (const c of sc.overCap ?? []) out.push(`The ad "${c}" is over the daily cap: lower its budget.`);
+  for (const f of s?.siteCheck?.fails ?? []) out.push(FAIL_NAMES[f] ?? `The site check failed on: ${f}.`);
+  if (s?.pricing?.error) out.push("The price sync failed: open Prices in the console.");
+  if (s?.library && (s.library.ok === false || s.library.error)) out.push("The Kittl library sync failed: open the Art library in the console.");
+  for (const m of sc.missingScopes ?? []) out.push(`Add the ${m} scope to this store's app.`);
+  return out;
+}
+
 // The daily-brief input for one store, from the whole digest and yesterday's (or null).
 export function briefInput(store, digest, yesterday) {
   const s = digest?.stores?.[store];
@@ -43,7 +58,7 @@ export function briefInput(store, digest, yesterday) {
   if (pricing) d.pricing = slim({ phase: pricing.phase, finishedAt: pricing.finishedAt, changed: pricing.report?.changed, error: pricing.error });
   if (library) d.library = slim({ ok: library.ok, at: library.at, added: library.added, removed: library.removed, failed: library.failed, warning: library.warning, error: library.error });
   const y = yesterday?.stores?.[store];
-  return { store, date: digest.date, numbers: numbersLine(s.shop, y?.shop), digest: d, yesterday: y?.shop ? slim({ date: yesterday.date, shop: y.shop, ranks: y.ranks }) : null };
+  return { store, date: digest.date, numbers: numbersLine(s.shop, y?.shop), needsYou: needsYouList(s), digest: d, yesterday: y?.shop ? slim({ date: yesterday.date, shop: y.shop, ranks: y.ranks }) : null };
 }
 
 // One handoff for the board from a run's result. The board keeps fields short, so a long brief ends on a whole sentence.

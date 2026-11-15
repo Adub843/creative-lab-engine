@@ -120,7 +120,7 @@ test("runner: review-summary only passes quotes that are word for word from the 
 
 const DB = fs.readFileSync(path.join(DIR, "daily-brief.md"), "utf8");
 const DB_IN = JSON.parse(fs.readFileSync(path.join(DIR, "examples/daily-brief.c3d.input.json"), "utf8"));
-const DB_GOOD = { store: "c3d", date: "2026-11-14", needsYou: ["Pause the Hype chains Facebook ad."],
+const DB_GOOD = { store: "c3d", date: "2026-11-14", needsYou: DB_IN.needsYou,
   brief: "One ad should be paused today and one product page is missing its description. Over the last 7 days the shop had 412 visits, 5 orders and $96.45 in sales. Visits are up 24 from yesterday's count of 388. The automatic fixes made 3 changes and undid 1.", notes: "" };
 
 test("runner: daily-brief rejects numbers that are not in the digest, and long briefs", () => {
@@ -129,6 +129,9 @@ test("runner: daily-brief rejects numbers that are not in the digest, and long b
   assert.match(bad({ brief: DB_GOOD.brief.replace("412", "1,250") }), /not in the input: 1250/);
   assert.match(bad({ brief: "word ".repeat(130) }), /under 120 words/);
   assert.match(bad({ needsYou: "Pause the ad" }), /needsYou must be a list/);
+  assert.match(bad({ needsYou: [...DB_IN.needsYou, "No sales in 7 days."] }), /needsYou must be the input's needsYou list/);
+  assert.deepEqual(R.tidy("daily-brief", { needsYou: ["No sales in 7 days."] }, DB_IN).needsYou, DB_IN.needsYou, "code replaces the model's list");
+  assert.match(R.check("daily-brief", DB, { ...DB_IN, needsYou: [] }, { ...DB_GOOD, needsYou: [], brief: DB_GOOD.brief + " This needs your attention." }).join("; "), /must not say anything needs Aaron/);
   assert.match(bad({ date: "2026-11-08" }), /date must be 2026-11-14/);
   assert.match(bad({ brief: DB_GOOD.brief.replace("412 visits", "412 sessions") }), /word for word/);
   assert.match(bad({ notes: "There were no orders this week" }), /do not say there were none/);
@@ -144,6 +147,10 @@ test("daily brief run: the input, numbers sentence and handoff are built by code
   const c3d = D.briefInput("c3d", digest, { date: "2026-11-13", stores: { c3d: { shop: { sessions: 66 } } } });
   assert.equal(c3d.date, "2026-11-14"); assert.match(c3d.numbers, /down 11/); assert.equal("avgPosition" in c3d.digest.ranks, false);
   assert.doesNotMatch(JSON.stringify(c3d), /Elevated|98/, "one brand per input");
+  assert.deepEqual(c3d.needsYou, []);
+  assert.deepEqual(D.needsYouList({ siteCheck: { fails: ["indexnow-key", "robots"], warns: ["ga4"] }, scorecard: { pauseRecommended: ["Chains FB"], overCap: ["Chains FB"], missingScopes: ["read_reports"] }, pricing: { error: "bad sheet" }, library: { ok: false } }),
+    ['Pause the ad "Chains FB".', 'The ad "Chains FB" is over the daily cap: lower its budget.', "The site check failed on the IndexNow key: set it in the console's Site settings.", "The site check failed on: robots.",
+      "The price sync failed: open Prices in the console.", "The Kittl library sync failed: open the Art library in the console.", "Add the read_reports scope to this store's app."]);
   const ed = D.briefInput("ed", digest, null);
   assert.equal(ed.yesterday, null); assert.deepEqual(ed.digest.pricing, { phase: "idle", changed: 0 });
   const h = D.handoffFor("c3d", "2026-11-14", { ok: true, engine: "local-small", output: { brief: "Short brief. ".repeat(60), needsYou: ["Fix the IndexNow key."] } });

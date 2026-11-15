@@ -58,6 +58,8 @@ fallbacks, saves the result in `ai-jobs/runs/daily-brief/<store>/<date>.json` an
 handoff per brand to the board (lane `console`). A day that is already done is skipped (`--force` runs it again;
 `--no-handoff` and `--store c3d|ed` are for testing).
 
+- Code builds the "needs you" list from the digest (ads to pause, over the cap, site check fails, failed syncs,
+  missing scopes) and replaces whatever the model wrote, so it is never padded.
 - Code writes the numbers sentence (visits, orders, sales, change from yesterday) and the model must copy it word
   for word, because a small model miscounts. Code also rejects "no visits/orders/sales" when the digest has some,
   and a brief that does not say an older site check is old.

@@ -48,7 +48,9 @@ export function extractJson(answer) {
 
 // Small models cannot count characters, so code does the exact fitting: an SEO description that runs long is cut
 // back to its last whole sentence (or word) that fits in 155 characters. Nothing is added or reworded.
-export function tidy(jobId, out) {
+export function tidy(jobId, out, input) {
+  // The daily brief's "needs you" list is built by code from the digest (scripts/daily-brief.mjs): the model's own list is replaced.
+  if (jobId === "daily-brief" && out && Array.isArray(input?.needsYou)) out.needsYou = [...input.needsYou];
   if (jobId !== "listing-copy" || typeof out?.seo?.description !== "string") return out;
   let d = out.seo.description.trim().replace(/\s+/g, " ");
   if (d.length > 155) {
@@ -115,6 +117,8 @@ export function check(jobId, jobText, input, out) {
     for (const [field, words] of [["sessions", "sessions|visits|visitors|traffic"], ["orders", "orders"], ["sales", "sales"]]) {
       if (shop[field] > 0 && new RegExp(`\\b(?:no|zero|0)\\s+(?:${words})\\b`, "i").test(`${out.brief} ${[].concat(out.needsYou ?? []).join(" ")} ${out.notes ?? ""}`)) bad.push(`the input has ${shop[field]} ${field}, so do not say there were none`);
     }
+    if (Array.isArray(input.needsYou) && JSON.stringify(out.needsYou) !== JSON.stringify(input.needsYou)) bad.push("needsYou must be the input's needsYou list, unchanged");
+    if (Array.isArray(input.needsYou) && !input.needsYou.length && /needs? (?:you|aaron|your attention)|you (?:need|must|should)/i.test(out.brief ?? "")) bad.push("the input's needsYou list is empty, so the brief must not say anything needs Aaron");
     const sc = input.digest?.siteCheck;
     if (sc && sc.today === false && sc.date && !flat(out.brief).includes(sc.date)) bad.push(`the site check is an older one: say in the brief that it is from ${sc.date}`);
     // Every number in the brief has to be in the input (or be a plain difference of two input numbers).
@@ -181,7 +185,7 @@ export async function runJob(jobId, input, { engineName, log = () => {} } = {}) 
       try {
         const messages = buildMessages(jobText, input, problems, raw);
         raw = await withForward(engine, (base) => ask(base, engine, messages));
-        out = tidy(jobId, extractJson(raw)); problems = check(jobId, jobText, input, out);
+        out = tidy(jobId, extractJson(raw), input); problems = check(jobId, jobText, input, out);
       } catch (e) { problems = [e.message]; }
       const t = { engine: name, model: engine.model, attempt, seconds: +((Date.now() - t0) / 1000).toFixed(1), problems, raw };
       tries.push(t); log(`${name} try ${attempt}: ${t.seconds}s ${problems.length ? "REJECTED: " + problems.join("; ") : "passed"}`);

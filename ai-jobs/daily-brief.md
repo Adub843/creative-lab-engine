@@ -12,6 +12,7 @@ Daily after the 11:30 UTC digest is saved (about 11:45 UTC), once for `c3d` and 
 {
   "store": "c3d | ed",
   "date": "<the digest's own date, YYYY-MM-DD>",
+  "needsYou": ["<what Aaron has to act on, built by code; may be empty>"],
   "numbers": "<the visits, orders and sales sentence, written by code>",
   "digest": <GET /api/digest (R2 digest/latest.json), only stores[<store>]:
     { "name": "...", "siteCheck": { "date": "...", "scores": {}, "fails": [], "warns": [] },
@@ -26,7 +27,7 @@ Daily after the 11:30 UTC digest is saved (about 11:45 UTC), once for `c3d` and 
 
 ## Instructions
 0. `date` in the output is the input's `date`. A site check with `"today": false` is an older check: say which day it is from.
-1. `needsYou` holds only things Aaron has to act on. Low visits or no sales is not one of them. Lead with what needs Aaron today, if anything: ads to pause (`scorecard.pauseRecommended`), budgets over the cap (`scorecard.overCap`), site check fails, a failed price or library sync, missing scopes.
+1. `needsYou` is given in the input, built by code: copy it unchanged and add nothing to it. If it has items, open the brief by saying how many things need Aaron. If it is empty, do not say anything needs him; low visits or no sales is not an action.
 2. Then the numbers: copy the `numbers` sentence into the brief word for word and do not restate or recount it. If there is no `numbers`, give 7-day visits, orders and sales from `digest.shop`. Use only the numbers in the input.
 3. Then marketing: the best and worst campaign by label, and what the automatic SEO fixes did (made, undone).
 4. Keep it under 120 words, plain sentences, no jargon. If a part of the digest is an error, say "not available" and why in a few words.
