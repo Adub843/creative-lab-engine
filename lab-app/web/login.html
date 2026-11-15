@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Lab · Sign in</title>
+<meta name="theme-color" content="#1b1e23">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="/_lab/icon.svg">
+<link rel="apple-touch-icon" href="/_lab/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/_lab/login.css">
+</head>
+<body>
+<main class="card" aria-labelledby="t">
+  <svg class="logo" viewBox="0 0 48 48" aria-hidden="true"><path d="M18 33C12 29.5 9 24.5 9 19.5A15 15 0 0 1 39 19.5C39 24.5 36 29.5 30 33V37H18Z" fill="none" stroke="currentColor" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M19.5 42.5H28.5" stroke="currentColor" stroke-width="3.3" stroke-linecap="round"/><path d="M17 21L21 26L24.5 18L28 25L31.5 20.5" fill="none" stroke="#c9a24a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  <h1 id="t">Lab</h1>
+  <p class="eyebrow">Elevated Designs · Charleston3D</p>
+
+  <section id="signin">
+    <button type="button" class="primary" id="go">Sign in</button>
+    <p class="hint">Use your face, fingerprint or device PIN.</p>
+    <button type="button" class="link" id="toSetup">Set up this device</button>
+  </section>
+
+  <section id="setup" hidden>
+    <label for="code">Setup code</label>
+    <input id="code" inputmode="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" placeholder="XXXXX-XXXXX" maxlength="11">
+    <p class="hint">Make a code at the server with <code>npm run setup-code -- aaron</code>. It works once, for 30 minutes.</p>
+    <button type="button" class="primary" id="register">Add this device</button>
+    <button type="button" class="link" id="toSignin">Back to sign in</button>
+  </section>
+
+  <p class="msg" id="msg" role="alert"></p>
+</main>
+<script src="/_lab/webauthn.js"></script>
+<script src="/_lab/login.js"></script>
+</body>
+</html>
