@@ -226,6 +226,16 @@ def handle_talk(text, session):
     _t = team_notes.told(text)
     if _t:
         return {"kind": "chat", "status": "chat", "reply": ("Posted to the team board. Steve and I will both see it on our next answer: " + _t) if team_notes.add("aaron", _t, by="aaron") else "I did not post that: it is already on the board, or it looks like a password or key, which never goes there."}
+    # On the talk page too, lookups are answered, not handed off: a question for the web, the time, a sum,
+    # "remember ..." and "take a note ..." go straight to the same code steps as the main chat.
+    try:
+        direct = (websearch.needs_web(text) or quick.handle(text) is not None
+                  or remember.SAVE_RE.match(text) or remember.LIST_RE.search(text) or remember.FORGET_RE.match(text)
+                  or quick.NOTE_RE.match(text) or quick.NOTES_LIST_RE.match(text))
+    except Exception:
+        direct = False
+    if direct:
+        return {"kind": "chat", "status": "chat", "reply": ask_alice(text, "alice-phone-" + session)}
     s = sort_entry(text)
     now = datetime.datetime.now().astimezone()
     e = {"id": now.strftime("%Y%m%d%H%M%S") + os.urandom(2).hex(), "when": now.strftime("%Y-%m-%d %H:%M"),
