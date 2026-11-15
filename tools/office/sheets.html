@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Spreadsheets · Lab</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="vendor/univer/sheets.css">
+<link rel="stylesheet" href="office.css">
+<style>
+#uv{position:absolute;inset:0}
+</style>
+</head>
+<body>
+<script src="vendor/univer/sheets.js"></script>
+<script src="office.js"></script>
+<script>
+"use strict";
+/* Spreadsheets: Univer (open source, Apache-2.0, github.com/dream-num/univer), an Excel-style sheet editor with
+   400+ formulas, formatting, merged cells, frozen rows and many sheets per workbook. Excel files (.xlsx, .xls, .csv)
+   open through SheetJS (Apache-2.0) and download as .xlsx. Saved in the Lab, a workbook keeps its full formatting. */
+const { createUniver, LocaleType, mergeLocales, UniverSheetsCorePreset, enUS, XLSX } = window.LabSheetsLib;
+const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+let API = null, WB = null, N = 0, LOADING = false;
+const sid = () => "s" + Math.random().toString(36).slice(2, 10);
+
+/* ---------- Excel file -> workbook data ---------- */
+function fromXlsx(buf) {
+  const x = XLSX.read(buf, { type: "array", cellFormula: true, cellNF: true, cellDates: false, sheetStubs: true });
+  const wb = { id: "wb" + (++N), name: "Workbook", sheetOrder: [], sheets: {}, styles: {} };
+  x.SheetNames.forEach((nm) => {
+    const ws = x.Sheets[nm], id = sid(), cellData = {};
+    const ref = ws["!ref"] ? XLSX.utils.decode_range(ws["!ref"]) : { s: { r: 0, c: 0 }, e: { r: 0, c: 0 } };
+    for (const a of Object.keys(ws)) {
+      if (a[0] === "!") continue; const c = ws[a], p = XLSX.utils.decode_cell(a);
+      const cell = {};
+      if (c.f) cell.f = "=" + c.f;
+      if (c.v != null && c.t !== "z") { cell.v = c.v; cell.t = c.t === "n" ? 2 : c.t === "b" ? 3 : 1; }
+      if (c.z && c.z !== "General") { const k = "nf" + Object.keys(wb.styles).length; wb.styles[k] = { n: { pattern: c.z } }; cell.s = k; }
+      if (!Object.keys(cell).length) continue;
+      (cellData[p.r] = cellData[p.r] || {})[p.c] = cell;
+    }
+    const columnData = {}; (ws["!cols"] || []).forEach((c, i) => { if (c && (c.wpx || c.wch)) columnData[i] = { w: Math.round(c.wpx || c.wch * 7 + 10) }; });
+    const rowData = {}; (ws["!rows"] || []).forEach((r, i) => { if (r && r.hpx) rowData[i] = { h: Math.round(r.hpx) }; });
+    wb.sheets[id] = { id, name: nm.slice(0, 31), rowCount: Math.max(100, ref.e.r + 20), columnCount: Math.max(26, ref.e.c + 5), cellData, columnData, rowData,
+      mergeData: (ws["!merges"] || []).map((m) => ({ startRow: m.s.r, endRow: m.e.r, startColumn: m.s.c, endColumn: m.e.c })) };
+    wb.sheetOrder.push(id);
+  });
+  return wb;
+}
+/* rows an agent wrote: [[...], ...] or sheets: [{name, rows}] */
+function fromRows(row) {
+  const list = Array.isArray(row.sheets) && row.sheets.length ? row.sheets : [{ name: "Sheet1", rows: row.rows || csvRows(row.csv || row.text || "") }];
+  const wb = { id: "wb" + (++N), name: "Workbook", sheetOrder: [], sheets: {}, styles: { hd: { bl: 1 } } };
+  list.forEach((s, si) => { const id = sid(), cellData = {}; const rows = Array.isArray(s.rows) ? s.rows : [];
+    rows.forEach((r, ri) => (Array.isArray(r) ? r : []).forEach((v, ci) => { (cellData[ri] = cellData[ri] || {})[ci] = cellFor(v, ri === 0 && row.header !== false ? "hd" : null); }));
+    wb.sheets[id] = { id, name: String(s.name || "Sheet" + (si + 1)).slice(0, 31), rowCount: Math.max(100, rows.length + 20), columnCount: Math.max(26, Math.max(0, ...rows.map((r) => (r || []).length)) + 5), cellData };
+    wb.sheetOrder.push(id); });
+  return wb;
+}
+function cellFor(v, s) { const c = {}; if (typeof v === "string" && v.startsWith("=")) c.f = v; else if (typeof v === "number") { c.v = v; c.t = 2; } else if (typeof v === "boolean") { c.v = v; c.t = 3; } else if (v != null && v !== "") { c.v = String(v); c.t = 1; } if (s) c.s = s; return c; }
+function csvRows(t) { return String(t).split(/\r?\n/).filter((l) => l.trim()).map((l) => l.split(",").map((x) => { const n = Number(x); return x.trim() !== "" && !isNaN(n) ? n : x; })); }
+
+/* ---------- workbook data -> Excel file ---------- */
+function toXlsx(snap) {
+  const out = XLSX.utils.book_new();
+  (snap.sheetOrder || Object.keys(snap.sheets)).forEach((id) => {
+    const s = snap.sheets[id]; if (!s) return; const ws = {}; let mr = 0, mc = 0;
+    for (const [r, cols] of Object.entries(s.cellData || {})) for (const [c, cell] of Object.entries(cols || {})) {
+      if (!cell) continue; const has = cell.v != null || cell.f; if (!has && !(cell.p)) continue;
+      let v = cell.v; if (v == null && cell.p && cell.p.body) v = String(cell.p.body.dataStream || "").replace(/\r\n$/, "").replace(/[\r\n]+$/, "");
+      const x = {}; if (typeof v === "number") { x.t = "n"; x.v = v; } else if (typeof v === "boolean") { x.t = "b"; x.v = v; } else { x.t = "s"; x.v = v == null ? "" : String(v); }
+      if (cell.f) x.f = String(cell.f).replace(/^=/, "");
+      const st = typeof cell.s === "string" ? (snap.styles || {})[cell.s] : cell.s; if (st && st.n && st.n.pattern) x.z = st.n.pattern;
+      ws[XLSX.utils.encode_cell({ r: +r, c: +c })] = x; mr = Math.max(mr, +r); mc = Math.max(mc, +c);
+    }
+    ws["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: mr, c: mc } });
+    if (s.mergeData && s.mergeData.length) ws["!merges"] = s.mergeData.map((m) => ({ s: { r: m.startRow, c: m.startColumn }, e: { r: m.endRow, c: m.endColumn } }));
+    if (s.columnData) { const cols = []; for (const [i, c] of Object.entries(s.columnData)) if (c && c.w) cols[+i] = { wpx: c.w }; ws["!cols"] = cols; }
+    XLSX.utils.book_append_sheet(out, ws, String(s.name || "Sheet").slice(0, 31));
+  });
+  if (!out.SheetNames.length) XLSX.utils.book_append_sheet(out, XLSX.utils.aoa_to_sheet([[]]), "Sheet1");
+  return new Blob([XLSX.write(out, { type: "array", bookType: "xlsx" })], { type: XLSX_TYPE });
+}
+function textOf(snap) { /* what agents read: each sheet as CSV values (first 500 rows) */
+  return (snap.sheetOrder || []).map((id) => { const s = snap.sheets[id]; if (!s) return ""; const rows = [];
+    for (const [r, cols] of Object.entries(s.cellData || {})) { if (+r >= 500) continue; const line = []; for (const [c, cell] of Object.entries(cols || {})) line[+c] = cell && cell.v != null ? String(cell.v).replace(/[\n,]/g, " ") : ""; rows[+r] = Array.from(line, (v) => v || "").join(","); }
+    return "## " + s.name + "\n" + Array.from(rows, (l) => l || "").join("\n"); }).join("\n\n").slice(0, 90000);
+}
+
+/* ---------- the editor ---------- */
+function load(data) {
+  if (WB) { try { API.disposeUnit(WB.getId()); } catch (e) { console.warn(e); } WB = null; }
+  LOADING = true; WB = API.createWorkbook(data || { id: "wb" + (++N), name: "Workbook" });
+  setTimeout(() => { LOADING = false; }, 1500);
+}
+const snapshot = () => WB.save();
+
+const shell = OfficeShell({
+  kind: "sheet", label: "Spreadsheets", ext: "xlsx", untitled: "Untitled spreadsheet",
+  accept: ".xlsx,.xls,.csv,.ods,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv",
+  async mount(stage) {
+    stage.innerHTML = `<div id="uv"></div>`;
+    const r = createUniver({ locale: LocaleType.EN_US, locales: { [LocaleType.EN_US]: mergeLocales(enUS) },
+      darkMode: document.documentElement.dataset.theme !== "light" && false,
+      presets: [UniverSheetsCorePreset({ container: "uv", header: true, toolbar: true, footer: { sheetBar: true, statisticBar: true, menus: true, zoomSlider: true } })] });
+    API = r.univerAPI;
+    /* only real edits count as changes: the formula engine writes its results back on its own after a file opens */
+    let calcAt = 0;
+    const onCmd = (e) => { const cmd = e && e.id ? e : e && e.command ? e.command : e; if (!cmd || cmd.type !== 2) return; const id = cmd.id || "";
+      if (window.__CMDLOG) window.__CMDLOG.push(id + (LOADING ? " (loading)" : ""));
+      if (/^formula\./.test(id)) { calcAt = Date.now(); return; }
+      if (LOADING || Date.now() - calcAt < 400 || /selection|scroll|zoom|set-worksheet-activ|range-theme|rich-text-editing/i.test(id)) return;
+      shell.dirty(); };
+    if (API.addEvent && API.Event && API.Event.CommandExecuted) API.addEvent(API.Event.CommandExecuted, onCmd); else if (API.onCommandExecuted) API.onCommandExecuted(onCmd);
+  },
+  async newFile() { load(null); },
+  async openBlob(blob, name) {
+    const buf = new Uint8Array(await blob.arrayBuffer());
+    if (/\.json$/i.test(name || "") || blob.type === "application/json") { load(JSON.parse(new TextDecoder().decode(buf))); return; }
+    load(fromXlsx(buf));
+  },
+  async openRow(row) { load(fromRows(row)); },
+  async openSnapshot(snap) { load(snap); },
+  async getFile() { const snap = snapshot(); return { blob: toXlsx(snap), type: XLSX_TYPE, extra: snap }; },
+  getText() { return textOf(snapshot()); },
+  ai: { title: "Fill with AI", placeholder: "Make a price table for 10 tee designs with cost, price and margin columns… / A weekly order tracker… / Totals for column C",
+    hint: "Puts the table at the selected cell.",
+    async run(prompt) {
+      const LAB = window.parent.LAB_OFFICE; const snap = snapshot();
+      const out = await LAB.aiJson(`You build spreadsheet tables for Aaron Lewis, owner of Elevated Designs (custom shirts) and Charleston3D (3D printing), Charleston, SC.
+Never invent prices or costs: use numbers only if they are in the sheet or the request, else leave the cell empty. Use Excel formulas (starting with =, A1 references) for totals and math.
+Current sheet values (CSV, for context):
+${textOf(snap).slice(0, 8000)}
+Request: ${prompt}
+Answer ONLY as JSON: {"rows": [[cell, cell, ...], ...]} where row 1 is the header. Numbers as numbers. The table is placed starting at the selected cell, so make formula references match that placement: they start at ${(() => { try { const r = WB.getActiveSheet().getSelection().getActiveRange(); return r.getA1Notation().split(":")[0]; } catch { return "A1"; } })()}.`);
+      const rows = out && Array.isArray(out.rows) ? out.rows : null; if (!rows || !rows.length) throw new Error("no rows");
+      const sheet = WB.getActiveSheet(); let r0 = 0, c0 = 0;
+      try { const rg = sheet.getSelection().getActiveRange(); r0 = rg.getRow(); c0 = rg.getColumn(); } catch { }
+      const w = Math.max(...rows.map((r) => (Array.isArray(r) ? r.length : 0)));
+      const vals = rows.map((r) => Array.from({ length: w }, (_, i) => (Array.isArray(r) && r[i] != null ? r[i] : "")));
+      sheet.getRange(r0, c0, vals.length, w).setValues(vals);
+      try { sheet.getRange(r0, c0, 1, w).setFontWeight("bold"); } catch { }
+    } },
+});
+shell.start();
+</script>
+</body>
+</html>

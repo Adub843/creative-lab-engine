@@ -1,0 +1,68 @@
+/* Lab Office: the bar every office tool shares (Documents, Spreadsheets, Photo editor).
+   Graphite + Gold to match the Lab; soft grey when the Lab is in light mode. The page itself (paper, grid, canvas)
+   keeps the editor's own look, the way Word, Excel and Photoshop do. */
+:root{--bg:#1b1e23;--surface:#23272d;--raise:#2c3138;--line:#394048;--fg:#f1f2f4;--muted:#a7adb7;--gold:#c9a24a;--gold-ink:#1b1e23;--ok:#4fbf86;--bad:#ec6a5e;--shadow:0 18px 50px rgba(0,0,0,.45);color-scheme:dark}
+:root[data-theme="light"]{--bg:#e2e4e7;--surface:#ebedef;--raise:#d7dbe0;--line:#c6ccd4;--fg:#15223f;--muted:#4b5467;--gold:#8c6f2b;--gold-ink:#fff;--ok:#2f7d55;--bad:#b23a30;--shadow:0 18px 50px rgba(21,34,63,.18);color-scheme:light}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--fg);font:14px/1.45 "Atkinson Hyperlegible Next","Segoe UI",system-ui,-apple-system,sans-serif;display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden}
+[hidden]{display:none!important}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+svg.i{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+.ob{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface);border-bottom:1px solid var(--line);flex:none;min-width:0}
+.ob-kind{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:9px;background:var(--raise);color:var(--gold);flex:none}
+.ob-name{flex:1 1 220px;min-width:0;max-width:420px;background:transparent;border:1px solid transparent;border-radius:8px;padding:6px 8px;font-weight:700;font-size:15px}
+.ob-name:hover{border-color:var(--line)}
+.ob-name:focus{border-color:var(--gold);background:var(--bg);outline:none}
+.ob-status{color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.ob-status.bad{color:var(--bad)}
+.ob-sp{flex:1 1 0}
+.ob-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 13px;font-weight:600;font-size:13.5px;cursor:pointer;white-space:nowrap}
+.ob-btn:hover{background:var(--raise)}
+.ob-btn:disabled{opacity:.5;cursor:not-allowed}
+.ob-btn.primary{background:var(--gold);border-color:var(--gold);color:var(--gold-ink)}
+.ob-btn.primary:hover{filter:brightness(1.06)}
+.ob-btn.icon{padding:6px 9px}
+.ob-main{position:relative;flex:1 1 auto;min-height:0;display:flex}
+.ob-stage{flex:1 1 auto;min-width:0;min-height:0;position:relative}
+
+/* the Lab files drawer */
+.ob-drawer{position:absolute;inset:0 auto 0 0;width:min(340px,92vw);background:var(--surface);border-right:1px solid var(--line);box-shadow:var(--shadow);z-index:50;display:flex;flex-direction:column}
+.ob-dh{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.ob-dh b{flex:1;font-size:15px}
+.ob-search{margin:10px 14px 4px;padding:8px 12px;border-radius:999px;border:1px solid var(--line);background:var(--bg)}
+.ob-list{flex:1;overflow:auto;padding:6px 8px 12px}
+.ob-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;background:none;border-radius:10px;padding:8px;cursor:pointer}
+.ob-item:hover,.ob-item[aria-current="true"]{background:var(--raise)}
+.ob-th{width:44px;height:44px;border-radius:8px;background:var(--bg);border:1px solid var(--line);flex:none;object-fit:cover;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.ob-it{flex:1;min-width:0}
+.ob-it b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ob-it span{display:block;font-size:12px;color:var(--muted)}
+.ob-del{border:0;background:none;color:var(--muted);border-radius:8px;padding:6px;cursor:pointer;flex:none}
+.ob-del:hover{color:var(--bad);background:var(--bg)}
+.ob-del.sure{color:#fff;background:var(--bad);font-size:12px;font-weight:700;padding:6px 9px}
+.ob-empty{color:var(--muted);padding:18px 10px;font-size:13.5px}
+.ob-scrim{position:absolute;inset:0;background:rgba(0,0,0,.25);z-index:49}
+
+/* Write with AI */
+.ob-ai{position:absolute;right:14px;top:10px;width:min(420px,calc(100% - 28px));background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);z-index:60;padding:12px;display:flex;flex-direction:column;gap:8px}
+.ob-ai label{font-weight:700;font-size:13.5px}
+.ob-ai textarea{width:100%;min-height:84px;resize:vertical;border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:8px 10px}
+.ob-ai .row{display:flex;gap:8px;align-items:center}
+.ob-ai .hint{color:var(--muted);font-size:12.5px;flex:1}
+
+.ob-toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:9px 16px;border-radius:999px;font-weight:600;font-size:13.5px;z-index:100;box-shadow:var(--shadow);max-width:90vw}
+.ob-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:10px;color:var(--muted);background:var(--bg);z-index:5}
+.ob-spin{width:18px;height:18px;border:2px solid var(--line);border-top-color:var(--gold);border-radius:50%;animation:obspin .8s linear infinite}
+@keyframes obspin{to{transform:rotate(360deg)}}
+
+@media (max-width:760px){
+  .ob{flex-wrap:wrap;padding:8px}
+  .ob-name{flex:1 1 140px;font-size:14px}
+  .ob-status{order:9;flex:1 1 100%;padding-left:40px}
+  .ob-sp{display:none}
+  .ob-btn .t{display:none}
+  .ob-btn{padding:6px 10px}
+}

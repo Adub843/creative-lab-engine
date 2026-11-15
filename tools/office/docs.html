@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Documents · Lab</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="vendor/superdoc/style.css">
+<link rel="stylesheet" href="office.css">
+<style>
+/* Word-style: toolbar strip, grey desk, white pages */
+.dk{position:absolute;inset:0;display:flex;flex-direction:column}
+.dk-tb{flex:none;background:#fff;border-bottom:1px solid #d9dce1;overflow-x:auto;scrollbar-width:thin}
+:root:not([data-theme="light"]) .dk-tb{border-bottom-color:#394048}
+.dk-desk{flex:1;min-height:0;overflow:auto;background:#e9ebee;padding:18px 0 40px}
+:root:not([data-theme="light"]) .dk-desk{background:#2a2e34}
+.dk-doc{margin:0 auto;width:max-content;max-width:100%}
+.dk-doc .superdoc{margin:0 auto}
+@media (max-width:760px){.dk-desk{padding:8px 0 24px}}
+</style>
+</head>
+<body>
+<script src="vendor/superdoc/superdoc.min.js"></script>
+<script src="office.js"></script>
+<script>
+"use strict";
+/* Documents: SuperDoc (open source, AGPL-3.0, github.com/superdoc-dev/superdoc), a real .docx editor that runs in the
+   browser: pages, headers/footers, tables, lists, styles, comments and track changes, saved back as Word files. */
+const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+let SD = null, N = 0;
+function who() { try { return { name: window.parent.LAB_OFFICE.me(), email: "" }; } catch { return { name: "Aaron", email: "" }; } }
+async function make(file, html) {
+  if (SD) { try { SD.destroy(); } catch (e) { console.warn(e); } SD = null; }
+  const stage = document.getElementById("dkDoc"); stage.innerHTML = "";
+  const tb = document.getElementById("dkTb"); tb.innerHTML = "";
+  const id = "sd" + (++N); const holder = document.createElement("div"); holder.id = id; stage.appendChild(holder);
+  const tbHolder = document.createElement("div"); tbHolder.id = "tb" + N; tb.appendChild(tbHolder);
+  await new Promise((ok, no) => {
+    const cfg = { selector: "#" + id, toolbar: "#tb" + N, documentMode: "editing", user: who(), telemetry: { enabled: false },
+      title: shell.title(), onReady: () => ok(), onException: (e) => console.warn("superdoc", e),
+      onEditorUpdate: () => shell.dirty() };
+    if (file) cfg.document = file;
+    if (html != null) cfg.html = html;
+    try { SD = new SuperDoc(cfg); } catch (e) { no(e); }
+    setTimeout(ok, 15000);
+  });
+  if (html != null && SD && SD.activeEditor) { try { SD.activeEditor.commands.setContent(html); } catch (e) { console.warn("html", e); } }
+}
+const editor = () => SD && (SD.activeEditor || null);
+function mdToHtml(md) { /* the AI answers in simple Markdown; turn it into document paragraphs */
+  const e = shell.esc; const inline = (s) => e(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\*(.+?)\*/g, "<em>$1</em>");
+  const out = []; let list = null;
+  for (const raw of String(md).replace(/\r/g, "").split("\n")) {
+    const l = raw.trimEnd(); const h = l.match(/^(#{1,3})\s+(.*)/), b = l.match(/^\s*[-*•]\s+(.*)/), n = l.match(/^\s*\d+[.)]\s+(.*)/);
+    if ((b || n) && list !== (b ? "ul" : "ol")) { if (list) out.push(`</${list}>`); list = b ? "ul" : "ol"; out.push(`<${list}>`); }
+    if (!(b || n) && list) { out.push(`</${list}>`); list = null; }
+    if (h) out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`);
+    else if (b || n) out.push(`<li><p>${inline((b || n)[1])}</p></li>`);
+    else if (l.trim()) out.push(`<p>${inline(l)}</p>`);
+  }
+  if (list) out.push(`</${list}>`); return out.join("");
+}
+const shell = OfficeShell({
+  kind: "doc", label: "Documents", ext: "docx", untitled: "Untitled document",
+  accept: ".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  async mount(stage) { stage.innerHTML = `<div class="dk"><div class="dk-tb" id="dkTb"></div><div class="dk-desk"><div class="dk-doc" id="dkDoc"></div></div></div>`; },
+  async newFile() { await make(null, null); },
+  async openBlob(blob, name) { const f = blob instanceof File ? blob : new File([blob], name || "document.docx", { type: DOCX }); await make(f, null); },
+  async openRow(row) { await make(null, row.html || mdToHtml(row.markdown || row.text || "")); },
+  async getFile() { const b = await SD.export({ isFinalDoc: false, triggerDownload: false, exportedName: shell.title() }); return { blob: b instanceof Blob ? b : new Blob([b], { type: DOCX }), type: DOCX }; },
+  getText() { const ed = editor(); try { return ed ? ed.state.doc.textBetween(0, ed.state.doc.content.size, "\n\n") : ""; } catch { return ""; } },
+  ai: { title: "Write with AI", placeholder: "Write a one-page price list for custom 3D prints… / Draft a vendor agreement for the Charleston market… / Rewrite this to sound friendlier",
+    hint: "Adds the text where your cursor is.",
+    async run(prompt) {
+      const LAB = window.parent.LAB_OFFICE; const ed = editor(); const cur = this.__cur = (() => { try { return shell.title(); } catch { return ""; } })();
+      const doc = (() => { try { return ed.state.doc.textBetween(0, ed.state.doc.content.size, "\n\n").slice(0, 12000); } catch { return ""; } })();
+      const sel = (() => { try { const { from, to } = ed.state.selection; return from < to ? ed.state.doc.textBetween(from, to, "\n") : ""; } catch { return ""; } })();
+      const md = await LAB.ai(`You write business documents for Aaron Lewis, owner of Elevated Designs (custom shirts) and Charleston3D (3D printing), both in Charleston, SC. Keep the two brands separate unless asked. Plain, clear, professional wording. Never invent prices, addresses or phone numbers: leave a [blank] where a fact is missing.
+Document title: ${cur}
+${sel ? "Selected text (rewrite or work on this):\n" + sel + "\n" : ""}${doc ? "Current document text (for context):\n" + doc + "\n" : ""}
+Request: ${prompt}
+Answer with ONLY the text to put in the document, in simple Markdown (# headings, - bullets, 1. numbered lists, **bold**). No preamble.`);
+      const html = mdToHtml(md);
+      if (ed && ed.commands && ed.commands.insertContent) ed.commands.insertContent(html); else await make(null, html);
+    } },
+});
+shell.start();
+</script>
+</body>
+</html>
