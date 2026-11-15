@@ -51,6 +51,14 @@ export function extractJson(answer) {
 export function tidy(jobId, out, input) {
   // The daily brief's "needs you" list is built by code from the digest (scripts/daily-brief.mjs): the model's own list is replaced.
   if (jobId === "daily-brief" && out && Array.isArray(input?.needsYou)) out.needsYou = [...input.needsYou];
+  // Topic tags are low stakes, so code tidies them instead of rejecting a good caption: one word each, # in front,
+  // letters and numbers only, no repeats, three at most.
+  if (jobId === "post-captions" && out && typeof out === "object") {
+    const seen = new Set();
+    out.topicTags = [].concat(out.topicTags ?? []).flatMap((t) => String(t).split(/[\s,]+/))
+      .map((t) => "#" + t.replace(/[^A-Za-z0-9]/g, "")).filter((t) => t.length > 2 && t.length <= 31 && !seen.has(t.toLowerCase()) && seen.add(t.toLowerCase())).slice(0, 3);
+    return out;
+  }
   if (jobId !== "listing-copy" || typeof out?.seo?.description !== "string") return out;
   let d = out.seo.description.trim().replace(/\s+/g, " ");
   if (d.length > 155) {
@@ -104,6 +112,30 @@ export function check(jobId, jobText, input, out) {
     if (dates.length && (out.period?.from !== dates[0] || out.period?.to !== dates.at(-1))) bad.push(`period must be from ${dates[0]} to ${dates.at(-1)}, the first and last review dates in the input`);
     const made = [...new Set(numbers((out.changes ?? []).map((c) => c?.change).join(" ")).filter((n) => !numbers(JSON.stringify(input)).includes(n)))];
     if (made.length) bad.push(`changes use numbers that no review gave (${made.join(", ")}); never state a time, count or price that is not in the input`);
+  }
+  if (jobId === "post-captions") {
+    const posts = Array.isArray(out.posts) ? out.posts : [];
+    if (posts.map((p) => p?.platform).join(",") !== "instagram,facebook") bad.push('posts must be exactly two: "instagram" first, then "facebook"');
+    if (out.product !== input.product?.title) bad.push(`product must be the input title, unchanged: "${input.product?.title}"`);
+    const have = numbers(JSON.stringify(input));
+    const limits = { instagram: [25, 70], facebook: [30, 90] };
+    for (const p of posts) {
+      const c = String(p?.caption ?? ""), [lo, hi] = limits[p?.platform] ?? [25, 90];
+      const words = c.trim().split(/\s+/).filter(Boolean).length;
+      if (words < lo || words > hi) bad.push(`the ${p?.platform} caption must be ${lo} to ${hi} words (is ${words})`);
+      if (/https?:\/\/|www\.|\.com\b/i.test(c)) bad.push(`the ${p?.platform} caption must not contain a link; code adds the link`);
+      if (c.includes("#")) bad.push(`the ${p?.platform} caption must not contain a hashtag; put topic tags in topicTags`);
+      if (/\p{Extended_Pictographic}/u.test(c)) bad.push(`the ${p?.platform} caption must not contain emoji`);
+      if (/\(?\b\d{3}\)?[-. ]\d{3}[-. ]\d{4}\b/.test(c)) bad.push("never show a phone number");
+      const made = [...new Set(numbers(c).filter((n) => !have.some((h) => Math.abs(h - n) < 0.005)))];
+      if (made.length) bad.push(`the ${p?.platform} caption uses numbers that are not in the input (${made.join(", ")})`);
+      const said = [...c.matchAll(/\$\s?(\d+(?:\.\d+)?)/g)].map((m) => Number(m[1]));
+      if (said.length && (input.product?.priceVaries || said.some((n) => Math.abs(n - input.product?.price) > 0.005))) bad.push(input.product?.priceVaries ? "this product has more than one price, so do not state a price" : `the only price allowed is $${Number(input.product?.price).toFixed(2)}`);
+      const claim = /\b(award|best[- ]sell\w*|guarantee\w*|free shipping|ships? (?:in|within)|#1|number one|top[- ]rated|five[- ]star|5[- ]star)\b/i.exec(c)?.[0];
+      if (claim && !String(input.product?.description ?? "").toLowerCase().includes(claim.toLowerCase())) bad.push(`"${claim}" is a claim the listing does not make; remove it`);
+    }
+    const tags = Array.isArray(out.topicTags) ? out.topicTags : [];
+    if (tags.length > 3 || tags.some((t) => !/^#[A-Za-z0-9]{2,30}$/.test(String(t)))) bad.push("topicTags must be at most 3 tags, each one word starting with # (letters and numbers only)");
   }
   if (jobId === "daily-brief") {
     const words = String(out.brief ?? "").trim().split(/\s+/).filter(Boolean).length;
@@ -161,7 +193,7 @@ export async function withForward(engine, fn) {
 
 async function ask(base, engine, messages) {
   const r = await fetch(`${base}/v1/chat/completions`, {
-    method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(300000),
+    method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(engine.timeoutMs ?? 300000),
     body: JSON.stringify({ model: engine.model, messages, temperature: 0.3, max_tokens: engine.maxTokens ?? 1500, stream: false }),
   });
   if (!r.ok) throw new Error(`model answered ${r.status}`);

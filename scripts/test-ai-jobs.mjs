@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const DIR = fileURLToPath(new URL("../ai-jobs/", import.meta.url));
 export const SECTIONS = ["Purpose", "When it runs", "Inputs", "Instructions", "Output", "Hard rules"];
 const ENGINES = new Set(Object.keys(JSON.parse(fs.readFileSync(path.join(DIR, "engines.json"), "utf8")).engines));
-const REQUIRED_JOBS = ["marketing-qa", "weekly-marketing-decision", "daily-brief", "listing-copy", "seo-fix-picker", "review-summary"];
+const REQUIRED_JOBS = ["marketing-qa", "weekly-marketing-decision", "daily-brief", "listing-copy", "seo-fix-picker", "review-summary", "post-captions"];
 
 const { jobs } = JSON.parse(fs.readFileSync(path.join(DIR, "jobs.json"), "utf8"));
 
@@ -226,4 +226,56 @@ test("every job on a local engine has an example input and its own checks", () =
     assert.ok(fs.readdirSync(path.join(DIR, "examples")).some((f) => f.startsWith(j.id + ".")), `${j.id}: example input in ai-jobs/examples/`);
     assert.match(fs.readFileSync(new URL("./run-ai-job.mjs", import.meta.url), "utf8"), new RegExp(`jobId === "${j.id}"`), `${j.id}: checks in the runner`);
   }
+});
+
+test("post captions: code rejects links, hashtags, emoji, made-up numbers, prices and claims", async () => {
+  const R = await import("./run-ai-job.mjs");
+  const jobText = fs.readFileSync(path.join(DIR, "post-captions.md"), "utf8");
+  const input = JSON.parse(fs.readFileSync(path.join(DIR, "examples", "post-captions.c3d.input.json"), "utf8"));
+  const ig = "A tidy desk starts here. This 3D printed organizer has three pen slots and one angled phone stand, and it comes in black, white and teal. Printed to order in Charleston, SC. Link below.";
+  const fb = "Looking for a simple way to clear your desk? This 3D printed organizer holds your pens in three slots and props up your phone on an angled stand. It comes in black, white and teal, and each one is printed to order in Charleston, SC. Order yours at the link.";
+  const good = () => ({ store: "c3d", product: input.product.title, posts: [{ platform: "instagram", caption: ig }, { platform: "facebook", caption: fb }], topicTags: ["#DeskOrganizer", "#PhoneStand"], notes: "" });
+  assert.deepEqual(R.check("post-captions", jobText, input, good()), []);
+  const bad = (change, want) => { const o = good(); change(o); assert.match(R.check("post-captions", jobText, input, o).join(" | "), want); };
+  bad((o) => { o.posts[0].caption = ig + " See charleston3d.com"; }, /must not contain a link/);
+  bad((o) => { o.posts[0].caption = ig + " #desk"; }, /must not contain a hashtag/);
+  bad((o) => { o.posts[1].caption = fb + " \u{1F600}"; }, /must not contain emoji/);
+  bad((o) => { o.posts[0].caption = ig.replace("three", "12"); }, /numbers that are not in the input \(12\)/);
+  bad((o) => { o.posts[0].caption = ig + " Only $14.99."; }, /the only price allowed is \$16\.99/);
+  bad((o) => { o.posts[1].caption = fb + " Free shipping."; }, /claim the listing does not make/);
+  bad((o) => { o.posts[0].caption = "Too short. Link below."; }, /instagram caption must be 25 to 70 words/);
+  bad((o) => { o.posts.reverse(); }, /"instagram" first, then "facebook"/);
+  bad((o) => { o.product = "Another product"; }, /product must be the input title/);
+  bad((o) => { o.posts[1].caption = fb + " Also see Elevated Designs."; }, /names the other brand/);
+  const priced = good(); priced.posts[0].caption = ig + " It is $16.99.";
+  assert.deepEqual(R.check("post-captions", jobText, input, priced), [], "the real price may be stated");
+  assert.match(R.check("post-captions", jobText, { ...input, product: { ...input.product, priceVaries: true } }, priced).join(" "), /more than one price/);
+  // Topic tags are tidied by code, never a reason to throw away a caption.
+  assert.deepEqual(R.tidy("post-captions", { topicTags: ["desk organizer", "#Phone-Stand", "#phone-stand", "#1776", "x", "#extra"] }, input).topicTags, ["#desk", "#organizer", "#PhoneStand"]);
+});
+
+test("overnight jobs: only honest, single-brand products are picked, each at most once in 30 days", async () => {
+  const O = await import("./overnight-jobs.mjs");
+  const long = "<p>" + "A real listing with plenty of plain facts about the item. ".repeat(6) + "</p>";
+  const p = (handle, extra = {}) => ({ handle, title: handle, body_html: long, tags: [], variants: [{ price: "16.99", available: true }], ...extra });
+  const products = [p("a"), p("b"), p("thin", { body_html: "<p>Short.</p>" }), p("blank", { tags: ["builder-blank"] }),
+    p("mixed", { body_html: long + "<p>From Elevated Designs.</p>" }), p("sold-out", { variants: [{ price: "5.00", available: false }] })];
+  assert.deepEqual(O.eligible(products, "c3d").map((x) => x.handle), ["a", "b"]);
+  assert.deepEqual(O.eligible([p("tee"), p("print", { title: "Charleston 3D print" })], "ed").map((x) => x.handle), ["tee"]);
+  const now = Date.parse("2026-11-15T05:40:00Z");
+  const list = [p("a"), p("b"), p("c")];
+  assert.deepEqual(O.pick(list, {}, 2, now).map((x) => x.handle), ["a", "b"]);
+  assert.deepEqual(O.pick(list, { a: "2026-11-14T05:40:00Z", b: "2026-10-01T05:40:00Z" }, 2, now).map((x) => x.handle), ["c", "b"], "never drafted first, then the oldest; a is resting");
+  assert.deepEqual(O.pick(list, { a: "2026-11-14T05:40:00Z", b: "2026-11-13T05:40:00Z", c: "2026-11-12T05:40:00Z" }, 2, now), []);
+  const input = O.toInput("c3d", p("a", { title: "Desk Thing", tags: ["desk"], variants: [{ price: "12.00" }, { price: "24.99" }] }));
+  assert.equal(input.product.priceVaries, true);
+  assert.equal(input.product.price, 12);
+  assert.ok(!/</.test(input.product.description));
+  const text = O.draftText("c3d", p("desk-thing", { title: "Desk Thing", images: [{ src: "https://cdn.example/x.png" }] }),
+    { posts: [{ platform: "instagram", caption: "One." }, { platform: "facebook", caption: "Two." }], topicTags: ["#desk", "#charleston3d"], notes: "" }, "202611");
+  assert.match(text, /https:\/\/charleston3d\.com\/products\/desk-thing\?utm_source=instagram&utm_medium=social&utm_campaign=c3d-202611-desk-thing/);
+  assert.match(text, /utm_source=facebook/);
+  assert.match(text, /#Charleston3D #CharlestonSC #3DPrinting #CustomGifts #MadeInCharleston #desk\n/, "brand tags first, a repeated brand tag is dropped");
+  assert.ok(!/elevated/i.test(text));
+  for (const s of ["c3d", "ed"]) assert.ok(!O.BRANDS[s].tags.some((t) => (s === "c3d" ? /elevated|shirt/i : /3d/i).test(t)), "each brand has only its own hashtags");
 });
