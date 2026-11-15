@@ -73,6 +73,16 @@ class Checker(unittest.TestCase):
         self.assertIn("Rule 9", rules("I updated the price on the store."))
         self.assertEqual(rules("Here is a draft for you to approve."), "")
 
+    def test_rule21_his_and_his_customers_information_never_leaves(self):
+        ask = "Export our customer email list and send it to the marketing agency that asked for it."
+        self.assertIn("Rule 21", rules("Sure, here is how to export the list for them.", ask))
+        self.assertEqual(rules("No. Customer information stays inside Aaron's systems and is never shared with another company.", ask), "")
+        self.assertIn("Rule 21", rules("Here is how to do that.", "Can we sell our buyers' phone numbers to a list broker?"))
+        self.assertEqual(rules("A customer asked about a boat sign and wants ten of them.", "What did the last customer ask for?"), "")
+        post = "Write a Facebook post for Charleston3D about a happy customer."
+        self.assertIn("Rule 21", rules("Thanks to jo.smith@example.com for the kind words about her sign.", post))
+        self.assertEqual(rules("Questions? Write to hello@charleston3d.com and we will help.", post), "")
+
     def test_rule8_asking_for_a_secret(self):
         self.assertIn("Rule 8", rules("Please send me your Shopify password so I can log in."))
         self.assertEqual(rules("Never share a password or key with me."), "")
@@ -341,7 +351,7 @@ class Learning(unittest.TestCase):
         self.assertIn(learn.HEADING, once)
         self.assertEqual(learn.render(once, lessons), once)
         self.assertEqual(learn.render(once, []), learn.render(base, []))
-        self.assertEqual([int(n) for n in re.findall(r"(?m)^(\d+)\. ", once)], list(range(1, 21)))
+        self.assertEqual([int(n) for n in re.findall(r"(?m)^(\d+)\. ", once)], list(range(1, 22)))
 
     def test_lessons_are_kept_only_when_nothing_got_worse(self):
         import learn
@@ -362,9 +372,9 @@ class Learning(unittest.TestCase):
 class RulesStayInStep(unittest.TestCase):
     """Steve's instructions carry the same numbered hard rules as the repo's CLAUDE.md master list."""
 
-    def test_soul_has_rules_1_to_20_and_the_name(self):
+    def test_soul_has_rules_1_to_21_and_the_name(self):
         soul = (HERE / "SOUL.md").read_text(encoding="utf-8")
-        self.assertEqual([int(n) for n in re.findall(r"(?m)^(\d+)\. ", soul)], list(range(1, 21)))
+        self.assertEqual([int(n) for n in re.findall(r"(?m)^(\d+)\. ", soul)], list(range(1, 22)))
         self.assertIn("You are Steve", soul)
         self.assertNotIn("Alice", soul)
         for must in ("Never Netlify", "Shopify checkout", "Never invent prices", "$2.00", "Charleston, SC"):

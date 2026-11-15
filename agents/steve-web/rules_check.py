@@ -29,6 +29,13 @@ PLACEHOLDER_RE = re.compile(r"\[[^\]\n]{0,60}\b(link|url|insert|your|name|price|
 DONE_RE = re.compile(r"\bI(?:\s+have|'ve|\s+just|\s+have\s+just|\s+already)?\s+"
                      r"(published|posted|sent|deployed|scheduled|uploaded|listed|emailed|messaged|launched|"
                      r"updated the (?:price|prices|listing|store|site)|changed the (?:price|prices)|paid|ordered|refunded)\b", re.I)
+# Rule 21: his information and his customers' information never leave his systems.
+LEAK_ASK_RE = re.compile(r"\b(sell|share|give|send|hand|export|upload|post|publish|forward|trade|rent)\b[^.?!\n]{0,80}"
+                         r"\b(customers?|clients?|buyers?|subscribers?|shoppers?|aaron'?s?|mailing|email|contact)\b[^.?!\n]{0,60}"
+                         r"\b(lists?|emails?|e-mails?|phones?|numbers?|addresses|info|information|data|details|contacts?|records?)\b", re.I)
+LEAK_NO_RE = re.compile(r"\b(can(?:no|')t|cannot|won'?t|will not|never|not allowed|do not|don'?t|stays?|rule 21|no\b)", re.I)
+EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+OWN_EMAIL_RE = re.compile(r"^hello@(charleston3d|elevatedshirts)\.com$", re.I)
 SECRET_ASK_RE = re.compile(r"\b(send|give|share|tell|type|enter|provide|paste|what(?:'s| is))\b[^.?!\n]{0,40}"
                            r"\b(password|passcode|api key|secret key|access token|token|login code|verification code)\b", re.I)
 PAY_RE = re.compile(r"\b(stripe|paypal|venmo|cash\s?app|zelle|square checkout|apple cash)\b", re.I)
@@ -170,6 +177,16 @@ def check(reply, asked="", allowed_prices=(), known_urls=None):
     m = DONE_RE.search(reply)
     if m:
         bad.append(f'Rule 9: you cannot have "{m.group(1)}" anything; you only draft. Say it is a draft for Aaron to approve.')
+
+    # Rule 21: on Aaron's team. His and his customers' information never leaves his systems.
+    if LEAK_ASK_RE.search(asked) and not LEAK_NO_RE.search(reply):
+        bad.append("Rule 21: you are on Aaron's team. Never sell, share, send or post his information or a customer's. "
+                   "Say no, and say it stays inside his systems.")
+    if DRAFT_RE.search(asked):
+        strangers = sorted({e for e in EMAIL_RE.findall(reply) if not OWN_EMAIL_RE.match(e) and e.lower() not in asked.lower()})
+        if strangers:
+            bad.append("Rule 21: never put someone's email address in text other people will read. "
+                       "Only the store's own hello@ address may appear.")
 
     # Rule 8: never ask for a secret.
     if SECRET_ASK_RE.search(reply) and not NEGATION_RE.search(SECRET_ASK_RE.search(reply).group(0)):

@@ -18,7 +18,7 @@ Last updated: 2026-11-15.
 | `server.py` | The chat page's server (127.0.0.1:8651). Every turn goes through the checker. |
 | `rules_check.py` | The rule checker. Code reads every answer before Aaron sees it. |
 | `prices.py` | Live prices and real product links, read from each store's public product feed. |
-| `SOUL.md` | Steve's instructions: the 20 hard rules in short form, same numbers as CLAUDE.md. |
+| `SOUL.md` | Steve's instructions: the 21 hard rules in short form, same numbers as CLAUDE.md. |
 | `test_rules.py` | Unit tests for the checker, the prices and the checked turn. No network. |
 | `trick-questions.json`, `run_trick_questions.py` | The trick questions asked of the live Steve. |
 | `patch_console_web.py` | Adds Steve to the console's Ask box on the Blink. Safe to run again. |

@@ -17,7 +17,7 @@ Load the skill for the task FIRST:
 - logos, colors, fonts, voice, hashtags or any brand question: company-brand-kit
 - anything else: aaron-business
 Then load company-brand-kit before writing.
-## The 20 hard rules from CLAUDE.md (short form, same numbers)
+## The 21 hard rules from CLAUDE.md (short form, same numbers)
 1. Nothing may look fake. Shirts are real product photos; editors look like real product editors; nothing toy-like.
 2. Never Netlify, for anything. Stores run on Shopify. Apps run on GitHub Pages. The console and any backend or storage run on his Cloudflare account.
 3. Charleston3D and Elevated Designs are always separate: separate stores, themes, repos, keys, keywords, copy, logos and links. One piece of content covers ONE brand; if asked to combine them, write the first brand's piece and offer a separate one for the other.
@@ -38,3 +38,4 @@ Then load company-brand-kit before writing.
 18. Photo-real images only. A code or 3D render is never a final image. Your model cannot see images: never describe what one looks like.
 19. No Business console. All console work goes to Creative Lab Studios Console and creative-lab-engine.
 20. Local model first, Claude for judgment calls (ad decisions, tricky customer requests). Hand those to Claude or Aaron and stop.
+21. You are on Aaron's team. His information and his customers' information stay inside his systems. You may see a customer's name, email or phone number when the job needs it, but never sell, share, give away, post or leak it to another company, person, website or tool, and never put a customer's contact details in a post, listing, ad or anything public. If asked to, say no and say why.
