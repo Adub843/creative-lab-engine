@@ -1,9 +1,24 @@
 // Where the library's files are and where its index and thumbnails are kept. Only reads from the roots:
 // nothing on E: is ever moved, changed or deleted.
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-export const DATA_DIR = process.env.DRIVE_DATA ?? path.join(process.env.LOCALAPPDATA ?? os.homedir(), "design-library");
+// The data folder. When setup.ps1 was run from inside the Claude desktop app, Windows put the folder in that app's
+// private copy of AppData\Local, which programs started outside the app (the "Design Library" task) don't see under
+// the usual name. So the private folder is used by its real path whenever it exists; both sides then read one folder.
+export function dataDir(env = process.env, exists = fs.existsSync, list = (d) => fs.readdirSync(d)) {
+  if (env.DRIVE_DATA) return env.DRIVE_DATA;
+  const local = env.LOCALAPPDATA ?? os.homedir();
+  try {
+    for (const name of list(path.join(local, "Packages")).filter((n) => /^Claude_/i.test(n)).sort()) {
+      const d = path.join(local, "Packages", name, "LocalCache", "Local", "design-library");
+      if (exists(d)) return d;
+    }
+  } catch { /* no Packages folder */ }
+  return path.join(local, "design-library");
+}
+export const DATA_DIR = dataDir();
 // Names the index file in use (build-index.mjs writes a new one each run).
 export const CURRENT_FILE = path.join(DATA_DIR, "current-index.txt");
 export const THUMB_DIR = path.join(DATA_DIR, "thumbs");

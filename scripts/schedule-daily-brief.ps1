@@ -25,7 +25,9 @@ cd /d "$repo"
 "$node" scripts\daily-brief.mjs > "$runs\last-run.log" 2>&1
 "@ | Set-Content -LiteralPath $run -Encoding ascii
 
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -Command `"& '$run'`"" -WorkingDirectory $repo
+# No window: "powershell -WindowStyle Hidden" still flashes one each run, so the task starts through scripts\run-hidden.vbs.
+$hidden = Join-Path $repo "scripts\run-hidden.vbs"
+$action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "//B //Nologo `"$hidden`" `"$run`"" -WorkingDirectory $repo
 $trigger = New-ScheduledTaskTrigger -Daily -At "7:50AM"
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 30) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
