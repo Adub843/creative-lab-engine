@@ -1,0 +1,23 @@
+{
+  "name": "creative-lab-app",
+  "private": true,
+  "type": "module",
+  "description": "The Lab as an installable app on Aaron's own server (replaces the claude.ai artifact runtime).",
+  "scripts": {
+    "start": "node server/index.mjs",
+    "test": "node --test test/*.test.mjs",
+    "admin": "node server/admin.mjs",
+    "setup-code": "node server/admin.mjs setup-code",
+    "agent-key": "node server/admin.mjs agent-key",
+    "lab-mcp": "node server/lab-mcp.mjs",
+    "icons": "node scripts/make-icons.cjs web"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.3.0",
+    "@simplewebauthn/browser": "14.0.0",
+    "@simplewebauthn/server": "14.0.3"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}

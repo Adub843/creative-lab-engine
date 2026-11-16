@@ -1,0 +1,23 @@
+[Unit]
+Description=Lab (Elevated Designs and Charleston3D back office)
+After=network-online.target remote-fs.target tailscaled.service
+Wants=network-online.target
+RequiresMountsFor=/mnt/nas
+
+[Service]
+User=lab
+Group=lab
+WorkingDirectory=/srv/lab/app/lab-app
+EnvironmentFile=/etc/lab/lab.env
+ExecStart=/usr/bin/node server/index.mjs
+Restart=always
+RestartSec=3
+# keep the service in its own lane
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/srv/lab /mnt/nas/lab-files /mnt/nas/lab-backups
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

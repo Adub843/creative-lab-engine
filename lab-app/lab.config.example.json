@@ -1,0 +1,36 @@
+{
+  "port": 3000,
+  "host": "127.0.0.1",
+  "origin": "https://lab.YOUR-TAILNET.ts.net",
+  "dataDir": "/srv/lab/data",
+  "filesDir": "/mnt/nas/lab-files",
+  "labDir": "/srv/lab/app/lab",
+  "maxUploadBytes": 53687091200,
+
+  "people": [
+    { "id": "aaron", "name": "Aaron", "level": "owner", "color": "#c9a24a" },
+    { "id": "shana", "name": "Shana", "level": "interact", "color": "#5b8db8" },
+    { "id": "josh", "name": "Josh", "level": "interact", "color": "#6aa57a" }
+  ],
+
+  "aiOrder": ["alice", "anthropic", "claude-cli"],
+  "aliceUrl": "http://BLINK-TAILSCALE-NAME:1234/v1",
+  "aliceModel": "qwen",
+  "aliceTimeoutMs": 90000,
+  "claudeCli": "/usr/local/bin/claude",
+
+  "cloudflare": {
+    "accountId": "YOUR-CLOUDFLARE-ACCOUNT-ID",
+    "queueId": "6a32318773ac4c4597e275bc2fde7fec",
+    "buckets": ["creative-lab-engine", "c3d-files"]
+  },
+  "kittl": { "url": "" },
+
+  "runner": { "enabled": true, "workDir": "/srv/lab/runner", "mcpConfig": "/srv/lab/app/lab-app/deploy/runner-mcp.json" },
+
+  "libraries": [
+    { "name": "video", "label": "Videos", "dir": "/mnt/nas/lab-video" },
+    { "name": "3d", "label": "3D models", "dir": "/mnt/nas/lab-3d" },
+    { "name": "art", "label": "Design art (E: drive)", "dir": "/mnt/nas/lab-art" }
+  ]
+}

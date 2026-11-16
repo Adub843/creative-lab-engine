@@ -1,0 +1,8 @@
+[Unit]
+Description=Pull Lab updates merged on GitHub (main branch only)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=lab
+ExecStart=/srv/lab/app/lab-app/deploy/update.sh
