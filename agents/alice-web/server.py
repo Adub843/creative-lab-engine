@@ -30,6 +30,7 @@ _sys.path.insert(0, str(Path(__file__).resolve().parent))   # python -I does not
 import websearch
 import remember
 import quick
+import brain
 try:
     import team_notes
 except Exception:                      # the board is optional: without it nothing changes
@@ -74,6 +75,15 @@ def ask_alice(message, session):
     done = remember.handle(message)
     if done is not None:
         return done
+    # Claude is her brain when Aaron's key is in place (2026-11-15, "Option 1. Everything"). Mail, calendar and
+    # reminders stay on her local tools; if Claude cannot be reached, the local model answers as before.
+    if brain.wants(message):
+        try:
+            via = brain.ask(message, session, remember.prefix() + team_notes.prefix_for(message))
+        except Exception:
+            via = None
+        if via:
+            return via
     # A lookup question gets a real web search first, run here in code, so she answers from live results.
     try:
         found = websearch.prefix_for(message)
@@ -234,7 +244,7 @@ def handle_talk(text, session):
     # On the talk page too, lookups are answered, not handed off: a question for the web, the time, a sum,
     # "remember ..." and "take a note ..." go straight to the same code steps as the main chat.
     try:
-        direct = (websearch.needs_web(text) or quick.handle(text) is not None
+        direct = (brain.wants(text) or websearch.needs_web(text) or quick.handle(text) is not None
                   or remember.SAVE_RE.match(text) or remember.LIST_RE.search(text) or remember.FORGET_RE.match(text)
                   or quick.NOTE_RE.match(text) or quick.NOTES_LIST_RE.match(text))
     except Exception:
@@ -384,7 +394,7 @@ class Handler(BaseHTTPRequestHandler):
                 ok = urllib.request.urlopen("http://127.0.0.1:1234/v1/models", timeout=3).status == 200
             except Exception:
                 ok = False
-            self.send(200, {"ok": True, "model_server": ok})
+            self.send(200, {"ok": True, "model_server": ok, "claude": brain.ready()})
         elif path.startswith("/api/late/"):
             self.send(200, {"late": pending.pop(path[10:], None)})
         elif path == "/api/log":
