@@ -16,12 +16,12 @@ const ENGINE = process.env.CONSOLE_URL ?? "https://creative-lab-engine.business-
 const MAX_UPLOAD = 20 * 1024 * 1024;
 const args = process.argv.slice(2);
 const opt = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : undefined; };
-const src = opt("src"), out = opt("out"), namesFile = opt("names");
+const src = opt("src"), out = opt("out"), namesFile = opt("names"), jobsDir = opt("jobs");
 const upload = args.includes("--upload");
 const only = opt("only")?.split(",").map((s) => s.trim()).filter(Boolean);
-if (!src || !out || !namesFile) { console.error("Usage: node scripts/fusion-batch.mjs --src <dir> --names <csv> --out <dir> [--upload] [--only id,id]"); process.exit(2); }
+if (!out || (!jobsDir && (!src || !namesFile))) { console.error("Usage: node scripts/fusion-batch.mjs (--src <dir> --names <csv> | --jobs <dir of job .json>) --out <dir> [--upload] [--only id,id]"); process.exit(2); }
 
-const names = Object.fromEntries(fs.readFileSync(namesFile, "utf8").split(/\r?\n/).slice(1).filter(Boolean).map((l) => {
+const names = jobsDir ? {} : Object.fromEntries(fs.readFileSync(namesFile, "utf8").split(/\r?\n/).slice(1).filter(Boolean).map((l) => {
   const i = l.indexOf(","); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^"|"$/g, "")];
 }));
 const safe = (s) => String(s).replace(/[<>:"/\\|?*\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 90) || "model";
@@ -56,6 +56,7 @@ async function main() {
   const manifest = path.join(out, "manifest.csv");
   if (!fs.existsSync(manifest)) fs.writeFileSync(manifest, "id,product,part,x_mm,y_mm,z_mm,folder,library_3mf,library_stl,note\n");
   const csv = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  if (jobsDir) return runJobs(manifest, csv);
   const ids = fs.readdirSync(src).filter((d) => fs.statSync(path.join(src, d)).isDirectory() && (!only || only.includes(d))).sort();
   let made = 0, failed = 0;
   for (const id of ids) {
@@ -96,4 +97,36 @@ async function main() {
   }
   console.log(`done: ${made} parts made, ${failed} failed. List: ${manifest}`);
 }
+// --jobs: ready-made Fusion jobs (like tools/fusion/originals/*.json, from scripts/stl-to-fusion-script.py), each
+// saved as <name>.3mf/.stl/.step/.f3d in its own folder. The .f3d opens in Fusion as an editable design.
+async function runJobs(manifest, csv) {
+  for (const f of fs.readdirSync(jobsDir).filter((n) => n.endsWith(".json")).sort()) {
+    const id = f.replace(/\.json$/, "");
+    if (only && !only.includes(id)) continue;
+    const job = { id: `fubatch${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, ...JSON.parse(fs.readFileSync(path.join(jobsDir, f), "utf8")) };
+    const product = safe(job.name), dest = path.join(out, product);
+    const { folder, result } = await buildInFusion(job);
+    if (!result.ok) {
+      const why = String(result.error ?? "").trim().split("\n").pop();
+      console.log(`FAIL ${id}: ${why}`);
+      fs.appendFileSync(manifest, [id, product, "", "", "", "", dest, "", "", `Fusion: ${why}`].map(csv).join(",") + "\n");
+      continue;
+    }
+    fs.mkdirSync(dest, { recursive: true });
+    const lib = {};
+    for (const fmt of ["3mf", "stl", "step", "f3d"]) {
+      if (!result.files?.[fmt]) continue;
+      const target = path.join(dest, `${product}.${fmt}`);
+      fs.copyFileSync(path.join(folder, result.files[fmt]), target);
+      if (upload && (fmt === "3mf" || fmt === "stl")) {
+        try { lib[fmt] = await saveToLibrary(target, `${product}.${fmt}`, `made with Fusion, Charleston3D original`); }
+        catch (e) { lib[fmt] = `not saved: ${e.message}`; }
+      }
+    }
+    const s = result.size ?? {};
+    console.log(`ok ${id} ${s.x}x${s.y}x${s.z} mm (${Object.keys(result.files).join(", ")})`);
+    fs.appendFileSync(manifest, [id, product, "Fusion design", s.x, s.y, s.z, dest, lib["3mf"], lib.stl, "rebuilt as an editable Fusion design"].map(csv).join(",") + "\n");
+  }
+}
+
 main().catch((e) => { console.error(e.message); process.exitCode = 1; });

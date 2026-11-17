@@ -54,6 +54,10 @@ def _export(design, folder, formats):
     root = design.rootComponent
     em = design.exportManager
     files = {}
+    if "f3d" in formats:
+        p = os.path.join(folder, "model.f3d")
+        em.execute(em.createFusionArchiveExportOptions(p, root))
+        files["f3d"] = "model.f3d"
     if "step" in formats:
         p = os.path.join(folder, "model.step")
         em.execute(em.createSTEPExportOptions(p, root))
