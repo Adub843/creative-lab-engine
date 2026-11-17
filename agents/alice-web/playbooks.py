@@ -20,7 +20,7 @@ BIZ_RE = re.compile(
     r"\b(elevated designs?|elevated shirts?|elevatedshirts|charleston ?3d|c3d|epix ?3d|over-?engineered|lowcountry club|"
     r"(?:our|my|the|both|each|either) (?:two )?(?:stores?|shops?|sites?|websites?|brands?|business(?:es)?|company|customers?|products?|"
     r"listings?|ads?|socials?|console|price sheet|agents?)|"
-    r"shirt app|order app|custom requests?|price sheet|creative lab|the console|business console|holo\b|kittl|shopify|"
+    r"shirt app|order app|custom requests?|fusion|3d (?:model|design|part|print)\w*|key ?tags?|name ?plates?|print files?|price sheet|creative lab|the console|business console|holo\b|kittl|shopify|"
     r"for (?:ed|the store|the shop|the brand)|steve\b|blink\b|gmktec|the nuc\b|zima|dell server)\b", re.I)
 # ...or asks about one of Aaron's standing rules by its own words.
 RULE_RE = re.compile(
@@ -32,6 +32,8 @@ ROUTES = [
     ("company-rules", re.compile(r"\b(rules?|allowed|permitted|are we able|may (?:i|we|you)|can (?:i|we|you) (?:use|put|post|say|show|mix|combine)|"
                                  r"is it ok(?:ay)?|netlify|stripe|ad (?:cap|limit)|spend(?:ing)? (?:cap|limit)|business console|typed ok|"
                                  r"secrets?|passwords?|street address|phone number|same post|both brands)\b", re.I)),
+    ("design-engineer", re.compile(r"\b(fusion|cad|3d (?:model|design|part)s?|design (?:a|an|the|me)\b|recipes?|key ?tags?|name ?plates?|"
+                                   r"wall thickness|how thick|printable|print well|overhangs?|print check|box with a lid|storage box)\b", re.I)),
     ("marketing-and-ads", re.compile(r"\b(ads?|advertis\w*|ad spend|budgets?|campaigns?|boost\w*|meta|promotions?|promo|discounts?|coupons?|"
                                      r"marketing|what (?:should|to) (?:we |i )?post next|engagement)\b", re.I)),
     ("c3d-quote-triage", re.compile(r"\b(quotes?|custom requests?|custom (?:print|order)s?|stl|3mf|obj file|step file|print request|"

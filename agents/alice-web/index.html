@@ -89,6 +89,7 @@ form button:disabled{opacity:.5}
  body.menu-open #acts{display:grid}
  header button{padding:6px 8px;font-size:13px}
 }
+body.guest .m{font-size:1.08rem;line-height:1.55}body.guest #q{font-size:1.08rem}
 </style>
 </head>
 <body>
@@ -102,14 +103,19 @@ function face(state,text){const f=document.getElementById('face');f.className=(L
 // The clips are optional: if they load she is shown living and moving, and if not the photo stays.
 addEventListener('DOMContentLoaded',()=>{const i=document.querySelector('#face video.idle');if(!i)return;i.addEventListener('playing',()=>{LIVE=true;face('',document.getElementById('mood').textContent)},{once:true});i.play().catch(()=>{})});
 const log=document.getElementById('log'),q=document.getElementById('q'),go=document.getElementById('go');
-const KEY='alice-web-chat';
+const GUEST=location.pathname.startsWith('/guest');
+const KEY=GUEST?'alice-guest-chat':'alice-web-chat';
 let st;try{st=JSON.parse(localStorage.getItem(KEY))}catch{}
 if(!st||!st.session) st=fresh();
 function fresh(){return {session:Math.random().toString(36).slice(2,12)+Date.now().toString(36),msgs:[]}}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(st))}catch{}}
 function add(cls,text){const d=document.createElement('div');d.className='m '+cls;d.textContent=text;log.append(d);log.scrollTop=log.scrollHeight;return d}
-function paint(){log.textContent='';if(!st.msgs.length) add('a',"Hi Aaron, it's Alice. What are we working on?");st.msgs.forEach(m=>add(m.r==='u'?'u':'a',m.t))}
+function paint(){log.textContent='';if(!st.msgs.length) add('a',GUEST?"Hi, I'm Alice. Ask me anything. You can type, or tap the microphone and talk to me.":"Hi Aaron, it's Alice. What are we working on?");st.msgs.forEach(m=>add(m.r==='u'?'u':'a',m.t))}
 paint();
+// Guest mode (/guest): the same Alice for family and friends. Nothing of Aaron's is shown, used or saved.
+if(GUEST){document.getElementById('st').textContent="Guest · Aaron's private things stay private";document.body.classList.add('guest');
+  const A=document.getElementById('acts');A.textContent='';
+  [['Look something up','Searches the web, with links','Find '],['Help me write','A message, a card or a letter','Help me write '],['Explain something','In plain words','Explain '],['Recipe ideas','Tell me what you have','Give me a recipe using '],['What time is it','','']].forEach(([t,s2,f])=>{const b=document.createElement('button');b.type='button';if(f)b.dataset.fill=f;else b.dataset.send=t+'?';b.textContent=t;if(s2){const sm=document.createElement('small');sm.textContent=s2;b.append(sm)}A.append(b)})}
 document.getElementById('new').onclick=()=>{st=fresh();save();paint();q.focus()};
 q.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();document.getElementById('f').requestSubmit()}});
 q.addEventListener('input',()=>{q.style.height='auto';q.style.height=Math.min(q.scrollHeight,160)+'px'});
@@ -118,7 +124,7 @@ document.getElementById('f').onsubmit=async e=>{
   q.value='';q.style.height='auto';st.msgs.push({r:'u',t:text});save();add('u',text);
   const wait=add('a t','Alice is thinking…');go.disabled=true;face('thinking','Thinking…');
   try{
-    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,session:st.session})});
+    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,session:st.session,guest:GUEST})});
     const j=await r.json();wait.remove();
     if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
     st.msgs.push({r:'a',t:j.reply});save();add('a',j.reply);face('','Here with you.');speak(j.reply);

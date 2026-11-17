@@ -44,6 +44,7 @@ The back office is the Creative Lab Studios Console (engine: creative-lab-engine
 | A new product or business idea | ideas-brief |
 | Morning brief, orders, deadlines | daily-ops |
 | Where a thing lives, which machine or agent | system-map |
+| Designing a 3D part, Fusion, print rules | design-engineer |
 
 ## Reporting to Aaron
 

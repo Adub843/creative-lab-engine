@@ -32,6 +32,8 @@ import remember
 import quick
 import brain
 import playbooks
+import guest
+import weather
 try:
     import team_notes
 except Exception:                      # the board is optional: without it nothing changes
@@ -71,6 +73,9 @@ def _strip_claims(reply):
 def ask_alice(message, session):
     # "Remember ...", "forget ..." and "what do you remember about me" are done in code, so they really happen.
     done = quick.handle(message, save_note=lambda e: append_log(e), read_notes=lambda: read_log())
+    if done is not None:
+        return done
+    done = weather.handle(message)              # a real forecast, by code (the small model made one up from snippets)
     if done is not None:
         return done
     done = remember.handle(message)
@@ -322,6 +327,7 @@ STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
     "/talk": ("talk.html", "text/html; charset=utf-8"),
+    "/guest": ("index.html", "text/html; charset=utf-8"),      # the same page; it switches itself to guest mode
     "/avatar.png": ("avatar.png", "image/png"),
     "/icon-192.png": ("icon-192.png", "image/png"),
     "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
@@ -435,6 +441,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(502, {"error": f"Couldn't reach Alice: {e.__class__.__name__}"})
         if not message or not SESSION_RE.match(session):
             return self.send(400, {"error": "message and session are required"})
+        if body.get("guest"):                    # a guest of Aaron's: nothing of his is read, used or saved (guest.py)
+            try:
+                return self.send(200, {"reply": guest.ask(message[:4000], "guest-" + session)})
+            except Exception as e:
+                return self.send(502, {"error": f"Couldn't reach Alice: {e.__class__.__name__}"})
         _t = team_notes.told(message)
         if _t:
             return self.send(200, {"reply": ("Posted to the team board. Steve and I will both see it on our next answer: " + _t) if team_notes.add("aaron", _t, by="aaron") else "I did not post that: it is already on the board, or it looks like a password or key, which never goes there."})

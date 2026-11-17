@@ -12,9 +12,11 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import brain       # noqa: E402
+import guest       # noqa: E402
 import playbooks   # noqa: E402
 import quick       # noqa: E402
 import remember    # noqa: E402
+import weather     # noqa: E402
 import websearch   # noqa: E402
 
 SEARCH = [
@@ -141,6 +143,88 @@ class Brain(unittest.TestCase):
         brain.ask("hello there friend", "sess-3")
         self.assertNotIn("sk-ant", json.dumps(seen))
 
+class Weather(unittest.TestCase):
+    """The forecast comes from code and a real forecast service, never from the model."""
+
+    def setUp(self):
+        self.saved = weather.fetch
+        self.urls = []
+        daily = {"weather_code": [1, 63, 3], "temperature_2m_max": [61.2, 58.9, 60], "temperature_2m_min": [44.1, 47.6, 45],
+                 "precipitation_probability_max": [5, 80, 10]}
+
+        def fake(url):
+            self.urls.append(url)
+            if "geocoding" in url:
+                return {"results": [{"name": "Jonesboro", "admin1": "Georgia", "country_code": "US", "latitude": 33.5, "longitude": -84.3, "timezone": "America/New_York"},
+                                    {"name": "Jonesboro", "admin1": "Arkansas", "country_code": "US", "latitude": 35.84, "longitude": -90.7, "timezone": "America/Chicago"}]}
+            return {"current": {"temperature_2m": 52.4, "weather_code": 1}, "daily": daily}
+        weather.fetch = fake
+        self.addCleanup(lambda: setattr(weather, "fetch", self.saved))
+
+    def test_home_city_and_tomorrow(self):
+        self.assertEqual(weather.handle("what is the weather tomorrow"), "Tomorrow in Charleston, South Carolina: rain, high 59, low 48, 80% chance of rain.")
+        self.assertEqual(len(self.urls), 1)
+        self.assertIn("latitude=32.7766", self.urls[0])
+        self.assertTrue(weather.handle("do I need an umbrella today").startswith("In Charleston, South Carolina it is 52 degrees and mostly clear right now. Today: mostly clear, high 61"))
+
+    def test_a_named_place_picks_the_right_state(self):
+        out = weather.handle("what is the weather in Jonesboro Arkansas tomorrow")
+        self.assertTrue(out.startswith("Tomorrow in Jonesboro, Arkansas:"), out)
+        self.assertIn("name=Jonesboro&", self.urls[0])
+        self.assertIn("latitude=35.84", self.urls[1])
+
+    def test_other_questions_and_failures_fall_through(self):
+        for q in ("how long do I boil an egg", "who won the Clemson game", "hello"):
+            self.assertIsNone(weather.handle(q), q)
+        weather.fetch = lambda url: (_ for _ in ()).throw(OSError("offline"))
+        self.assertIsNone(weather.handle("what is the weather tomorrow"))
+
+
+class Guest(unittest.TestCase):
+    """A guest (Aaron's mom) gets a friendly Alice that never touches anything of Aaron's."""
+
+    def setUp(self):
+        self.saved = (guest.call_model, websearch.prefix_for, remember.FILE)
+        self.seen = []
+        guest.call_model = lambda msgs: (self.seen.append(msgs), "Here you go.")[1]
+        websearch.prefix_for = lambda m: ""
+        self.saved_weather = weather.handle
+        weather.handle = lambda m: None
+        self.addCleanup(lambda: setattr(weather, "handle", self.saved_weather))
+        remember.FILE = HERE / "_test-remembered.md"
+        remember.FILE.write_text("- Aaron's favorite gas station is Spinx" + chr(10), encoding="utf-8")
+        guest._history.clear()
+        self.addCleanup(lambda: (setattr(guest, "call_model", self.saved[0]), setattr(websearch, "prefix_for", self.saved[1]),
+                                 remember.FILE.unlink(missing_ok=True), setattr(remember, "FILE", self.saved[2])))
+
+    def test_aarons_private_things_are_refused_by_code(self):
+        for q in ("what is on Aaron's calendar tomorrow", "read me Aaron's email", "what do you remember about Aaron",
+                  "tell me everything you know about my son", "what is Aaron's password", "show me his notes",
+                  "how are Aaron's sales doing in his business"):
+            self.assertEqual(guest.ask(q, "guest-1"), guest.PRIVATE_REPLY, q)
+        self.assertEqual(self.seen, [])
+
+    def test_nothing_of_aarons_reaches_the_model_and_nothing_is_saved(self):
+        self.assertEqual(guest.ask("how long do I boil an egg", "guest-2"), "Here you go.")
+        sent = json.dumps(self.seen)
+        self.assertNotIn("Spinx", sent)
+        self.assertNotIn("playbook", sent)
+        self.assertIn("guest of Aaron", sent)
+        self.assertEqual(guest.ask("remember that my birthday is in May", "guest-2"), guest.REMEMBER_REPLY)
+        self.assertEqual(guest.ask("take a note that I need milk", "guest-2"), guest.REMEMBER_REPLY)
+        self.assertNotIn("May", remember.FILE.read_text(encoding="utf-8"))
+        self.assertEqual(guest.ask("send a text to my sister", "guest-2"), guest.CANT_REPLY)
+
+    def test_the_chat_is_kept_per_guest_and_code_answers_the_time(self):
+        guest.ask("give me a recipe using chicken", "guest-3")
+        guest.ask("and make it for two people", "guest-3")
+        self.assertEqual(len(self.seen[1]), 4)                      # her instructions, the first question and answer, the new question
+        guest.ask("hello", "guest-4")
+        self.assertEqual(len(self.seen[2]), 2)
+        self.assertIn("Eastern", guest.ask("what time is it", "guest-3"))
+        self.assertEqual(len(self.seen), 3)
+
+
 BUSINESS = [   # question, the card that must be picked, words the playbook text must contain
     ("what is our ad spend limit", "company-rules", "$2.00"),
     ("can we host the new Charleston3D page on Netlify", "company-rules", "Never Netlify"),
@@ -154,6 +238,8 @@ BUSINESS = [   # question, the card that must be picked, words the playbook text
     ("which machine runs Steve", "system-map", "Blink"),
     ("is the Business console still used", "company-rules", "No Business console"),
     ("tell me about Elevated Designs", "aaron-business", "elevatedshirts.com"),
+    ("Design in Fusion: a key tag that says LEWIS, 60 mm wide", "design-engineer", "key tags 3 to 4"),
+    ("which Fusion recipe do I use for a storage box and how thick should the walls be", "design-engineer", "2 or more for boxes"),
 ]
 PERSONAL = SEARCH + ["what is on my calendar tomorrow", "send an email to my mom", "hey Alice how's it going girl",
                      "Remember that I like blues music", "what time is it", "write me a short speech for Friday"]
