@@ -1,0 +1,1 @@
+{ "name": "Test script cube with hole", "recipe": "script", "script": "def make(design, root, P):\n    block(root, mm(20), mm(20), mm(20), mm(2))\n    hole(root, 0, 0, mm(8), 0, mm(20))\n", "params": {}, "formats": ["3mf", "stl"] }

@@ -1,0 +1,1 @@
+{ "name": "Test key tag", "recipe": "plate", "params": { "text": "Charleston", "width": 90, "height": 30, "thickness": 3, "corner": 5, "textSize": 10, "textDepth": 1.2, "holes": "keyring" }, "formats": ["3mf", "stl"] }

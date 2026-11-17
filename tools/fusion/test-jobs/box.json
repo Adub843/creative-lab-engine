@@ -1,0 +1,1 @@
+{ "name": "Test box", "recipe": "box", "params": { "width": 80, "depth": 60, "height": 40, "wall": 2, "corner": 4, "lid": true }, "formats": ["3mf", "stl", "step"] }
