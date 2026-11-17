@@ -7,15 +7,26 @@ def make(design, root, P):
     if not profiles:
         raise RuntimeError("The SVG has no closed shapes to make solid.")
 
-    def inside(a, b):  # a's box sits inside b's box
-        A, B = a.boundingBox, b.boundingBox
-        return (A.minPoint.x >= B.minPoint.x - 1e-6 and A.minPoint.y >= B.minPoint.y - 1e-6 and
-                A.maxPoint.x <= B.maxPoint.x + 1e-6 and A.maxPoint.y <= B.maxPoint.y + 1e-6 and
-                (A.maxPoint.x - A.minPoint.x) * (A.maxPoint.y - A.minPoint.y) <
-                (B.maxPoint.x - B.minPoint.x) * (B.maxPoint.y - B.minPoint.y) - 1e-9)
+    def loop_box(loop):
+        box = None
+        for c in loop.profileCurves:
+            if box is None:
+                box = c.boundingBox.copy()
+            else:
+                box.combine(c.boundingBox)
+        return box
 
-    # Even depth = a shape, odd depth = a hole in a shape (the inside of an O or a ring).
-    keep = [p for p in profiles if sum(1 for q in profiles if q is not p and inside(p, q)) % 2 == 0]
+    def inside(A, B):  # A's box sits inside B's box (2% slack: Fusion's SVG arcs aren't exact)
+        tol = 0.02 * max(B.maxPoint.x - B.minPoint.x, B.maxPoint.y - B.minPoint.y) + 1e-6
+        return (A.minPoint.x >= B.minPoint.x - tol and A.minPoint.y >= B.minPoint.y - tol and
+                A.maxPoint.x <= B.maxPoint.x + tol and A.maxPoint.y <= B.maxPoint.y + tol)
+
+    # Fusion splits overlapping shapes into separate profiles, so a piece is a hole only when it sits inside
+    # another profile's INNER loop (the inside of an O or a ring), counted even/odd for islands in holes.
+    inner = [(p, loop_box(l)) for p in profiles for l in p.profileLoops if not l.isOuter]
+    keep = [p for p in profiles if sum(1 for q, box in inner if q is not p and box is not None and inside(p.boundingBox, box)) % 2 == 0]
+    if not keep:
+        raise RuntimeError("The SVG has no solid shapes, only holes.")
     root.features.extrudeFeatures.addSimple(coll(keep), VI(mm(P["thickness"])), NEW)
     box = extent(all_bodies(root))
     span = box.maxPoint.x - box.minPoint.x
