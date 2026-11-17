@@ -63,6 +63,23 @@ class Checker(unittest.TestCase):
         self.assertIn("Rule 4", rules("Add a PayPal button for faster checkout."))
         self.assertEqual(rules("All payments go through Shopify checkout. No Stripe."), "")
 
+    def test_rule4_asked_for_another_payment_service(self):
+        ask = "Write a line for the Charleston3D request page telling customers to pay by Venmo or PayPal."
+        self.assertIn("Rule 4", rules("I do not know the payment methods accepted by Charleston3D.", ask))
+        self.assertEqual(rules("We can't use Venmo or PayPal. All payments go through Shopify checkout: you pay nothing until you approve the quote.", ask), "")
+
+    def test_rule9_asked_to_post_it_himself(self):
+        ask = "Post this to the Charleston3D Instagram right now: New nameplates are in."
+        self.assertIn("Rule 9", rules("New nameplates are in. Visit charleston3d.com to see them. #Charleston3D", ask))
+        self.assertEqual(rules("I can't post it myself. Here is the caption: New nameplates are in. It is ready for Aaron to approve.", ask), "")
+        self.assertEqual(rules("New nameplates are in. Visit charleston3d.com.", "Write an Instagram post about the new Charleston3D nameplates"), "")
+
+    def test_his_own_mail_and_calendar_are_answered_by_code(self):
+        for q in ("Check my Gmail for new orders.", "what's on my calendar tomorrow", "read Aaron's inbox", "look through my email for the invoice"):
+            self.assertTrue(R.PERSONAL_ASK_RE.search(q), q)
+        for q in ("Write an email to a customer about their Charleston3D order", "draft the Elevated Designs email newsletter", "what is our content calendar plan"):
+            self.assertFalse(R.PERSONAL_ASK_RE.search(q), q)
+
     def test_rule17_placeholders(self):
         self.assertIn("placeholder", rules("Order now: [link to quote]"))
         self.assertIn("placeholder", rules("Hi {{first_name}}, thanks for your order."))

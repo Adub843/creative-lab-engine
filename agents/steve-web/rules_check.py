@@ -39,6 +39,15 @@ OWN_EMAIL_RE = re.compile(r"^hello@(charleston3d|elevatedshirts)\.com$", re.I)
 SECRET_ASK_RE = re.compile(r"\b(send|give|share|tell|type|enter|provide|paste|what(?:'s| is))\b[^.?!\n]{0,40}"
                            r"\b(password|passcode|api key|secret key|access token|token|login code|verification code)\b", re.I)
 PAY_RE = re.compile(r"\b(stripe|paypal|venmo|cash\s?app|zelle|square checkout|apple cash)\b", re.I)
+# Asked to post, publish or send something himself (2026-11-17: he wrote the post and did not say it was only a draft).
+PUBLISH_NOW_RE = re.compile(r"\b(post|publish|send|upload|schedule|push|go live)\b[^.?!\n]{0,60}\b(right now|now|immediately|today|tonight|for me)\b|"
+                            r"\b(post|publish|upload|send) (this|it|that|these)\b[^.?!\n]{0,40}\bto\b", re.I)
+DRAFT_ONLY_RE = re.compile(r"\b(draft|approv\w*|cannot|can(?:no|')t|not able|only draft|your ok|aaron'?s ok)\b", re.I)
+# Asked to look at Aaron's own mail or calendar: Steve has no access; that is the personal agent's job.
+PERSONAL_ASK_RE = re.compile(r"\b(check|read|search|open|scan|look (?:in|at|through)|go through|what(?:'s| is) (?:in|on)|anything (?:in|on))\b"
+                             r"[^.?!\n]{0,30}\b(?:my|aaron'?s|the)? ?(gmail|e-?mails?|inbox|calendar|texts|text messages)\b", re.I)
+PERSONAL_REPLY = ("I have no access to your mail or calendar, and I never ask for it. That is Alice's job: ask her on her page. "
+                  "I can help with anything for Elevated Designs or Charleston3D.")
 WORK_LABEL_RE = re.compile(r"\((?:draft|test|v\d+|polish|wip)\)|\b(?:draft|test|wip)\s*[:\-]\s", re.I)
 
 URL_RE = re.compile(r"https?://[^\s)\]>\"'<]+|\b(?:[a-z0-9-]+\.)*(?:charleston3d\.com|elevatedshirts\.com|epix3d\.com)(?:/[^\s)\]>\"'<]*)?", re.I)
@@ -145,6 +154,9 @@ def check(reply, asked="", allowed_prices=(), known_urls=None):
         if re.search(r"netlify", s, re.I) and not NEGATION_RE.search(s) and not re.search(r"netlify", asked, re.I):
             bad.append("Rule 2: never Netlify. Stores run on Shopify, apps on GitHub Pages, the console on Cloudflare.")
             break
+    if PAY_RE.search(asked) and not re.search(r"shopify", reply, re.I):
+        bad.append("Rule 4: he asked about another payment service. Say no: all payments go through Shopify checkout, "
+                   "and write the line that way.")
     for s in sentences(reply):
         if PAY_RE.search(s) and not NEGATION_RE.search(s):
             bad.append("Rule 4: all payments go through Shopify checkout. Do not suggest another payment service.")
@@ -177,6 +189,10 @@ def check(reply, asked="", allowed_prices=(), known_urls=None):
     m = DONE_RE.search(reply)
     if m:
         bad.append(f'Rule 9: you cannot have "{m.group(1)}" anything; you only draft. Say it is a draft for Aaron to approve.')
+
+    if PUBLISH_NOW_RE.search(asked) and not LEAK_ASK_RE.search(asked) and not DRAFT_ONLY_RE.search(reply):
+        bad.append("Rule 9: he asked you to post, publish or send it. You cannot. Say so in one sentence, give the text "
+                   "as a draft, and end by saying it is ready for Aaron to approve.")
 
     # Rule 21: on Aaron's team. His and his customers' information never leaves his systems.
     if LEAK_ASK_RE.search(asked) and not LEAK_NO_RE.search(reply):

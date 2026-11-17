@@ -109,6 +109,9 @@ def ask_steve(asked, session, spoken=False, call=call_hermes):
     changed = price_change.handle(asked, session)
     if changed is not None:
         return {"reply": news + changed, "checked": False, "fixed": False, "blocked": False, "problems": []}
+    # His own mail and calendar are the personal agent's alone: answered by code, never by the model (2026-11-17).
+    if rules_check.PERSONAL_ASK_RE.search(asked or ""):
+        return {"reply": news + rules_check.PERSONAL_REPLY, "checked": False, "fixed": False, "blocked": False, "problems": []}
     if call is call_hermes and not ensure_model():
         return {"reply": "My model is not loaded on the Blink right now, so I can't answer. It usually comes back within "
                          "five minutes by itself. If it does not, see the recovery guide: Steve does not answer.",
