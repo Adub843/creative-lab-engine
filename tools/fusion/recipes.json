@@ -1,0 +1,48 @@
+{
+  "about": "The ready-made Fusion jobs. The Lab, the engine (lib/fusion.mjs) and the PC runner (scripts/fusion-runner.mjs) all read this list, so a job means the same thing everywhere. Each recipe is a Python file in tools/fusion/recipes/ with a make(design, root, P) function. Sizes are millimetres. Add a recipe = add a .py file and an entry here.",
+  "recipes": {
+    "box": {
+      "label": "Storage box",
+      "about": "An open box with rounded corners and an optional slip-on lid.",
+      "params": {
+        "width": { "type": "number", "min": 10, "max": 250, "default": 80 },
+        "depth": { "type": "number", "min": 10, "max": 250, "default": 60 },
+        "height": { "type": "number", "min": 5, "max": 250, "default": 40 },
+        "wall": { "type": "number", "min": 0.8, "max": 10, "default": 2 },
+        "corner": { "type": "number", "min": 0, "max": 30, "default": 4 },
+        "lid": { "type": "boolean", "default": true }
+      }
+    },
+    "plate": {
+      "label": "Sign, name plate or key tag",
+      "about": "A rounded plate with raised text, and a key ring hole or screw holes if asked.",
+      "params": {
+        "text": { "type": "text", "max": 40, "default": "Charleston" },
+        "width": { "type": "number", "min": 20, "max": 250, "default": 90 },
+        "height": { "type": "number", "min": 10, "max": 250, "default": 30 },
+        "thickness": { "type": "number", "min": 1, "max": 20, "default": 3 },
+        "corner": { "type": "number", "min": 0, "max": 40, "default": 5 },
+        "textSize": { "type": "number", "min": 3, "max": 120, "default": 10 },
+        "textDepth": { "type": "number", "min": 0.4, "max": 10, "default": 1.2 },
+        "holes": { "type": "choice", "options": ["none", "keyring", "screws"], "default": "keyring" }
+      }
+    },
+    "svg": {
+      "label": "Shape from an SVG drawing",
+      "about": "Turns the closed shapes of an SVG drawing into a solid at the width you choose (logos, cookie-cutter blanks, ornaments).",
+      "params": {
+        "svg": { "type": "svg", "max": 50000 },
+        "width": { "type": "number", "min": 5, "max": 250, "default": 70 },
+        "thickness": { "type": "number", "min": 0.6, "max": 50, "default": 3 }
+      }
+    },
+    "resize": {
+      "label": "Resize or convert a library file",
+      "about": "Opens a file from the 3D library (STEP, 3MF, STL or OBJ), scales it so its longest side is the size you give (0 keeps the size) and saves it in the formats you pick.",
+      "needsFile": true,
+      "params": {
+        "longest": { "type": "number", "min": 0, "max": 300, "default": 0 }
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "autodeskProduct": "Fusion360",
+  "type": "addin",
+  "id": "6f1c2a0e-9a51-4d1e-8c3b-1ab0c3d3f001",
+  "author": "Creative Lab",
+  "description": { "": "Builds the Lab's Fusion jobs (box, sign, SVG shape, resize, scripts) and saves STL, 3MF and STEP files for the runner." },
+  "version": "1.0.0",
+  "runOnStartup": true,
+  "supportedOS": "windows|mac",
+  "editEnabled": true
+}
