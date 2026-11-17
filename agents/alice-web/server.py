@@ -31,6 +31,7 @@ import websearch
 import remember
 import quick
 import brain
+import playbooks
 try:
     import team_notes
 except Exception:                      # the board is optional: without it nothing changes
@@ -77,21 +78,27 @@ def ask_alice(message, session):
         return done
     # Claude is her brain when Aaron's key is in place (2026-11-15, "Option 1. Everything"). Mail, calendar and
     # reminders stay on her local tools; if Claude cannot be reached, the local model answers as before.
+    # A question about the business gets Aaron's matching playbook put in front of it, in code (2026-11-16).
+    try:
+        book = playbooks.prefix_for(message)
+    except Exception:
+        book = ""
     if brain.wants(message):
         try:
-            via = brain.ask(message, session, remember.prefix() + team_notes.prefix_for(message))
+            via = brain.ask(message, session, book + remember.prefix() + team_notes.prefix_for(message))
         except Exception:
             via = None
         if via:
-            return via
+            return playbooks.tidy(via, message) if book else via
     # A lookup question gets a real web search first, run here in code, so she answers from live results.
+    # A business question is answered from the playbook, not the web (an idea brief still gets a search).
     try:
-        found = websearch.prefix_for(message)
+        found = "" if book and "ideas-brief" not in playbooks.pick(message) else websearch.prefix_for(message)
     except Exception:
         found = ""
     asked = message
     hello = "[This is only a greeting. Answer with one short friendly sentence. Do not mention his calendar, mail, tasks or the business.]\n\n" if _GREET_RE.match(message) and len(message.split()) <= 10 else ""
-    message = found + remember.prefix() + team_notes.prefix_for(message) + hello + message
+    message = book + found + remember.prefix() + team_notes.prefix_for(message) + hello + message
     env = hermes_env()
     req = urllib.request.Request(
         f"http://127.0.0.1:{env.get('API_SERVER_PORT', '8642')}/v1/chat/completions",
@@ -107,7 +114,7 @@ def ask_alice(message, session):
         reply = call("[Your last answer mentioned his calendar, mail, meetings or tasks, but he did not ask about them and you did not check them. Answer again without any of that.]\n\n" + message)
         if not _honest(asked, reply):
             reply = _strip_claims(reply)
-    return reply
+    return playbooks.tidy(reply, asked) if book else reply
 
 
 # ---------------- Alice on the phone: talk or type; notes get saved, tasks get done ----------------
@@ -244,7 +251,7 @@ def handle_talk(text, session):
     # On the talk page too, lookups are answered, not handed off: a question for the web, the time, a sum,
     # "remember ..." and "take a note ..." go straight to the same code steps as the main chat.
     try:
-        direct = (brain.wants(text) or websearch.needs_web(text) or quick.handle(text) is not None
+        direct = (brain.wants(text) or playbooks.about_business(text) or websearch.needs_web(text) or quick.handle(text) is not None
                   or remember.SAVE_RE.match(text) or remember.LIST_RE.search(text) or remember.FORGET_RE.match(text)
                   or quick.NOTE_RE.match(text) or quick.NOTES_LIST_RE.match(text))
     except Exception:

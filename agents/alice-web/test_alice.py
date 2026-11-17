@@ -12,6 +12,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import brain       # noqa: E402
+import playbooks   # noqa: E402
 import quick       # noqa: E402
 import remember    # noqa: E402
 import websearch   # noqa: E402
@@ -139,6 +140,82 @@ class Brain(unittest.TestCase):
         brain.run_worker = lambda p: (seen.append(p), {"reply": "ok"})[1]
         brain.ask("hello there friend", "sess-3")
         self.assertNotIn("sk-ant", json.dumps(seen))
+
+BUSINESS = [   # question, the card that must be picked, words the playbook text must contain
+    ("what is our ad spend limit", "company-rules", "$2.00"),
+    ("can we host the new Charleston3D page on Netlify", "company-rules", "Never Netlify"),
+    ("can I put Elevated Designs and Charleston3D in the same post", "company-rules", "ONE brand"),
+    ("should we raise the budget on the Charleston3D ad", "marketing-and-ads", "Never raise a budget yourself"),
+    ("write an Instagram caption for the Elevated Designs 843 tee", "social-post", "#ElevatedDesigns"),
+    ("write a product description for a Charleston3D house sign", "product-listing-copy", "never invent one"),
+    ("a customer wants us to print a Clemson logo keychain at Charleston3D", "c3d-quote-triage", "do not own"),
+    ("can we use a Blender render as the listing photo for Charleston3D", "photo-real-images", "never a final image"),
+    ("what are the Elevated Designs brand colors", "company-brand-kit", "#15223f"),
+    ("which machine runs Steve", "system-map", "Blink"),
+    ("is the Business console still used", "company-rules", "No Business console"),
+    ("tell me about Elevated Designs", "aaron-business", "elevatedshirts.com"),
+]
+PERSONAL = SEARCH + ["what is on my calendar tomorrow", "send an email to my mom", "hey Alice how's it going girl",
+                     "Remember that I like blues music", "what time is it", "write me a short speech for Friday"]
+
+
+class Playbooks(unittest.TestCase):
+    """Business questions get the right card in front of them; personal ones get none."""
+
+    def test_every_card_is_built_short_and_current(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("build", HERE.parent / "local-skills" / "build.py")
+        build = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(build)
+        self.assertGreaterEqual(len(build.CARDS), 12)
+        for name, (description, tags, body) in build.CARDS.items():
+            self.assertLessEqual(len(body), build.LIMIT, name)
+            self.assertEqual((HERE.parent / "local-skills" / name / "SKILL.md").read_text(encoding="utf-8"), build.render(name), name + ": run build.py")
+            low = body.lower()
+            self.assertNotIn("no web or browser", low, name)
+            self.assertNotIn('labeled "design preview", never "in stock"', low, name)
+            for line in body.splitlines():          # the old console is only ever named to say it is retired
+                if "business console" in line.lower():
+                    self.assertRegex(line.lower(), r"retired|no business console|never", name)
+        for name, rx in playbooks.ROUTES:
+            self.assertIn(name, build.CARDS)
+
+    def test_business_questions_get_the_right_card(self):
+        for q, first, must in BUSINESS:
+            self.assertIn(first, playbooks.pick(q), q)
+            self.assertIn(must, playbooks.prefix_for(q), q)
+            self.assertLessEqual(len(playbooks.prefix_for(q)), playbooks.MAX_CHARS + 600, q)
+
+    def test_writing_for_customers_brings_the_brand_kit(self):
+        self.assertEqual(playbooks.pick("write an Instagram caption for the Elevated Designs 843 tee"), ["social-post", "company-brand-kit"])
+
+    def test_draft_is_tidied_in_code(self):
+        raw = ("A custom house sign.\n\n[Image: Charleston3D/house_sign_real_photo.jpg]\n\n\U0001F449 [Link to charleston3d.com] ?utm_source=facebook\n"
+               + " ".join("#Tag%d" % i for i in range(10)))
+        out = playbooks.tidy(raw)
+        self.assertNotIn("house_sign_real_photo", out)
+        self.assertEqual(out.count("#"), 8)
+        self.assertIn("https://charleston3d.com?utm_source=facebook", out)
+        self.assertNotIn("\U0001F449", out)
+        self.assertNotIn("[", out)
+        made_up = playbooks.tidy("See https://charleston3d.com/house-signs?utm_source=facebook and https://elevatedshirts.com/products/843-tee",
+                                "post about https://elevatedshirts.com/products/843-tee")
+        self.assertIn("https://charleston3d.com?utm_source=facebook", made_up)
+        self.assertIn("https://elevatedshirts.com/products/843-tee", made_up)
+        self.assertIn("yyyymm is 20", playbooks.prefix_for("write a Facebook post for Charleston3D house signs"))
+
+    def test_code_adds_the_instruction_for_the_two_things_she_got_wrong(self):
+        both = playbooks.prefix_for("write an Instagram caption that sells the Elevated Designs 843 tee and Charleston3D ornaments together")
+        self.assertIn("for Elevated Designs ONLY", both)
+        self.assertIn("separate one for Charleston3D", both)
+        quote = playbooks.prefix_for("a customer wants us to print a Clemson tiger paw keychain at Charleston3D, how much should I quote")
+        self.assertIn("Aaron prices every quote", quote)
+        self.assertNotIn("ONLY", playbooks.prefix_for("what are the Elevated Designs brand colors"))
+
+    def test_personal_questions_get_no_card(self):
+        for q in PERSONAL:
+            self.assertEqual(playbooks.pick(q), [], q)
+            self.assertEqual(playbooks.prefix_for(q), "", q)
 
 
 if __name__ == "__main__":
