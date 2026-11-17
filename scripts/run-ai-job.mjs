@@ -11,6 +11,7 @@ import path from "node:path";
 import net from "node:net";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { RECIPES, cleanParams } from "../lib/fusion.mjs";
 
 const DIR = fileURLToPath(new URL("../ai-jobs/", import.meta.url));
 const RUNS = path.join(DIR, "runs");
@@ -57,6 +58,20 @@ export function tidy(jobId, out, input) {
   if (jobId === "request-triage" && out && typeof out === "object") {
     out.order = input?.request?.order; out.urgency = input?.urgency; out.store = "c3d";
     if (typeof out.missing === "string") out.missing = out.missing.trim() ? [out.missing] : [];
+    return out;
+  }
+  // Fusion design: code fills in any parameter the model left out with the recipe default and rounds to 0.1 mm.
+  if (jobId === "fusion-design" && out && typeof out === "object") {
+    out.store = "c3d";
+    if (!Array.isArray(out.formats) || !out.formats.length) out.formats = ["3mf", "stl"];
+    out.formats = [...new Set(out.formats.map((f) => String(f).toLowerCase()))];
+    if (typeof out.printNotes === "string") out.printNotes = out.printNotes.trim() ? [out.printNotes] : [];
+    const spec = RECIPES[out.recipe]?.params;
+    if (spec && out.params && typeof out.params === "object") for (const [k, p] of Object.entries(spec)) {
+      if (out.params[k] === undefined && p.default !== undefined) out.params[k] = p.default;
+      if (p.type === "number" && typeof out.params[k] === "string" && out.params[k].trim() !== "") out.params[k] = Number(out.params[k]);
+      if (p.type === "number" && Number.isFinite(out.params[k])) out.params[k] = Math.round(out.params[k] * 10) / 10;
+    }
     return out;
   }
   if (jobId === "post-captions" && out && typeof out === "object") {
@@ -143,6 +158,7 @@ export function check(jobId, jobText, input, out) {
     for (const q of missing ?? []) for (const [re, value, what] of given) if (value && re.test(q)) bad.push(`do not ask "${String(q).slice(0, 50)}": the request already gives ${what}`);
     if (r.neededBy && /\b(?:confirm|tell us|let us know|share|what is)\b[^.?]{0,60}\b(?:date|when you need|deadline)\b/i.test(reply)) bad.push("replyDraft must not ask for the date: the request already gives it");
   }
+  if (jobId === "fusion-design") bad.push(...checkFusionDesign(input, out));
   if (jobId === "post-captions") {
     const posts =Array.isArray(out.posts) ? out.posts : [];
     if (posts.map((p) => p?.platform).join(",") !== "instagram,facebook") bad.push('posts must be exactly two: "instagram" first, then "facebook"');
@@ -189,6 +205,40 @@ export function check(jobId, jobText, input, out) {
     const ok = (n) => have.some((h) => Math.abs(h - n) < 0.005) || have.some((a) => have.some((b) => Math.abs(Math.abs(a - b) - n) < 0.006));
     const invented = [...new Set(nums(`${out.brief} ${[].concat(out.needsYou ?? []).join(" ")}`).filter((n) => !ok(n)))];
     if (invented.length) bad.push(`these numbers are not in the input: ${invented.join(", ")}; use only numbers from the input`);
+  }
+  return bad;
+}
+
+// The Fusion design job: a real recipe from the input, every size inside its limits (lib/fusion.mjs cleanParams,
+// the same check the engine runs), the print rules from tools/fusion/DESIGN-ENGINEER.md, and no recipe it can't use.
+export function checkFusionDesign(input, out) {
+  const bad = [];
+  const allowed = Object.keys(input.recipes ?? {}).filter((k) => RECIPES[k] && !RECIPES[k].params?.svg && (k !== "resize" || input.from?.key));
+  if (!["yes", "no"].includes(out.canDo)) bad.push('canDo must be "yes" or "no"');
+  if (out.canDo === "no") {
+    if (out.recipe) bad.push('when canDo is "no", recipe must be ""');
+    if (!String(out.notes ?? "").trim()) bad.push('when canDo is "no", say in notes what it needs');
+    return bad;
+  }
+  if (!allowed.includes(out.recipe)) { bad.push(`recipe must be one of: ${allowed.join(", ")}`); return bad; }
+  try { cleanParams(out.recipe, out.params); } catch (e) { bad.push(`params: ${e.message}`); return bad; }
+  const extra = Object.keys(out.params ?? {}).filter((k) => !(k in RECIPES[out.recipe].params));
+  if (extra.length) bad.push(`params has keys ${out.recipe} does not use: ${extra.join(", ")}`);
+  const name = String(out.name ?? "").trim();
+  if (!name || name.length > 60) bad.push("name must be 1 to 60 characters");
+  if (/\b(?:test|draft|v\d|c3d|ed)\b/i.test(name)) bad.push('name must not have a store code or work label ("test", "draft", "v2")');
+  if (!Array.isArray(out.formats) || !out.formats.length || out.formats.some((f) => !["3mf", "stl", "step"].includes(f))) bad.push('formats must be a list of "3mf", "stl" or "step"');
+  if (!Array.isArray(out.printNotes) || out.printNotes.length > 3) bad.push("printNotes must be a list of at most 3 short tips");
+  const p = out.params;
+  if (out.recipe === "box" && p.wall < 1.2) bad.push("a box wall must be at least 1.2 mm");
+  if (out.recipe === "box" && (p.width < 2 * p.wall + 5 || p.depth < 2 * p.wall + 5)) bad.push("the box is too small for its walls");
+  if (out.recipe === "plate") {
+    if (p.thickness < 2) bad.push("a plate must be at least 2 mm thick");
+    if (p.textDepth < 0.8) bad.push("raised text must be at least 0.8 mm high");
+    if (p.textSize < 5) bad.push("letters must be at least 5 mm tall");
+    if (p.textSize > p.height - 4) bad.push(`textSize must be at most height - 4 (${p.height - 4} mm)`);
+    const room = p.width - 10 - (p.holes === "keyring" ? 10 : 0);
+    if (String(p.text).length * 0.7 * p.textSize > room) bad.push(`the text does not fit: ${String(p.text).length} letters at textSize ${p.textSize} need about ${Math.round(String(p.text).length * 0.7 * p.textSize)} mm but there is ${room} mm; lower textSize or widen the plate`);
   }
   return bad;
 }

@@ -16,6 +16,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readKey } from "../drive-server/key.mjs";
 import { withForward } from "./run-ai-job.mjs";
+import { DESIGN_PREFIX, designInput, designWith, jobFor, replyFor, sendJob } from "./fusion-design.mjs";
 
 const ENGINE = process.env.CONSOLE_URL ?? "https://creative-lab-engine.business-console.workers.dev";
 const ENGINES = JSON.parse(fs.readFileSync(fileURLToPath(new URL("../ai-jobs/engines.json", import.meta.url)), "utf8")).engines;
@@ -84,12 +85,23 @@ async function main() {
       if (!model) { log("no model loaded on the Blink; the question waits"); return; }
       for (let n = 0; q && n < MAX_PER_RUN; n++) {
         const t0 = Date.now();
-        const r = await fetch(`${base}/v1/chat/completions`, {
-          method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(180000),
-          body: JSON.stringify({ model, messages: messagesFor(q), temperature: 0.4, max_tokens: 700, stream: false }),
-        });
-        if (!r.ok) throw new Error(`model answered ${r.status}`);
-        const text = String((await r.json()).choices?.[0]?.message?.content ?? "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+        const chat = async (messages, temperature = 0.4, maxTokens = 700) => {
+          const r = await fetch(`${base}/v1/chat/completions`, {
+            method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(180000),
+            body: JSON.stringify({ model, messages, temperature, max_tokens: maxTokens, stream: false }),
+          });
+          if (!r.ok) throw new Error(`model answered ${r.status}`);
+          return String((await r.json()).choices?.[0]?.message?.content ?? "");
+        };
+        let text;
+        if (DESIGN_PREFIX.test(q.text)) {
+          // "Design in Fusion: ..." from the Lab's 3D maker: Alice works as the design engineer (scripts/fusion-design.mjs).
+          const input = designInput(q.text);
+          const d = await designWith((m) => chat(m, 0.2, 1200), input);
+          if (!d.ok) text = "I couldn't turn that into a Fusion part I trust yet. Add the size in millimetres and what it's for, or ask Claude for a custom script.";
+          else if (d.output.canDo !== "yes") text = replyFor(d.output, false);
+          else { await sendJob(jobFor(d.output, input), key); text = replyFor(d.output, true); }
+        } else text = (await chat(messagesFor(q))).replace(/<think>[\s\S]*?<\/think>/g, "").trim();
         if (!text) throw new Error("the model gave an empty answer");
         await engine("/api/alice/answer", key, { method: "POST", body: JSON.stringify({ id: q.id, text: text.slice(0, 6000) }) });
         // Names and timing only: never the question or the answer, so private ones stay private on this PC too.

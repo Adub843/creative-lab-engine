@@ -15,6 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
+import { checkMesh } from "./print-check.mjs";
 
 const ENGINE = process.env.CONSOLE_URL ?? "https://creative-lab-engine.business-console.workers.dev";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -206,13 +207,20 @@ async function runOne(job, key) {
     const saved = await engine("/api/files", key, { method: "POST", headers: { "x-filename": name, "x-tags": "made with Fusion", "content-type": "application/octet-stream" }, body: bytes });
     files[fmt] = saved.item.key;
   }
+  // The print check (scripts/print-check.mjs): bed fit, watertight, overhangs, plastic. Its notes show in the Lab.
+  let check;
+  const stlRel = result.files?.stl;
+  if (stlRel) {
+    try { const c = checkMesh(parseStl(fs.readFileSync(path.join(folder, stlRel)))); check = { ok: c.ok, grams: c.grams, notes: c.notes }; }
+    catch (e) { log(`print check skipped for ${job.id}: ${e.message}`); }
+  }
   const png = path.join(folder, "preview.png");
   const main = files["3mf"] ?? files.stl;
   if (main && result.preview && fs.existsSync(png) && fs.statSync(png).size <= 300 * 1024) {
     try { await engine(`/api/files/${main}/thumb`, key, { method: "PUT", headers: { "content-type": "image/png" }, body: fs.readFileSync(png) }); preview = main; }
     catch (e) { log(`preview not saved for ${job.id}: ${e.message}`); }
   }
-  await postJson("/api/fusion/done", key, { id: job.id, ok: true, files, preview, size: result.size, log: `Built in Fusion in ${result.seconds ?? "?"}s.${keep ? ` Copy in ${keep}` : ""}` });
+  await postJson("/api/fusion/done", key, { id: job.id, ok: true, files, preview, size: result.size, check, log: `Built in Fusion in ${result.seconds ?? "?"}s.${keep ? ` Copy in ${keep}` : ""}` });
   log(`done ${job.id} (${job.recipe}) ${Object.keys(files).join("+")} in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
 }
 

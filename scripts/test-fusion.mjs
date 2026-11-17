@@ -191,6 +191,49 @@ test("the add-in and recipes are valid Python, and the recipe list matches the f
   JSON.parse(fs.readFileSync(new URL("LabBridge/LabBridge.manifest", dir), "utf8"));
 });
 
+// A closed 10 mm cube as triangles, and the same cube with one face missing.
+function cube(sz = 10) {
+  const v = [[0,0,0],[sz,0,0],[sz,sz,0],[0,sz,0],[0,0,sz],[sz,0,sz],[sz,sz,sz],[0,sz,sz]];
+  const f = [[0,2,1],[0,3,2],[4,5,6],[4,6,7],[0,1,5],[0,5,4],[1,2,6],[1,6,5],[2,3,7],[2,7,6],[3,0,4],[3,4,7]];
+  return f.map((t) => t.map((i) => v[i]));
+}
+test("print check: a cube is ready to slice; an open or oversized part is flagged", async () => {
+  const PC = await import("./print-check.mjs");
+  const good = PC.checkMesh(cube());
+  assert.equal(good.ok, true); assert.deepEqual(good.size, { x: 10, y: 10, z: 10 });
+  assert.equal(good.volumeCm3, 1); assert.equal(good.openEdges, 0); assert.match(good.notes[0], /Ready to slice/);
+  const open = PC.checkMesh(cube().slice(2));
+  assert.equal(open.ok, false); assert.ok(open.notes.some((n) => /watertight/.test(n)));
+  const big = PC.checkMesh(cube(300));
+  assert.equal(big.ok, false); assert.ok(big.notes.some((n) => /Too big/.test(n)));
+  assert.deepEqual(PC.parseBed("180x180x180"), { x: 180, y: 180, z: 180 });
+  assert.deepEqual(FU.cleanCheck({ ok: true, grams: 12.34, notes: ["a", 5, ""] }), { ok: true, grams: 12.3, notes: ["a", "5"] });
+});
+
+test("Alice design job: good answers pass, bad sizes and made-up recipes are sent back", async () => {
+  const D = await import("./fusion-design.mjs");
+  const input = D.designInput("Design in Fusion: a key tag that says Rainbow Row");
+  assert.equal(input.ask, "a key tag that says Rainbow Row");
+  assert.deepEqual(Object.keys(input.recipes).sort(), ["box", "plate"]); // no SVG, no resize without a file
+  const good = { store: "c3d", canDo: "yes", recipe: "plate", name: "Rainbow Row key tag", params: { text: "Rainbow Row", width: 90, height: 25, thickness: 3.5, corner: 4, textSize: 7, textDepth: 1, holes: "keyring" }, formats: ["3mf", "stl"], printNotes: ["Flat side down."], notes: "" };
+  const answers = [
+    JSON.stringify({ ...good, recipe: "figurine" }),
+    JSON.stringify({ ...good, params: { ...good.params, textSize: 20 } }),
+    "<think>sizes</think>" + JSON.stringify(good),
+  ];
+  const seen = [];
+  const d = await D.designWith(async (m) => { seen.push(m); return answers.shift(); }, input);
+  assert.equal(d.ok, true); assert.equal(seen.length, 3);
+  assert.match(seen[1].at(-1).content, /recipe must be one of: box, plate/);
+  assert.match(seen[2].at(-1).content, /text does not fit|textSize must be at most/);
+  assert.deepEqual(D.jobFor(d.output, input), { name: "Rainbow Row key tag", by: "Alice", recipe: "plate", params: good.params, formats: ["3mf", "stl"] });
+  assert.match(D.replyFor(d.output, true), /sent Rainbow Row key tag .* to Fusion/);
+  const no = await D.designWith(async () => JSON.stringify({ store: "c3d", canDo: "no", recipe: "", name: "", params: {}, formats: [], printNotes: [], notes: "A dog figure needs a script job: Claude writes it." }), input);
+  assert.equal(no.ok, true); assert.match(D.replyFor(no.output, false), /can't build that one/);
+  const thin = await D.designWith(async () => JSON.stringify({ ...good, recipe: "box", params: { width: 40, depth: 40, height: 20, wall: 0.8, corner: 2, lid: false } }), input, 1);
+  assert.equal(thin.ok, false); assert.ok(thin.problems.some((p) => /at least 1.2 mm/.test(p)));
+});
+
 for (const [name, fn] of tests) {
   try { await fn(); console.log(`ok - ${name}`); }
   catch (e) { failed++; console.error(`FAIL - ${name}\n${e.stack}`); }
