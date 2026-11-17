@@ -35,6 +35,8 @@ for z0, z1 in zip(levels, levels[1:]):
         for p in polys if not p.is_empty]})
 
 script = '''def make(design, root, P):
+    # Parametric, so the saved .f3d keeps its sketches and extrusions (the add-in starts in direct mode).
+    design.designType = adsk.fusion.DesignTypes.ParametricDesignType
     LAYERS = %s
 
     def inside(pt, ring):
@@ -52,6 +54,33 @@ script = '''def make(design, root, P):
     def solid_at(pt, polys):
         return any(inside(pt, p["outer"]) and not any(inside(pt, h) for h in p["holes"]) for p in polys)
 
+    # A point inside a profile: its centroid when that is inside, else a point just beside one of its longest
+    # edges. A thin ring (a cookie-cutter wall) has its centroid in the empty middle, which looked like no solid.
+    def point_in(prof):
+        segs = []
+        for lp in prof.profileLoops:
+            for pc in lp.profileCurves:
+                g = pc.geometry
+                segs.append(((g.startPoint.x, g.startPoint.y), (g.endPoint.x, g.endPoint.y)))
+        def in_prof(x, y):
+            c = False
+            for (xi, yi), (xj, yj) in segs:
+                if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi + 1e-12) + xi:
+                    c = not c
+            return c
+        cen = prof.areaProperties(adsk.fusion.CalculationAccuracy.MediumCalculationAccuracy).centroid
+        if in_prof(cen.x, cen.y):
+            return (cen.x, cen.y)
+        for (xi, yi), (xj, yj) in sorted(segs, key=lambda s: -((s[1][0] - s[0][0]) ** 2 + (s[1][1] - s[0][1]) ** 2))[:20]:
+            mx, my, dx, dy = (xi + xj) / 2, (yi + yj) / 2, xj - xi, yj - yi
+            ln = (dx * dx + dy * dy) ** 0.5 or 1
+            for d in (0.001, 0.0002):
+                for sgn in (1, -1):
+                    x, y = mx - sgn * d * dy / ln, my + sgn * d * dx / ln
+                    if in_prof(x, y):
+                        return (x, y)
+        return (cen.x, cen.y)
+
     for n, L in enumerate(LAYERS):
         sk = root.sketches.add(plane_at(root, L["z0"]))
         sk.name = "Layer %%d" %% (n + 1)
@@ -65,8 +94,7 @@ script = '''def make(design, root, P):
         sk.isComputeDeferred = False
         keep = []
         for prof in sk.profiles:
-            c = prof.areaProperties(adsk.fusion.CalculationAccuracy.MediumCalculationAccuracy).centroid
-            if solid_at((c.x, c.y), L["polys"]):
+            if solid_at(point_in(prof), L["polys"]):
                 keep.append(prof)
         if not keep:
             raise RuntimeError("Layer %%d came out empty." %% (n + 1))
