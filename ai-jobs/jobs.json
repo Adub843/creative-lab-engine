@@ -1,0 +1,13 @@
+{
+  "about": "The AI jobs of the marketing loop. engine is the per-job switch, one of the engines in engines.json: local-small (GMKtec), local-big (Blink) or claude (judgment calls, for now). See README.md.",
+  "jobs": [
+    { "id": "marketing-qa", "file": "marketing-qa.md", "schedule": "on demand: before every post or ad is sent", "engine": "claude" },
+    { "id": "weekly-marketing-decision", "file": "weekly-marketing-decision.md", "schedule": "weekly: Monday 12:00 UTC, once per store", "engine": "claude" },
+    { "id": "daily-brief", "file": "daily-brief.md", "schedule": "daily: 7:50 AM Eastern on the NUC, after the digest, once per store", "engine": "local-big" },
+    { "id": "listing-copy", "file": "listing-copy.md", "schedule": "on demand: when a listing is made", "engine": "local-small" },
+    { "id": "seo-fix-picker", "file": "seo-fix-picker.md", "schedule": "weekly: Monday 12:15 UTC, once per store", "engine": "claude" },
+    { "id": "review-summary", "file": "review-summary.md", "schedule": "weekly: Monday 12:30 UTC, once per store", "engine": "local-small" },
+    { "id": "post-captions", "file": "post-captions.md", "schedule": "nightly: 12:40 AM Eastern on the NUC, two products per store, drafts only", "engine": "local-small" },
+    { "id": "request-triage", "file": "request-triage.md", "schedule": "hourly on the NUC, once per new Charleston 3D custom request, drafts only", "engine": "local-big" }
+  ]
+}

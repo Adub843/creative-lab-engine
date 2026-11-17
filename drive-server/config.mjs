@@ -1,0 +1,46 @@
+// Where the library's files are and where its index and thumbnails are kept. Only reads from the roots:
+// nothing on E: is ever moved, changed or deleted.
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+// The data folder. When setup.ps1 was run from inside the Claude desktop app, Windows put the folder in that app's
+// private copy of AppData\Local, which programs started outside the app (the "Design Library" task) don't see under
+// the usual name. So the private folder is used by its real path whenever it exists; both sides then read one folder.
+export function dataDir(env = process.env, exists = fs.existsSync, list = (d) => fs.readdirSync(d)) {
+  if (env.DRIVE_DATA) return env.DRIVE_DATA;
+  const local = env.LOCALAPPDATA ?? os.homedir();
+  try {
+    for (const name of list(path.join(local, "Packages")).filter((n) => /^Claude_/i.test(n)).sort()) {
+      const d = path.join(local, "Packages", name, "LocalCache", "Local", "design-library");
+      if (exists(d)) return d;
+    }
+  } catch { /* no Packages folder */ }
+  return path.join(local, "design-library");
+}
+export const DATA_DIR = dataDir();
+// Names the index file in use (build-index.mjs writes a new one each run).
+export const CURRENT_FILE = path.join(DATA_DIR, "current-index.txt");
+export const THUMB_DIR = path.join(DATA_DIR, "thumbs");
+// The file name is from when the Design Studio ran this; kept so an existing setup carries over.
+export const KEY_FILE = path.join(DATA_DIR, "studio-key.dpapi");
+export const PORT = Number(process.env.DRIVE_PORT ?? 8787);
+
+export const ROOTS = [
+  {
+    src: "e", path: process.env.DRIVE_ROOT ?? "E:\\",
+    // Not design art, or system folders.
+    skip: ["$RECYCLE.BIN", "System Volume Information", "FOUND.000", "FOUND.001", "FOUND.002", "FOUND.003",
+      "Survival Library", "Shit ton of links", "Fraud Account", "Font", "__AI___"],
+  },
+  // Images saved from the old Creative Lab Studios design lab, kept with each brand's own files.
+  { src: "lab", brand: "ed", path: path.join(os.homedir(), "Aaron-Data", "02 Elevated Designs", "Design Lab Images"), skip: [] },
+  { src: "lab", brand: "c3d", path: path.join(os.homedir(), "Aaron-Data", "01 Charleston3D", "Design Lab Images"), skip: [] },
+];
+// The top folders on E: whose pictures customers see in the Elevated Designs shirt app (design.elevatedshirts.com).
+// Everything else on E: stays private to the Creative Lab engine. Change the list here, then restart the library server.
+export const SHIRT_APP_FOLDERS = ["Design Images", "DTF Ready Prints", "SVG FILES", "Vector files", "Mega bundle",
+  "cancer awareness big bundle 2023 all", "Car Designs", "Logo Library"];
+// Kittl projects and images, listed from Kittl (thumbnails come from Kittl's own image server).
+export const KITTL_FILE = path.join(DATA_DIR, "kittl.json");
+export const KITTL_HOSTS = new Set(["cache.kittl.com", "assets.kittl.com", "kittl.com"]);

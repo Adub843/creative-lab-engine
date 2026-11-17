@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "lab": {
+      "command": "node",
+      "args": ["/srv/lab/app/lab-app/server/lab-mcp.mjs"],
+      "env": { "LAB_URL": "http://127.0.0.1:3000" }
+    }
+  }
+}

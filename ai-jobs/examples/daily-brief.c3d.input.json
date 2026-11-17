@@ -1,0 +1,15 @@
+{
+  "store": "c3d",
+  "date": "2026-11-14",
+  "numbers": "Over the last 7 days the shop had 412 visits, 5 orders and $96.45 in sales. Visits are up 24 from yesterday's count of 388.",
+  "needsYou": ["Pause the ad \"Hype chains Facebook\".", "The site check failed on: Product page 'desk-organizer' has no meta description."],
+  "digest": {
+    "name": "Charleston 3D",
+    "siteCheck": { "date": "2026-11-14", "scores": { "seo": 92, "speed": 88 }, "fails": ["Product page 'desk-organizer' has no meta description"], "warns": ["2 images have no alt text"] },
+    "autofix": { "made": 3, "undone": 1, "items": [{ "kind": "alt-text", "title": "Added alt text to 3 product images" }] },
+    "ranks": { "keywords": 14, "top3": 2, "top10": 6, "avgPosition": 18.4, "clicks": 37 },
+    "shop": { "days": 7, "sessions": 412, "orders": 5, "sales": 96.45 },
+    "scorecard": { "totals": { "spend": 6.82, "clicks": 41 }, "average": 0.17, "campaigns": [{ "label": "Nameplates Instagram", "spend": 4.1, "clicks": 31 }, { "label": "Hype chains Facebook", "spend": 2.72, "clicks": 10 }], "pauseRecommended": ["Hype chains Facebook"], "overCap": [], "errors": [] }
+  },
+  "yesterday": { "shop": { "days": 7, "sessions": 388, "orders": 4, "sales": 79.46 } }
+}

@@ -83,12 +83,16 @@ export async function renderMarketing() {
     const [gscPanel, gscBox] = section("google", "Google Search Console", el("span", { class: "muted small" }, "Pages, devices, sitemaps and indexing"));
     const [holoPanel, holoBox] = section("holo", "Holo AI marketing", el("span", { class: "muted small" }, "Ads, social posts, emails and blog posts"));
     const [setPanel, setBox] = section("settings", "Site settings", el("span", { class: "muted small" }, "Changes the live theme"));
-    const [trafPanel, trafBox] = section("traffic", "Where visitors come from", el("span", { class: "muted small" }, "Last 90 days"));
+    const tdays = el("select", { class: "field", id: `mk-tdays-${s}`, "aria-label": "Site stats period", style: "width:auto;max-width:180px" },
+      [["7", "Last 7 days"], ["30", "Last 30 days"], ["90", "Last 90 days"], ["180", "Last 180 days"]].map(([v, l]) => el("option", { value: v, selected: String(store.get("bc-mk-tdays", 30)) === v }, l)));
+    const [trafPanel, trafBox] = section("traffic", "Site stats", tdays);
+    tdays.addEventListener("change", () => { store.set("bc-mk-tdays", Number(tdays.value)); trafBox.replaceChildren(loading("Loading site stats…")); reload.traffic(); });
     const [searchPanel, searchBox] = section("searches", "Search queries");
+    panels.splice(1, 0, ...panels.splice(panels.findIndex(([k]) => k === "traffic"), 1)); // site stats right after the health check
     const utm = utmPanel(s), tools = toolsPanel(s);
     utm.id = "mk-links"; tools.id = "mk-tools";
     panels.push(["links", "Link builder"], ["tools", "Tools"]);
-    body.replaceChildren(auditPanel, growPanel, chgPanel, catPanel, kwPanel, trkPanel, gscPanel, holoPanel, setPanel, trafPanel, searchPanel, utm, tools);
+    body.replaceChildren(auditPanel, trafPanel, growPanel, chgPanel, catPanel, kwPanel, trkPanel, gscPanel, holoPanel, setPanel, searchPanel, utm, tools);
     jump.replaceChildren(...panels.map(([k, t]) => el("a", { href: `#mk-${k}`, onclick: (e) => {
       e.preventDefault(); // the hash is the page's route, so scroll instead
       const target = document.getElementById(`mk-${k}`);
@@ -115,7 +119,7 @@ export async function renderMarketing() {
       google: () => fetchPart("google").then((g) => live() && gscBox.replaceChildren(...googleView(s, g))).catch((e) => live() && gscBox.replaceChildren(errorState(e, "Search Console", () => reload.google()))),
       holo: () => fetchPart("holo").then((h) => live() && holoBox.replaceChildren(...holoView(s, h))).catch((e) => live() && holoBox.replaceChildren(errorState(e, "Holo", () => reload.holo()))),
       settings: () => fetchPart("settings").then((c) => live() && setBox.replaceChildren(settingsView(s, c))).catch((e) => live() && setBox.replaceChildren(errorState(e, "the site settings", () => reload.settings()))),
-      traffic: () => fetchPart("traffic").then((t) => { if (!live()) return; trafBox.replaceChildren(...trafficView(t)); searchBox.replaceChildren(...queriesView(t)); })
+      traffic: () => fetchPart("traffic", `&days=${Number(store.get("bc-mk-tdays", 30)) || 30}`).then((t) => { if (!live()) return; trafBox.replaceChildren(...trafficView(t)); searchBox.replaceChildren(...queriesView(t)); })
         .catch((e) => { if (!live()) return; trafBox.replaceChildren(errorState(e, "traffic", () => reload.traffic())); searchBox.replaceChildren(el("p", { class: "muted" }, "Needs the store connected first.")); }),
     };
     state.reload = reload;
@@ -606,11 +610,60 @@ export async function renderMarketing() {
   }
 
   // ---------- traffic ----------
+  // The site stats Shopify Analytics shows (visits, visitors, time on site, locations, devices, pages,
+  // channels, busiest hours), then visits by source and UTM campaign.
+  const dur = (sec) => (sec == null ? "–" : sec < 60 ? `${sec}s` : `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, "0")}s`);
+  const pctTxt = (v) => (v == null ? "–" : `${v}%`);
+  function statTable(caption, cols, rows, empty = "No visits recorded yet.") {
+    if (!rows || !rows.length) return el("p", { class: "muted small" }, empty);
+    return el("div", { class: "tbl" }, el("table", {}, el("caption", { class: "sr" }, caption),
+      el("thead", {}, el("tr", {}, cols.map(([h]) => el("th", { scope: "col" }, h)))),
+      el("tbody", {}, rows.map((r) => el("tr", {}, cols.map(([, f, cls]) => el("td", { class: cls || "num" }, f(r))))))));
+  }
+  function statsView(t) {
+    const st = t.shop.stats;
+    if (!st) return [el("div", { class: "state state-setup" }, el("p", {}, "The full site stats arrive with the next engine update. Until then this panel shows visits by source and campaign."))];
+    const out = [];
+    const S0 = st.summary;
+    const tile = (label, v, sub) => el("div", { class: "tile" }, el("span", { class: "eyebrow" }, label), el("b", { class: "num" }, v), sub ? el("span", { class: "muted small" }, sub) : null);
+    if (S0) out.push(el("div", { class: "tiles", style: "display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px" },
+      tile("Visits", num(S0.sessions)), tile("Visitors", S0.visitors == null ? "–" : num(S0.visitors)), tile("Page views", S0.pageviews == null ? "–" : num(S0.pageviews)),
+      tile("Pages per visit", S0.pagesPerSession ?? "–"), tile("Time on site", dur(S0.avgDuration), "average visit"), tile("Bounce rate", pctTxt(S0.bounceRate), "left after one page"),
+      tile("Added to cart", pctTxt(S0.addedToCartRate), "of visits"), tile("Reached checkout", pctTxt(S0.reachedCheckoutRate), "of visits"), tile("Bought", pctTxt(S0.conversionRate), "of visits")));
+    if (st.daily?.length) out.push(el("h3", {}, "Visits per day"),
+      chart({ points: st.daily.map((d) => ({ label: d.date.slice(5), value: d.sessions })), type: "line", title: `Visits per day, last ${t.days} days`, format: (v) => num(Math.round(v)), height: 180 }));
+    const visits = ["Visits", (r) => num(r.sessions)];
+    const bought = ["Bought", (r) => pctTxt(r.conversionRate)];
+    const place = (h) => [h, (r) => r.label, "wrap"];
+    out.push(el("h3", {}, "Where visitors are"), el("div", { class: "grid-2" },
+      el("div", { class: "stack" }, el("strong", { class: "small" }, "Countries"), statTable("Visits by country", [place("Country"), visits, bought], st.countries)),
+      el("div", { class: "stack" }, el("strong", { class: "small" }, "Cities"), statTable("Visits by city", [place("City"), visits, bought], st.cities))),
+      el("div", { class: "stack", style: "margin-top:12px" }, el("strong", { class: "small" }, "States and regions"), statTable("Visits by state or region", [place("State or region"), visits, bought], st.regions)));
+    out.push(el("h3", {}, "Pages people land on"),
+      statTable("Landing pages", [["Page", (r) => r.label, "wrap mono"], visits, ["Page views", (r) => (r.pageviews == null ? "–" : num(r.pageviews))], ["Time on site", (r) => dur(r.avgDuration)], ["Bounce", (r) => pctTxt(r.bounceRate)], bought], st.pages));
+    out.push(el("h3", {}, "How they found the site"),
+      statTable("Visits by channel", [["Channel", (r) => r.label, "wrap"], visits, ["Time on site", (r) => dur(r.avgDuration)], ["Bounce", (r) => pctTxt(r.bounceRate)], bought], st.channels));
+    out.push(el("h3", {}, "Devices"), el("div", { class: "grid-2" },
+      el("div", { class: "stack" }, el("strong", { class: "small" }, "Phone, computer or tablet"), statTable("Visits by device", [["Device", (r) => r.label, "wrap"], visits, ["Time on site", (r) => dur(r.avgDuration)], ["Bounce", (r) => pctTxt(r.bounceRate)], bought], st.devices)),
+      el("div", { class: "stack" }, el("strong", { class: "small" }, "Browsers and systems"),
+        statTable("Visits by browser", [["Browser", (r) => r.label, "wrap"], visits, bought], st.browsers),
+        statTable("Visits by operating system", [["System", (r) => r.label, "wrap"], visits, bought], st.systems))));
+    const busy = [];
+    if (st.hours?.some((h) => h.sessions)) busy.push(el("div", { class: "stack" }, el("strong", { class: "small" }, "By hour (store time)"),
+      chart({ points: st.hours.map((h) => ({ label: `${(h.hour % 12) || 12}${h.hour < 12 ? "am" : "pm"}`, value: h.sessions })), type: "bar", title: "Visits by hour of day", format: (v) => num(Math.round(v)), height: 160 })));
+    if (st.weekdays?.some((d) => d.sessions)) busy.push(el("div", { class: "stack" }, el("strong", { class: "small" }, "By day of the week"),
+      chart({ points: st.weekdays.map((d) => ({ label: d.day.slice(0, 3), value: d.sessions })), type: "bar", title: "Visits by day of the week", format: (v) => num(Math.round(v)), height: 160 })));
+    if (busy.length) out.push(el("h3", {}, "Busiest times"), el("div", { class: "grid-2" }, ...busy));
+    if (t.shop.missing?.length) out.push(el("p", { class: "muted small" }, `Shopify couldn't run ${t.shop.missing.length === 1 ? "one report" : `${t.shop.missing.length} reports`} for this store (${t.shop.missing.join(", ")}); the rest are shown.`));
+    return out;
+  }
   function trafficView(t) {
     if (!t.shop.available) return [el("p", { class: "muted" }, t.shop.note)];
     const total = t.shop.sources.reduce((a, r) => a + r.sessions, 0);
     const rate = (r) => (r.conversionRate == null ? "–" : `${r.conversionRate}%`);
     return [
+      ...statsView(t),
+      el("h3", {}, "Sources and campaigns"),
       el("div", { class: "grid-2" },
         el("div", { class: "stack" }, el("h3", {}, "By source"),
           t.shop.sources.length ? el("div", { class: "tbl" }, el("table", {},

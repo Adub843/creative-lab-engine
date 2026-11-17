@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Photo editor · Lab</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="office.css">
+<style>
+#mp{position:absolute;inset:0;width:100%;height:100%;border:0;display:block;background:#1b1e23}
+</style>
+</head>
+<body>
+<script src="office.js"></script>
+<script>
+"use strict";
+/* Photo editor: miniPaint (open source, MIT, github.com/viliusle/miniPaint), a Photoshop-style editor with layers,
+   selections, brush, clone, magic eraser, text, shapes, crop, resize, adjustments (levels, curves-style color,
+   hue/saturation, brightness/contrast), blur/sharpen and 40+ effects. Saved in the Lab, a picture keeps its layers
+   (miniPaint project) and also gets a flat PNG for listings, posts and the Design library. */
+let MP = null, BLANK = null;
+const frame = () => document.getElementById("mp");
+function ready() { return new Promise((ok, no) => { const t0 = Date.now(); (function wait() { const w = frame() && frame().contentWindow;
+  if (w && w.Layers && w.FileOpen && w.FileSave && w.AppConfig && w.AppConfig.layers && w.AppConfig.layers.length) { MP = w; ok(); return; }
+  if (Date.now() - t0 > 20000) { no(new Error("photo editor didn't start")); return; } setTimeout(wait, 120); })(); }); }
+function flat() { const L = MP.Layers, d = L.get_dimensions(); const c = document.createElement("canvas"); c.width = d.width; c.height = d.height; L.convert_layers_to_canvas(c.getContext("2d"), null, false); return c; }
+async function openUrl(url, name) {
+  await MP.FileOpen.load_json(BLANK);
+  const ids0 = new Set(MP.AppConfig.layers.map((l) => l.id));
+  MP.FileOpen.file_open_url_handler({ url }); /* inserts the picture as a layer and fits the canvas to it, like File > Open */
+  const layer = await new Promise((ok, no) => { const t0 = Date.now(); (function wait() { const l = MP.AppConfig.layers.find((x) => !ids0.has(x.id) && x.type === "image");
+    if (l) { ok(l); return; } if (Date.now() - t0 > 15000) { no(new Error("picture didn't load")); return; } setTimeout(wait, 80); })(); });
+  if (name) { layer.name = name; try { MP.Layers.refresh_gui(); } catch { } }
+}
+
+const shell = OfficeShell({
+  kind: "image", label: "Photo editor", ext: "png", untitled: "Untitled picture",
+  accept: "image/png,image/jpeg,image/webp,image/gif,image/bmp,.json",
+  async mount(stage) {
+    stage.innerHTML = `<iframe id="mp" title="Photo editor" src="minipaint/index.html" allow="clipboard-read; clipboard-write"></iframe>`;
+    await ready(); try { MP.AppConfig.COLOR = "#1b1e23"; MP.AppConfig.need_render = true; } catch { } BLANK = MP.FileSave.export_as_json();
+    /* any edit marks the file as changed */
+    try { const st = MP.State; const d0 = st.do_action.bind(st); st.do_action = function () { const r = d0.apply(st, arguments); if (!shell.__quiet) shell.dirty(); return r; }; } catch (e) { console.warn(e); }
+  },
+  async newFile() { shell.__quiet = true; try { await MP.FileOpen.load_json(BLANK); } finally { shell.__quiet = false; } },
+  async openBlob(blob, name) {
+    shell.__quiet = true;
+    try {
+      if (/\.json$/i.test(name || "") || blob.type === "application/json") { await MP.FileOpen.load_json(await blob.text()); return; }
+      const url = URL.createObjectURL(blob); try { await openUrl(url, (name || "Picture").replace(/\.[a-z0-9]+$/i, "")); } finally { setTimeout(() => URL.revokeObjectURL(url), 60000); }
+    } finally { shell.__quiet = false; }
+  },
+  async openSnapshot(json) { shell.__quiet = true; try { await MP.FileOpen.load_json(json); } finally { shell.__quiet = false; } },
+  async openRow(row) { /* an agent's picture: a Lab asset (/_blob/...) or any https link (fetched through the Lab) */
+    const src = String(row.src || row.image || row.url || ""); if (!src) { await this.newFile(); return; }
+    const LAB = window.parent.LAB_OFFICE; const blob = LAB && LAB.fetchImage ? await LAB.fetchImage(src) : await (await fetch(src)).blob();
+    await this.openBlob(blob, row.title || "Picture");
+  },
+  async getFile() { const c = flat(); const blob = await OfficeUtil.canvasBlob(c, "image/png"); let extra = null;
+    try { extra = JSON.parse(MP.FileSave.export_as_json()); } catch { extra = null; }
+    return { blob, type: "image/png", extra }; },
+  getText() { try { const d = MP.Layers.get_dimensions(); return `Picture ${d.width}×${d.height}px, ${MP.AppConfig.layers.length} layer(s): ` + MP.AppConfig.layers.map((l) => l.name).join(", "); } catch { return ""; } },
+  async getPreview() { return OfficeUtil.thumb(flat(), 320); },
+});
+shell.start();
+</script>
+</body>
+</html>

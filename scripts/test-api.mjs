@@ -3,6 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { handleProducts, clearTokenCache } from "../lib/shopify.mjs";
+import { handleRequests, normalizeRequests, scrub } from "../lib/requests.mjs";
 import { handleInsights, buildInsights, growthPct, forecast30, linearFit, addDays } from "../lib/insights.mjs";
 import { schemaErrors, variableErrors, checked } from "./schema/validate.mjs";
 import { fileURLToPath } from "node:url";
@@ -50,6 +51,8 @@ function fakeShopify(opts = {}) {
       return new Response(JSON.stringify({ access_token: "shpat_FROM_CLIENT_CREDENTIALS", scope: "read_products", expires_in: 86399 }), { status: 200 });
     }
     if (u.startsWith(STAGED_URL)) {
+      // Workers' fetch throws on redirect: "error"; only "follow" and "manual" work there.
+      assert.ok(init.redirect === undefined || ["follow", "manual"].includes(init.redirect), `redirect "${init.redirect}" isn't supported by Workers`);
       const form = init.body;
       const file = form.get("file");
       calls.push({ upload: { fields: Object.fromEntries([...form.entries()].filter(([k]) => k !== "file")), size: file.size, type: file.type, name: file.name } });
@@ -152,6 +155,87 @@ test("publish: activates, publishes to Online Store, pings IndexNow, returns liv
   const ping = sh.calls.find((c) => c.indexnow).indexnow;
   assert.deepEqual(ping, { host: "charleston3d.com", key: "abc123indexnow", keyLocation: "https://charleston3d.com/abc123indexnow.txt", urlList: ["https://charleston3d.com/products/name-ornament"] });
   assert.equal(res.body.indexNow.sent, true);
+});
+
+// ---------- Edit price ----------
+const VID = "gid://shopify/ProductVariant/501", VID2 = "gid://shopify/ProductVariant/502";
+const priceShop = (o = {}) => fakeShopify({ override: {
+  ConsoleProductPrices: (v, data) => data({ product: o.missing ? null : { id: PID, title: "Mini Name Desk Plate", handle: "mini-name-desk-plate", tags: o.tags ?? [],
+    variants: { nodes: o.variants ?? [{ id: VID, title: "Default Title", price: "19.00" }] } } }),
+  ConsoleEditPrice: (v, data) => data({ productVariantsBulkUpdate: { productVariants: v.variants.map((x) => ({ id: x.id, title: "x", price: x.price })),
+    userErrors: o.userErrors ?? [] } }),
+} });
+
+test("edit price: changes the price and answers with before and after", async () => {
+  const sh = priceShop();
+  const res = await handleProducts(post({ store: "c3d", id: PID, price: "21.5" }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["ConsoleProductPrices", "ConsoleEditPrice"]);
+  assert.deepEqual(sh.calls.find((c) => c.op === "ConsoleEditPrice").variables, { productId: PID, variants: [{ id: VID, price: "21.50" }] });
+  assert.equal(res.body.changed, 1);
+  assert.deepEqual(res.body.before, [{ id: VID, title: "Default Title", price: "19.00" }]);
+  assert.deepEqual(res.body.after, [{ id: VID, title: "Default Title", price: "21.50" }]);
+  assert.equal(res.body.url, "https://charleston3d.com/products/mini-name-desk-plate");
+});
+
+test("edit price: one size only, and a price that is already right writes nothing", async () => {
+  const variants = [{ id: VID, title: "Small", price: "12.00" }, { id: VID2, title: "Large", price: "24.99" }];
+  const one = priceShop({ variants });
+  const res = await handleProducts(post({ store: "c3d", id: PID, variantId: VID2, price: 26 }), { env: envOf(), fetch: one.fetch });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(one.calls.find((c) => c.op === "ConsoleEditPrice").variables.variants, [{ id: VID2, price: "26.00" }]);
+  const same = priceShop({ variants });
+  const res2 = await handleProducts(post({ store: "c3d", id: PID, variantId: VID, price: "12.00" }), { env: envOf(), fetch: same.fetch });
+  assert.equal(res2.body.changed, 0);
+  assert.ok(!same.calls.some((c) => c.op === "ConsoleEditPrice"));
+});
+
+test("edit price: one price is refused when the sizes have different prices", async () => {
+  const sh = priceShop({ variants: [{ id: VID, title: "Small", price: "12.00" }, { id: VID2, title: "Large", price: "24.99" }] });
+  const res = await handleProducts(post({ store: "c3d", id: PID, price: "15.00" }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 409);
+  assert.equal(res.body.code, "mixed_prices");
+  assert.ok(!sh.calls.some((c) => c.op === "ConsoleEditPrice"));
+  // two sizes at the same price are fine: both get the new price
+  const same = priceShop({ variants: [{ id: VID, title: "Small", price: "12.00" }, { id: VID2, title: "Large", price: "12.00" }] });
+  const ok = await handleProducts(post({ store: "c3d", id: PID, price: "15.00" }), { env: envOf(), fetch: same.fetch });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.changed, 2);
+});
+
+test("edit price: a sheet-priced Elevated Designs shirt is refused, an untagged one is not", async () => {
+  for (const tags of [["Elevated Designs"], ["builder-blank"]]) {
+    const sh = priceShop({ tags });
+    const res = await handleProducts(post({ store: "ed", id: PID, price: "29.99" }), { env: envOf(), fetch: sh.fetch });
+    assert.equal(res.status, 409);
+    assert.equal(res.body.code, "sheet_priced");
+    assert.match(res.body.error, /price sheet/);
+    assert.ok(!sh.calls.some((c) => c.op === "ConsoleEditPrice"));
+  }
+  const free = priceShop({ tags: ["gift"] });
+  assert.equal((await handleProducts(post({ store: "ed", id: PID, price: "29.99" }), { env: envOf(), fetch: free.fetch })).status, 200);
+  // the same tags on Charleston 3D mean nothing: its prices are never synced from the sheet
+  const c3d = priceShop({ tags: ["Elevated Designs"] });
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, price: "29.99" }), { env: envOf(), fetch: c3d.fetch })).status, 200);
+});
+
+test("edit price: bad prices, bad ids, a missing product and a missing key are refused before anything is written", async () => {
+  for (const price of ["free", "", -3, 0, 0.25, 99999, "12.345", 12.345, null, "1e3"]) {
+    const sh = priceShop();
+    const res = await handleProducts(post({ store: "c3d", id: PID, price }), { env: envOf(), fetch: sh.fetch });
+    assert.equal(res.status, 400, `price ${JSON.stringify(price)}`);
+    assert.equal(sh.calls.length, 0);
+  }
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, price: "9.00", variantId: "502" }), { env: envOf(), fetch: priceShop().fetch })).status, 400);
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, price: "9.00", live: true }), { env: envOf(), fetch: priceShop().fetch })).status, 400);
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, price: "9.00" }), { env: envOf(), fetch: priceShop({ missing: true }).fetch })).status, 404);
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, price: "9.00", variantId: VID2 }), { env: envOf(), fetch: priceShop().fetch })).status, 404);
+  const noKey = priceShop();
+  assert.equal((await handleProducts(post({ store: "c3d", id: PID, price: "9.00" }, { "content-type": "application/json" }), { env: envOf(), fetch: noKey.fetch })).status, 401);
+  assert.equal(noKey.calls.length, 0);
+  const refused = priceShop({ userErrors: [{ field: ["variants"], message: "Price is invalid" }] });
+  const r = await handleProducts(post({ store: "c3d", id: PID, price: "9.00" }), { env: envOf(), fetch: refused.fetch });
+  assert.ok(r.status >= 400 && /Price is invalid/.test(JSON.stringify(r.body)));
 });
 
 test("publish: already active skips the status update", async () => {
@@ -269,6 +353,20 @@ test("Dev Dashboard app: wrong secret is a clear 502 without leaking it; half-se
   const half = await handleProducts(keyed({ store: "ed" }), { env: envOf({ ED_ADMIN_TOKEN: undefined, ED_CLIENT_ID: "dev-client-id" }), fetch: sh.fetch });
   assert.equal(half.status, 503);
   assert.match(half.body.error, /ED_CLIENT_ID and ED_CLIENT_SECRET/);
+});
+
+test("Dev Dashboard app: Shopify's own refusal reason is shown, never the secret", async () => {
+  clearTokenCache();
+  const fetch = async (url) => String(url).endsWith("/admin/oauth/access_token")
+    ? new Response(JSON.stringify({ error: "invalid_client", error_description: "Could not find Shopify API application with api_key dev-client-id <b>x</b>" }), { status: 400 })
+    : new Response("{}", { status: 500 });
+  const res = await handleProducts(keyed({ store: "ed" }), { env: envOf({ ED_ADMIN_TOKEN: undefined, ED_CLIENT_ID: "dev-client-id", ED_CLIENT_SECRET: "other-secret" }), fetch });
+  assert.equal(res.status, 502);
+  assert.equal(res.body.code, "shopify_auth");
+  assert.match(res.body.error, /HTTP 400: invalid_client: Could not find Shopify API application with api_key \[hidden\]/);
+  assert.ok(!res.body.error.includes("dev-client-id"));
+  assert.ok(!res.body.error.includes("<"));
+  assert.ok(!JSON.stringify(res.body).includes("other-secret"));
 });
 
 test("userErrors are propagated as 422 with Shopify's messages", async () => {
@@ -775,7 +873,12 @@ test("files: downloads need the key or a signed link; models download, previews 
   const thumb = await handleFiles(imgReq(withThumb.thumbUrl), ctx);
   assert.equal(thumb.status, 200);
   assert.equal(thumb.headers.get("content-type"), "image/png");
-  assert.equal((await handleFiles(imgReq(withThumb.thumbUrl.replace("/thumb", "")), ctx)).status, 404, "the preview's link doesn't open the file");
+  // One signature per hour covers the whole library, so listing it costs one HMAC (the free plan's 10 ms limit).
+  assert.equal(new URL(withThumb.thumbUrl, "https://x").search, new URL(item.url, "https://x").search, "one link signature for every file");
+  const old = item.url.replace(/exp=\d+/, `exp=${Date.now() - 1000}`);
+  assert.equal((await handleFiles(imgReq(old), ctx)).status, 404, "an expired link is refused");
+  const otherKey = { ...ctx, env: envOf({ CONSOLE_KEY: "a-different-console-key-1234" }) };
+  assert.equal((await handleFiles(imgReq(item.url), otherKey)).status, 404, "a link signed with another key is refused");
   const renamed = await handleFiles(imgReq(`/api/files/${item.key}`, { method: "PATCH", headers: { ...KEYH, "content-type": "application/json" }, body: JSON.stringify({ name: "Pineapple v2.obj", tags: "ornament, fruit" }) }), ctx);
   const r = (await renamed.json()).item;
   assert.equal(r.name, "Pineapple v2.stl", "the extension always stays the file's own");
@@ -798,6 +901,120 @@ test("images: content must match the declared type, and only image types are tak
   const big = await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", "content-length": String(21 * 1024 * 1024), ...KEYH }, body: PNG }), ctx);
   assert.equal(big.status, 413);
   assert.equal(ctx.blobs.m.size, 0);
+});
+
+const { handleMember, clearMemberCache } = await import("../lib/members.mjs");
+// A fake store for store sign-in: the two discovery files, the Customer Account API and the Admin API.
+function fakeMemberShop({ tags = ["Pro", "designs:benz1"], goodToken = "shcat_GOOD", scopeDenied = false, noDiscovery = false } = {}) {
+  const calls = [];
+  const res = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  const fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), auth: init.headers?.authorization });
+    if (noDiscovery && String(url).includes("/.well-known/")) return new Response("Forbidden", { status: 403 });
+    if (url === "https://account.elevatedshirts.com/customer/api/2026-10/graphql")
+      return init.headers.authorization === goodToken ? res({ data: { customer: { id: "gid://shopify/Customer/78", firstName: "Lee" } } }) : res({ errors: [{ message: "Unauthorized" }] }, 401);
+    if (url === "https://elevatedshirts.com/.well-known/openid-configuration")
+      return res({ authorization_endpoint: "https://shopify.com/authentication/123/oauth/authorize", token_endpoint: "https://shopify.com/authentication/123/oauth/token", end_session_endpoint: "https://shopify.com/authentication/123/logout" });
+    if (url === "https://elevatedshirts.com/.well-known/customer-account-api") return res({ graphql_api: "https://shopify.com/123/account/customer/api/2025-10/graphql" });
+    if (url === "https://shopify.com/123/account/customer/api/2025-10/graphql")
+      return init.headers.authorization === goodToken ? res({ data: { customer: { id: "gid://shopify/Customer/77", firstName: "Dana" } } }) : res({ errors: [{ message: "Unauthorized" }] }, 401);
+    if (String(url).includes("/admin/api/")) {
+      const { query, variables } = JSON.parse(init.body);
+      checkGraphql(query, variables);
+      if (scopeDenied) return res({ errors: [{ message: "Access denied for tags field. Required access: `read_customers` access scope.", extensions: { code: "ACCESS_DENIED" } }] });
+      return res({ data: { customer: { tags } } });
+    }
+    return res({}, 404);
+  };
+  return { fetch, calls };
+}
+
+test("store sign-in: config, token check, tag-unlocked images with signed links, CORS preflight", async () => {
+  clearMemberCache();
+  const blobs = fakeBlobs();
+  const ictx = { blobs, env: envOf() };
+  const post = (h) => handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", ...KEYH, ...h }, body: PNG }), ictx);
+  await post({ "x-filename": "pub.png", "x-public": "1" });
+  await post({ "x-filename": "pro.png", "x-access": "PRO" });
+  await post({ "x-filename": "benz.png", "x-access": "designs:benz1, other" });
+  await post({ "x-filename": "all.png", "x-access": "members" });
+  await post({ "x-filename": "vip.png", "x-access": "vip" });
+  await post({ "x-filename": "secret.png" });
+  const shop = fakeMemberShop();
+  const env = envOf({ ED_CUSTOMER_CLIENT_ID: "client-abc" });
+  const ctx = { blobs, env, fetch: shop.fetch };
+  const app = { origin: "https://design.elevatedshirts.com" };
+
+  const cfg = await handleMember(imgReq("/api/member/config", { headers: app }), ctx);
+  assert.equal(cfg.status, 200);
+  assert.deepEqual(await cfg.json(), { clientId: "client-abc", authorize: "https://shopify.com/authentication/123/oauth/authorize", token: "https://shopify.com/authentication/123/oauth/token", logout: "https://shopify.com/authentication/123/logout" });
+  assert.equal(cfg.headers.get("access-control-allow-origin"), "https://design.elevatedshirts.com");
+
+  const pre = await handleMember(imgReq("/api/member", { method: "OPTIONS", headers: app }), ctx);
+  assert.equal(pre.status, 204);
+  assert.equal(pre.headers.get("access-control-allow-headers"), "authorization");
+
+  const me = await handleMember(imgReq("/api/member", { headers: { ...app, authorization: "Bearer shcat_GOOD" } }), ctx);
+  assert.equal(me.status, 200);
+  const body = await me.json();
+  assert.equal(body.customer.firstName, "Dana");
+  assert.deepEqual(body.tags, ["pro", "designs:benz1"]);
+  assert.deepEqual(body.items.map((i) => i.name).sort(), ["all.png", "benz.png", "pro.png"], "only images the tags unlock, never public or untagged private ones");
+  assert.equal(body.customer.id, undefined, "the customer's id isn't sent back");
+  for (const i of body.items) {
+    assert.match(i.url, /^https:\/\/console\.example\/api\/images\/[^?]+\?exp=\d+&sig=/);
+    const file = await handleImages(new Request(i.url), ictx);
+    assert.equal(file.status, 200, "the signed link opens the file");
+  }
+  assert.equal(shop.calls.find((c) => c.url.includes("/account/customer/api/")).auth, "shcat_GOOD", "the token goes to Shopify as-is");
+
+  const again = shop.calls.length;
+  assert.equal((await handleMember(imgReq("/api/member", { headers: { authorization: "Bearer shcat_GOOD" } }), ctx)).status, 200);
+  assert.equal(shop.calls.length, again, "a checked token is remembered for a few minutes");
+
+  const bad = await handleMember(imgReq("/api/member", { headers: { ...app, authorization: "Bearer shcat_EXPIRED" } }), ctx);
+  assert.equal(bad.status, 401);
+  assert.equal((await bad.json()).code, "signed_out");
+  assert.equal(bad.headers.get("access-control-allow-origin"), "https://design.elevatedshirts.com", "errors still reach the app");
+  assert.equal((await handleMember(imgReq("/api/member"), ctx)).status, 401, "no token");
+  assert.equal((await handleMember(imgReq("/api/member", { method: "POST", headers: { authorization: "Bearer shcat_GOOD" } }), ctx)).status, 405);
+  const evil = await handleMember(imgReq("/api/member", { method: "OPTIONS", headers: { origin: "https://evil.example" } }), ctx);
+  assert.equal(evil.headers.get("access-control-allow-origin"), null, "other sites get no CORS");
+});
+
+test("store sign-in: the built-in addresses are used when the store refuses its discovery files", async () => {
+  clearMemberCache();
+  const blobs = fakeBlobs();
+  const ctx = { blobs, env: envOf(), fetch: fakeMemberShop({ noDiscovery: true }).fetch };
+  const cfg = await handleMember(imgReq("/api/member/config"), ctx);
+  assert.equal(cfg.status, 200);
+  assert.deepEqual(await cfg.json(), { clientId: "1cd847fd-6a88-46bb-af04-d486241fc519",
+    authorize: "https://account.elevatedshirts.com/authentication/oauth/authorize", token: "https://account.elevatedshirts.com/authentication/oauth/token", logout: "https://account.elevatedshirts.com/authentication/logout" });
+  const me = await handleMember(imgReq("/api/member", { headers: { authorization: "Bearer shcat_GOOD" } }), ctx);
+  assert.equal(me.status, 200);
+  assert.equal((await me.json()).customer.firstName, "Lee");
+  assert.equal((await handleMember(imgReq("/api/member", { headers: { authorization: "Bearer shcat_FAKE" } }), ctx)).status, 401, "a fake token is turned away, not a store error");
+});
+
+test("store sign-in: not switched on, missing scope, and access field edits", async () => {
+  clearMemberCache();
+  const blobs = fakeBlobs();
+  const dflt = await handleMember(imgReq("/api/member/config"), { blobs, env: envOf(), fetch: fakeMemberShop().fetch });
+  assert.equal((await dflt.json()).clientId, "1cd847fd-6a88-46bb-af04-d486241fc519", "the ED storefront's public client ID is built in");
+  const off = await handleMember(imgReq("/api/member/config"), { blobs, env: envOf({ ED_CUSTOMER_CLIENT_ID: " " }), fetch: fakeMemberShop().fetch });
+  assert.equal(off.status, 503);
+  assert.match((await off.json()).error, /ED_CUSTOMER_CLIENT_ID/);
+  const denied = await handleMember(imgReq("/api/member", { headers: { authorization: "Bearer shcat_GOOD" } }), { blobs, env: envOf(), fetch: fakeMemberShop({ scopeDenied: true }).fetch });
+  assert.equal(denied.status, 502);
+  assert.match((await denied.json()).error, /read_customers/);
+
+  const ictx = { blobs, env: envOf() };
+  const up = await (await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", ...KEYH, "x-access": " VIP , designs:Benz1 ,," }, body: PNG }), ictx)).json();
+  assert.equal(up.item.access, "vip, designs:benz1");
+  const patch = (body) => handleImages(imgReq(`/api/images/${up.item.key}`, { method: "PATCH", headers: { "content-type": "application/json", ...KEYH }, body: JSON.stringify(body) }), ictx);
+  assert.equal((await (await patch({ access: Array.from({ length: 40 }, (_, n) => `tag-number-${n}`).join(",") })).json()).item.access.length <= 120, true, "long lists keep whole tags only");
+  assert.equal((await patch({ access: "" })).status, 200);
+  assert.equal(blobs.m.get(`image:${up.item.key}`).metadata.access, undefined, "an empty access clears it");
 });
 
 test("images: an SVG with script is never rendered on the console's origin", async () => {
@@ -1071,6 +1288,7 @@ test("listings: happy path stages the image, creates Blank x Color x Size, publi
   assert.equal(res.status, 201, JSON.stringify(res.body));
   assert.equal(res.body.alreadyListed, false);
   assert.equal(res.body.url, "https://elevatedshirts.com/products/lowcountry-sunset-tee");
+  assert.equal(res.body.shareUrl, "https://elevatedshirts.com/products/lowcountry-sunset-tee?utm_source=social&utm_medium=organic&utm_campaign=lowcountry-sunset-tee&utm_content=new-listing");
   assert.equal(res.body.adminUrl, "https://admin.shopify.com/store/elevated-designs/products/555");
   assert.match(res.body.message, /is live on elevatedshirts\.com/);
   assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["OnlineStorePublication", "ConsoleListingLookup", "ConsoleStagedUpload", "ConsoleListingCreate", "ConsolePublish"]);
@@ -1419,7 +1637,10 @@ test("build: dist/ holds only index.html, assets/ and tools/, and wrangler.toml 
   assert.match(toml, /^run_worker_first = true$/m, "API routes and security headers go through the Worker");
   assert.match(toml, /compatibility_flags = \["nodejs_compat"\]/);
   assert.match(toml, /\[\[kv_namespaces\]\]\s+binding = "IMAGES"/);
-  assert.ok(!/r2_buckets|\[vars\]|shpat_|CONSOLE_KEY\s*=|_TOKEN\s*=|_SECRET\s*=/.test(toml), "no R2, no vars, no secrets in wrangler.toml");
+  assert.ok(!/shpat_|CONSOLE_KEY\s*=|_TOKEN\s*=|_SECRET\s*=/.test(toml), "no secrets in wrangler.toml");
+  const vars = toml.split(/\n\[vars\]\n/)[1]?.split(/\n\[/)[0] ?? "";
+  assert.deepEqual(vars.split("\n").filter((l) => l.trim() && !l.startsWith("#")).map((l) => l.split("=")[0].trim()), toml.includes("[vars]") ? ["CONSOLE_PAGE", "DRIVE_ORIGIN"] : [], "the only plain variables are the console's address and the E: drive tunnel's address");
+  assert.deepEqual([...toml.matchAll(/bucket_name\s*=\s*"([^"]+)"/g)].map((m) => m[1]), ["c3d-files", "creative-lab-engine"], "two R2 buckets: Charleston 3D's print files and the console's action answers");
   // Nothing in this project runs on Netlify: no config, functions, packages, code or docs for it.
   for (const gone of ["netlify.toml", "netlify", "lib/netlify.mjs"]) assert.ok(!fs.existsSync(path.join(root, gone)), `${gone} is gone`);
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
@@ -1430,10 +1651,10 @@ test("build: dist/ holds only index.html, assets/ and tools/, and wrangler.toml 
   for (const f of hosting) assert.ok(!/netlify/i.test(fs.readFileSync(path.join(root, f), "utf8")), `${f} mentions Netlify`);
 });
 
-test("worker: the entry module exports only the fetch and scheduled handlers (workerd refuses anything else)", async () => {
+test("worker: the entry module exports only the fetch, scheduled and queue handlers (workerd refuses anything else)", async () => {
   const entry = await import("../worker/index.mjs");
   assert.deepEqual(Object.keys(entry), ["default"]);
-  assert.deepEqual(Object.keys(entry.default), ["fetch", "scheduled"]);
+  assert.deepEqual(Object.keys(entry.default), ["fetch", "scheduled", "queue"]);
   const res = await entry.default.fetch(wreq("/api/nope"), workerEnv());
   assert.equal(res.status, 404);
 });
@@ -1504,7 +1725,7 @@ test("worker: image library on Workers KV keeps the same API (list, file, upload
     const up = await W.handleRequest(wreq("/api/images", { method: "POST", headers: { "content-type": "image/png", "x-filename": `d${i}.png`, "x-tags": "palmetto", ...KEYH }, body: PNG }), env);
     assert.equal(up.status, 201);
     const { item } = await up.json();
-    assert.deepEqual(Object.keys(item).sort(), ["added", "key", "name", "public", "size", "tags", "type", "url"]);
+    assert.deepEqual(Object.keys(item).sort(), ["added", "brand", "key", "name", "public", "size", "tags", "type", "url"]);
     keys.push(item.key); urls.push(item.url);
   }
   assert.ok([...kv.m.keys()].every((k) => k.startsWith("image:")), "stored under the image: prefix");
@@ -1735,6 +1956,22 @@ test("worker: a listing reads its design from the same KV image library", async 
     assert.equal(calls.length, before);
   });
 
+  test("pricing: a failed cron step saves its reason once, and keeps the sync's place", async () => {
+    const kvData = new Map([["pricing:state", JSON.stringify({ phase: "idle", hash: "abc", finishedAt: "2026-10-31T15:45:08.542Z" })]]);
+    let writes = 0;
+    const kv = { get: async (k) => (kvData.has(k) ? JSON.parse(kvData.get(k)) : null), put: async (k, v) => { writes++; kvData.set(k, v); } };
+    const env = envOf({ ED_SHOPIFY_DOMAIN: "elevated-designs.myshopify.com", ED_ADMIN_TOKEN: "shpat_x", GSC_SERVICE_ACCOUNT: "not json" });
+    const fetchImpl = async () => { throw new Error("no network in this test"); };
+    await assert.rejects(P.scheduledPricing({ env, kv, fetchImpl }), /valid JSON/);
+    const s = JSON.parse(kvData.get("pricing:state"));
+    assert.match(s.error, /valid JSON/);
+    assert.ok(s.errorAt);
+    assert.equal(s.phase, "idle");
+    assert.equal(s.hash, "abc");
+    await assert.rejects(P.scheduledPricing({ env, kv, fetchImpl }));
+    assert.equal(writes, 1, "the same reason again is not written again");
+  });
+
   test("pricing: route needs the key, is ED only, and reports where the sync is", async () => {
     const kv = { get: async () => ({ phase: "idle", report: { changed: 3 } }), put: async () => {} };
     const r0 = await P.handlePricing({ method: "GET", query: new URLSearchParams("store=ed"), header: () => null }, { env: envOf(), kv, fetch });
@@ -1746,6 +1983,31 @@ test("worker: a listing reads its design from the same KV image library", async 
     assert.equal(r2.status, 200);
     assert.equal(r2.body.markup, 10);
     assert.equal(r2.body.report.changed, 3);
+  });
+
+  test("pricing: the Price sheet page gets every row, with blank and design prices, and never makes one up", async () => {
+    const v = P.sheetView(SHEET, 10);
+    assert.equal(v.length, 5);
+    const s = v.find((r) => r.id === "gildan-64000" && r.size === "S");
+    assert.deepEqual([s.cost, s.suggested, s.yours, s.price, s.designPrice, s.offered], [2.81, 13.99, null, 13.99, 23.99, true]);
+    const x = v.find((r) => r.size === "2XL");
+    assert.deepEqual([x.price, x.designPrice], [21.5, 31.5], "your_price wins");
+    const off = v.find((r) => r.id === "fruit-3930r");
+    assert.deepEqual([off.offered, off.price, off.designPrice], [false, null, null], "offer=no has no store price");
+    assert.throws(() => P.sheetView([["name"]]), /needs id and size/);
+    const cat = P.catalogView();
+    assert.ok(cat.length > 50 && cat.every((r) => r.id && r.size));
+    assert.ok(cat.some((r) => r.id === "gildan-64000" && r.size === "S" && r.price > 0));
+    // The route: key needed, ED only, works without the PRICING KV, falls back to the bundled copy.
+    const hdr = (k) => (k === "x-console-key" ? ENV.CONSOLE_KEY : null);
+    const q = (s) => ({ method: "GET", query: new URLSearchParams(s), header: hdr });
+    assert.equal((await P.handlePricing({ ...q("store=ed&view=sheet"), header: () => null }, { env: envOf(), kv: null, fetch })).status, 401);
+    assert.equal((await P.handlePricing(q("store=c3d&view=sheet"), { env: envOf(), kv: null, fetch })).status, 400);
+    const r = await P.handlePricing(q("store=ed&view=sheet"), { env: envOf(), kv: null, fetch });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.source, "bundled");
+    assert.ok(r.body.rows.length > 50);
+    assert.match(r.body.sheetUrl, /11G7MyaGqSaz3WCd21etMYc-YebpAbyKzmvE1aqNWpy8/);
   });
 }
 
@@ -1784,7 +2046,7 @@ function fakeSite({ bad = false, site = "https://charleston3d.com", keys = MKENV
     if (u.host !== host) return null;
     hits.push(u.pathname);
     assert.ok(init.signal, "every site fetch has a timeout");
-    assert.match(init.headers["user-agent"], /BusinessConsole-SEO/);
+    assert.match(init.headers["user-agent"], /CreativeLab-SEO/);
     if (down) return text("", 503);
     switch (u.pathname) {
       case "/": return text(bad ? HOME_BAD : HOME_GOOD);
@@ -1871,6 +2133,27 @@ test("marketing: a healthy site scores well, uses its own IndexNow key, and only
   assert.ok(!site.hits.includes("/collections/frontpage"), "the hidden home page collection is not used either");
 });
 
+test("marketing: Shopify's own /llms.txt agent file doesn't count; the /pages/llms fact sheet does", async () => {
+  const UCP = `# Charleston3D\n\nAgent instructions. Discover the profile at /.well-known/ucp and use the MCP endpoint.\n${"- Respect Retry-After.\n".repeat(20)}`;
+  const wrap = (pagesLlms) => {
+    const site = fakeSite();
+    return async (url, init) => {
+      const u = new URL(String(url));
+      if (u.pathname === "/llms.txt") return new Response(UCP, { status: 200, headers: { "content-type": "text/plain" } });
+      if (u.pathname === "/pages/llms") return new Response(pagesLlms ?? "Not found", { status: pagesLlms ? 200 : 404, headers: { "content-type": "text/plain" } });
+      return site.fetch(url, init);
+    };
+  };
+  const without = await MK.auditSite(wrap(null), { store: "c3d", site: "https://charleston3d.com", key: MKENV.C3D_INDEXNOW_KEY, clock: () => NOW });
+  const c = without.checks.find((x) => x.id === "llms");
+  assert.equal(c.level, "fail");
+  assert.match(c.title, /Shopify's shopping-agent file/);
+  const withPage = await MK.auditSite(wrap(LLMS), { store: "c3d", site: "https://charleston3d.com", key: MKENV.C3D_INDEXNOW_KEY, clock: () => NOW });
+  const ok = withPage.checks.find((x) => x.id === "llms");
+  assert.equal(ok.level, "pass");
+  assert.match(ok.detail ?? ok.url ?? JSON.stringify(ok), /pages\/llms/);
+});
+
 test("marketing: a domain that redirects to another host is flagged and the live sitemap is still read", async () => {
   const live = fakeSite({ site: "https://theelevateddesignsllc.com" });
   const redirecting = async (url, init) => {
@@ -1913,6 +2196,28 @@ test("marketing: a broken site lists each problem with a fix", async () => {
   const down = await MK.auditSite(fakeSite({ down: true }).fetch, { store: "c3d", site: "https://charleston3d.com", key: "c3dkey12345678", clock: () => NOW });
   assert.equal(levelOf(down, "home-up"), "fail");
   assert.equal(levelOf(down, "sitemap"), "fail");
+});
+
+test("marketing: a 429 from Shopify is tried again, then reported as a warning, not a broken site", async () => {
+  let calls = 0;
+  const limited = async () => { calls++; return new Response("Too many requests", { status: 429, headers: { "retry-after": "1" } }); };
+  const a = await MK.auditSite(limited, { store: "ed", site: "https://elevatedshirts.com", key: MKENV.ED_INDEXNOW_KEY, clock: () => NOW });
+  for (const id of ["home-up", "sitemap", "robots", "llms", "indexnow-key"]) {
+    assert.equal(levelOf(a, id), "warn", id);
+    assert.match(a.checks.find((c) => c.id === id).fix, /Shopify limited/);
+  }
+  assert.ok(!a.checks.some((c) => /password|Create page handle llms/.test(c.fix ?? "")), "no domain, password or llms advice for a 429");
+  assert.equal(calls, 12, "each of the 6 pages (llms.txt and the llms page included) is asked twice");
+  assert.equal(a.scores.seo, null, "checks Shopify turned away don't lower the score");
+  const kvm = new Map([["history:ed", JSON.stringify([{ date: "2026-10-27", scores: { overall: 80 } }])]]);
+  const kv = { get: async (k) => JSON.parse(kvm.get(k) ?? "null"), put: async (k, v) => kvm.set(k, v) };
+  const saved = await MK.saveHistory(kv, a);
+  assert.equal(saved.history.length, 1, "a run Shopify turned away isn't charted");
+  assert.equal(saved.previous.scores.overall, 80);
+  let n = 0;
+  const once = async () => (n++ === 0 ? new Response("", { status: 429 }) : new Response("User-agent: *", { status: 200 }));
+  const page = await MK.getPage(once, "https://elevatedshirts.com/robots.txt", { retryWaitMs: 1 });
+  assert.equal(page.status, 200);
 });
 
 test("marketing: the Elevated Designs key is never verified on Charleston 3D (brands stay apart)", async () => {
@@ -2428,6 +2733,42 @@ test("marketing: traffic by source and UTM campaign, Bing queries, Google not se
   assert.match(d.body.shop.note, /read_reports/);
 });
 
+test("marketing: site stats (totals, daily, locations, devices, pages, channels, hours, weekdays) from ShopifyQL", async () => {
+  const seen = [];
+  const table = (cols, rows) => ({ shopifyqlQuery: { parseErrors: [], tableData: { columns: cols.map((name) => ({ name })), rows } } });
+  const sh = fakeShopify({ override: { MarketingTraffic: (v, data) => {
+    const q = v.q; seen.push(q);
+    if (/GROUP BY browser_that_fails|session_device_os/.test(q)) return data({ shopifyqlQuery: { parseErrors: ["Unknown column"], tableData: null } });
+    if (/average_session_duration, bounce_rate, conversion_rate, added_to_cart_rate/.test(q) && !/GROUP BY|TIMESERIES/.test(q))
+      return data(table(["sessions", "online_store_visitors", "pageviews", "pageviews_per_session", "average_session_duration", "bounce_rate", "conversion_rate", "added_to_cart_rate", "reached_checkout_rate", "completed_checkout_rate"],
+        [["200", "150", "640", "3.2", "95.4", "0.41", "0.015", "0.06", "0.03", "0.015"]]));
+    if (/TIMESERIES day/.test(q)) return data(table(["day", "sessions", "online_store_visitors", "pageviews"], [["2026-10-21", "10", "8", "30"], ["2026-10-20", "5", "5", "9"]]));
+    if (/GROUP BY session_city/.test(q)) return data(table(["session_city", "session_region", "session_country", "sessions", "online_store_visitors", "conversion_rate"], [["Charleston", "South Carolina", "United States", "60", "40", "0.05"], ["", "", "", "0", "0", "0"]]));
+    if (/GROUP BY session_country/.test(q)) return data(table(["session_country", "sessions", "online_store_visitors", "conversion_rate"], [["United States", "180", "130", "0.02"], ["Canada", "20", "20", "0"]]));
+    if (/GROUP BY landing_page_path/.test(q)) return data(table(["landing_page_path", "sessions", "pageviews", "average_session_duration", "bounce_rate", "conversion_rate"], [["/", "120", "300", "61.6", "0.5", "0.01"]]));
+    if (/GROUP BY hour_of_day/.test(q)) return data(table(["hour_of_day", "sessions"], [["9", "12"], ["21", "30"]]));
+    if (/GROUP BY day_of_week/.test(q)) return data(table(["day_of_week", "sessions"], [["Monday", "40"], ["Saturday", "70"]]));
+    if (/GROUP BY referrer_source|GROUP BY utm_source/.test(q)) return data(table(["referrer_source", "sessions"], []));
+    return data(table(["sessions"], []));
+  } } });
+  const res = await MK.handleMarketing(keyed({ store: "ed", part: "traffic", days: "30" }), mkCtx(mkFetch(sh).fetch));
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.days, 30);
+  assert.ok(seen.every((q) => /SINCE -30d UNTIL today/.test(q)), "every report covers the chosen days");
+  const st = res.body.shop.stats;
+  assert.deepEqual(st.summary, { sessions: 200, visitors: 150, pageviews: 640, pagesPerSession: 3.2, avgDuration: 95, bounceRate: 41, conversionRate: 1.5, addedToCartRate: 6, reachedCheckoutRate: 3, completedCheckoutRate: 1.5 });
+  assert.deepEqual(st.daily.map((d) => d.date), ["2026-10-20", "2026-10-21"]);
+  assert.deepEqual(st.countries.map((c) => [c.label, c.sessions, c.conversionRate]), [["United States", 180, 2], ["Canada", 20, 0]]);
+  assert.deepEqual(st.cities.map((c) => c.label), ["Charleston, South Carolina, United States"], "empty rows are dropped");
+  assert.deepEqual(st.pages[0], { label: "/", sessions: 120, visitors: null, conversionRate: 1, avgDuration: 62, bounceRate: 50, pageviews: 300 });
+  assert.equal(st.hours.length, 24); assert.equal(st.hours[21].sessions, 30); assert.equal(st.hours[0].sessions, 0);
+  assert.deepEqual(st.weekdays.map((d) => d.sessions), [40, 0, 0, 0, 0, 70, 0]);
+  assert.equal(st.systems, null, "a report Shopify can't run is left out");
+  assert.deepEqual(res.body.shop.missing, ["systems"]);
+  const bad = await MK.handleMarketing(keyed({ store: "ed", part: "traffic", days: "9999" }), mkCtx(mkFetch(sh).fetch));
+  assert.equal(bad.body.days, 90, "out-of-range days fall back to 90");
+});
+
 test("marketing: Google Search Console with a service account signs a JWT and reads queries for the store's own property", async () => {
   MK.clearGoogleToken();
   const pair = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
@@ -2540,16 +2881,19 @@ test("worker: /api/marketing runs through the Worker with the MARKETING KV, and 
   }, f.fetch);
 });
 
-test("wrangler.toml: MARKETING and PRICING KV bindings, the daily audit cron, the price sync cron and the Kittl sync cron", async () => {
+test("wrangler.toml: MARKETING and PRICING KV bindings, and one 15-minute cron that runs the audit, fixes, Kittl sync and price sync", async () => {
   const fs = await import("node:fs");
   const toml = fs.readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   assert.match(toml, /\[\[kv_namespaces\]\]\s*\nbinding = "MARKETING"/);
   assert.match(toml, /\[\[kv_namespaces\]\]\s*\nbinding = "PRICING"/);
-  assert.match(toml, /\[triggers\]\s*\ncrons = \["0 11 \* \* \*", "30 11 \* \* \*", "\*\/15 \* \* \* \*", "45 \* \* \* \*"\]/);
+  // On since the switch-over from the old business-console Worker (2026-10-31).
+  assert.match(toml, /\[triggers\][\s\S]*\ncrons = \["0 11 \* \* \*", "30 11 \* \* \*", "\*\/15 \* \* \* \*", "45 \* \* \* \*"\]/);
+  assert.match(toml, /\[\[queues\.consumers\]\]\s*\nqueue = "creative-lab-actions"\s*\nmax_batch_size = 1\s*\nmax_batch_timeout = 0/);
   const W2 = await import("../worker/app.mjs");
   assert.equal(W2.AUDIT_CRON, "0 11 * * *");
   assert.equal(W2.AUTOFIX_CRON, "30 11 * * *");
-  assert.equal(W2.KITTL_CRON, "45 * * * *");
+  assert.equal(W2.UPKEEP_CRON, "45 * * * *");
+  assert.equal(W2.KITTL_CRON, W2.UPKEEP_CRON, "no cron slot is free, so the nightly sync shares the hourly cron");
 });
 
 // ---------- promotions ----------
@@ -2912,16 +3256,18 @@ test("kittl sync: a mass removal, an empty or broken list, and bad files change 
 
 test("kittl sync: a few copies per run, the rest on the next runs", async () => {
   const blobs = fakeBlobs();
-  const { fetchImpl } = kittlFetch(manifest([...Array(20)].map((_, i) => i + 1)));
+  const total = 2 * KS.MAX_ADDS + 4;
+  const { fetchImpl } = kittlFetch(manifest([...Array(total)].map((_, i) => i + 1)));
   const first = await KS.syncKittlLibrary({ blobs, fetchImpl });
-  assert.deepEqual([first.added, first.waiting], [KS.MAX_ADDS, 20 - KS.MAX_ADDS]);
+  assert.deepEqual([first.added, first.waiting], [KS.MAX_ADDS, total - KS.MAX_ADDS]);
+  assert.ok(KS.MAX_ADDS + 1 <= 45, "the list plus a run's downloads stay inside the free plan's 50 subrequests");
   await KS.syncKittlLibrary({ blobs, fetchImpl });
   const third = await KS.syncKittlLibrary({ blobs, fetchImpl });
-  assert.deepEqual([third.added, third.waiting], [20 - 2 * KS.MAX_ADDS, 0]);
-  assert.equal(blobs.m.size, 20);
+  assert.deepEqual([third.added, third.waiting], [total - 2 * KS.MAX_ADDS, 0]);
+  assert.equal(blobs.m.size, total);
 });
 
-test("kittl sync: the hourly cron saves its result and /api/library-sync shows the counts without the key", async () => {
+test("kittl sync: the nightly cron saves its result and /api/library-sync shows the counts without the key", async () => {
   const kv = fakeKV();
   const env = { IMAGES: kv };
   await libItem(kvBlobStore(kv), 1);
@@ -2936,6 +3282,216 @@ test("kittl sync: the hourly cron saves its result and /api/library-sync shows t
   assert.deepEqual([bad.failed, bad.problems], [1, [`${kid(3)}: not a valid png file`]], "the reason a copy failed is shown");
   const list = await handleImages(imgReq("/api/images?public=1"), { blobs: kvBlobStore(kv), env: envOf() });
   assert.equal((await list.json()).items.length, 2, "the sync's own record isn't listed as an image");
+});
+
+test("public list: a saved copy answers repeat visits without KV lists, survives a failed list, and a change drops it", async () => {
+  const kv = fakeKV();
+  await libItem(kvBlobStore(kv), 1);
+  const get = async () => (await (await handleImages(imgReq("/api/images?public=1"), { blobs: kvBlobStore(kv), env: envOf() })).json()).items.length;
+  const lists = () => kv.ops.filter(([op, k]) => op === "list" && k === "image:").length;
+  assert.equal(await get(), 1);
+  assert.equal(lists(), 1);
+  assert.equal(await get(), 1);
+  assert.equal(lists(), 1, "the second visit reads the saved copy");
+  await libItem(kvBlobStore(kv), 2);
+  assert.equal(await get(), 2, "an upload drops the copy, so the new image shows");
+  assert.equal(lists(), 2);
+  const realList = kv.list;
+  kv.list = async () => { throw new Error("KV list() limit exceeded for the day."); };
+  const snap = JSON.parse(new TextDecoder().decode(kv.m.get("snapshot:public-images").data));
+  snap.at = Date.now() - 7 * 3600e3;
+  kv.m.set("snapshot:public-images", { data: new TextEncoder().encode(JSON.stringify(snap)).buffer, metadata: null });
+  assert.equal(await get(), 2, "an old copy still answers when listing fails");
+  kv.list = realList;
+});
+
+test("kittl cron: saves a fresh public list copy, so the shirt apps don't need a KV list later that day", async () => {
+  const kv = fakeKV();
+  await libItem(kvBlobStore(kv), 1);
+  await scheduledKittlSync({ IMAGES: kv }, kittlFetch(manifest([1, 2])).fetchImpl);
+  const snap = JSON.parse(new TextDecoder().decode(kv.m.get("snapshot:public-images").data));
+  assert.equal(snap.items.length, 2);
+  kv.list = async () => { throw new Error("KV list() limit exceeded for the day."); };
+  const res = await handleImages(imgReq("/api/images?public=1"), { blobs: kvBlobStore(kv), env: envOf() });
+  assert.equal((await res.json()).items.length, 2);
+});
+
+// ---------- nightly Kittl sync, Sync now, hourly upkeep ----------
+const at = (iso) => Date.parse(iso);
+const manifestReads = (calls) => calls.filter((u) => u === KS.MANIFEST_URL).length;
+
+test("crons: the hourly :45 cron syncs Kittl only on its 04:45 UTC run; other hours only renew the public list; every run prunes", async () => {
+  const W3 = await import("../worker/app.mjs");
+  const entry = (await import("../worker/index.mjs")).default;
+  const kv = fakeKV(), RESULTS = fakeResults();
+  const env = { IMAGES: kv, RESULTS };
+  await libItem(kvBlobStore(kv), 1);
+  const { fetchImpl, calls } = kittlFetch(manifest([1, 2]));
+  const lists = () => kv.ops.filter(([op, k]) => op === "list" && k === "image:").length;
+  // The 04:45 UTC run: the sync runs exactly once, and old answers are pruned.
+  await RESULTS.put("results/old-0000001", new ArrayBuffer(1));
+  RESULTS.m.get("results/old-0000001").uploaded = new Date(Date.now() - 2 * 864e5);
+  await RESULTS.put("digest/2026-11-01.json", "{}");
+  RESULTS.m.get("digest/2026-11-01.json").uploaded = new Date(Date.now() - 5 * 864e5);
+  const run = async (cron, iso) => {
+    const waits = [];
+    entry.scheduled({ cron, scheduledTime: at(iso) }, env, { waitUntil: (p) => waits.push(p) });
+    return Promise.all(waits);
+  };
+  await withFetch(() => run(W3.UPKEEP_CRON, "2026-11-08T04:45:00Z"), fetchImpl);
+  assert.equal(manifestReads(calls), 1, "one sync at 04:45");
+  assert.equal(JSON.parse(new TextDecoder().decode(kv.m.get(KS.STATE_KEY).data)).trigger, "nightly");
+  assert.equal(RESULTS.m.has("results/old-0000001"), false, "old queue answers are pruned on the hourly cron");
+  assert.equal(RESULTS.m.has("digest/2026-11-01.json"), true, "pruning never touches the digest");
+  assert.equal(lists(), 2, "the sync lists once and saves one fresh public list, nothing more");
+  // Every other hour: no Kittl list read, and with a fresh public copy no KV list either.
+  await withFetch(async () => {
+    for (const h of ["00", "03", "05", "06", "12", "23"]) await run(W3.UPKEEP_CRON, `2026-11-08T${h}:45:00Z`);
+  }, fetchImpl);
+  assert.equal(manifestReads(calls), 1, "the hourly cron never syncs");
+  assert.equal(lists(), 2, "a fresh copy is kept as it is (one KV read, no list)");
+  // A library change dropped the copy: the next hourly run saves a new one.
+  await libItem(kvBlobStore(kv), 3);
+  assert.equal(kv.m.has("snapshot:public-images"), false);
+  assert.deepEqual(await W3.handleScheduled(env, W3.UPKEEP_CRON, at("2026-11-08T07:45:00Z")), { snapshot: "renewed" });
+  assert.equal(manifestReads(calls), 1);
+  assert.deepEqual([W3.isKittlRun(at("2026-11-08T04:45:00Z")), W3.isKittlRun(at("2026-07-08T04:45:00Z")), W3.isKittlRun(at("2026-11-08T05:45:00Z"))], [true, true, false]);
+  assert.equal(JSON.parse(new TextDecoder().decode(kv.m.get("snapshot:public-images").data)).items.length, 3);
+  // Near the 6-hour limit it's renewed before a shirt app visit would have to list.
+  const I2 = await import("../lib/images.mjs");
+  assert.equal(await I2.renewPublicSnapshot(kvBlobStore(kv), Date.now() + I2.SNAPSHOT_RENEW_MS - 60e3), "kept");
+  assert.equal(await I2.renewPublicSnapshot(kvBlobStore(kv), Date.now() + I2.SNAPSHOT_RENEW_MS + 60e3), "renewed");
+  // The 15-minute cron is the price sync, never the Kittl sync.
+  await withFetch(() => W3.handleScheduled({ IMAGES: kv }, "*/15 * * * *"), fetchImpl);
+  assert.equal(manifestReads(calls), 1);
+});
+
+test("library sync now: POST needs the key, runs at once, and a second press within a minute returns the last result", async () => {
+  const W3 = await import("../worker/app.mjs");
+  const Q = await import("../worker/queue.mjs");
+  const kv = fakeKV(), RESULTS = fakeResults();
+  const env = { ...ENV, IMAGES: kv, RESULTS };
+  await libItem(kvBlobStore(kv), 1);
+  const { fetchImpl, calls } = kittlFetch(manifest([1, 2]));
+  const post = (headers = KEYH, q = "") => W3.handleRequest(new Request(`https://console.example/api/library-sync${q}`, { method: "POST", headers }), env);
+  await withFetch(async () => {
+    assert.equal((await post({})).status, 401, "Sync now needs the console key");
+    assert.equal((await W3.handleRequest(new Request("https://console.example/api/library-sync", { method: "DELETE", headers: KEYH }), env)).status, 405);
+    assert.equal(manifestReads(calls), 0);
+    const first = await post(KEYH, "?store=ed");
+    assert.equal(first.status, 200);
+    const a = await first.json();
+    assert.deepEqual([a.ok, a.added, a.inKittl, a.failed, a.trigger, a.stale, a.debounced], [true, 1, 2, 0, "manual", false, undefined]);
+    assert.ok(kv.m.has("snapshot:public-images"), "Sync now saves a fresh public list too");
+    const again = await (await post(KEYH, "?store=c3d")).json();
+    assert.equal(again.debounced, true);
+    assert.equal(again.at, a.at, "the last result comes back as it was");
+    assert.equal(manifestReads(calls), 1, "no second run within a minute");
+    // The same status as the public GET.
+    const got = await (await W3.handleRequest(new Request("https://console.example/api/library-sync"), env)).json();
+    assert.deepEqual([got.added, got.failed, got.problems, got.trigger], [1, 0, [], "manual"]);
+    // Over a minute later it runs again.
+    const old = JSON.parse(new TextDecoder().decode(kv.m.get(KS.STATE_KEY).data));
+    old.at = new Date(Date.now() - 61e3).toISOString();
+    await kv.put(KS.STATE_KEY, JSON.stringify(old));
+    const third = await W3.librarySyncNow(env, fetchImpl);
+    assert.equal(third.debounced, undefined);
+    assert.equal(manifestReads(calls), 2);
+    // Through the console's queue: the engine signs it with its own key.
+    old.at = new Date(Date.now() - 61e3).toISOString();
+    await kv.put(KS.STATE_KEY, JSON.stringify(old));
+    const r = await Q.runAction({ id: "sync-now-0001", method: "POST", path: "/api/library-sync" }, env);
+    assert.equal(r.status, 200);
+    assert.equal(JSON.parse(new TextDecoder().decode(RESULTS.m.get("results/sync-now-0001").bytes)).trigger, "manual");
+    assert.equal(manifestReads(calls), 3);
+  }, fetchImpl);
+  assert.equal(W3.syncStatus({ ok: true, at: new Date(Date.now() - 27 * 3600e3).toISOString(), failed: [] }).stale, true, "a missed night shows as stale");
+});
+
+test("digest: built per store with missing data, saved to R2 for 30 days, read with the key", async () => {
+  const W3 = await import("../worker/app.mjs");
+  const D = await import("../lib/digest.mjs");
+  const now = new Date("2026-11-08T11:31:00Z");
+  // Nothing set up at all: every part is empty or an error string, and nothing throws.
+  const empty = await D.buildDigest({ env: envOf({ C3D_SHOPIFY_DOMAIN: undefined, ED_SHOPIFY_DOMAIN: undefined }), fetchImpl: async () => { throw new Error("offline"); }, now });
+  assert.deepEqual(Object.keys(empty.stores), ["c3d", "ed"]);
+  assert.equal(empty.date, "2026-11-08");
+  for (const s of ["c3d", "ed"]) {
+    const d = empty.stores[s];
+    assert.deepEqual([d.siteCheck, d.ranks, d.autofix.made, d.autofix.undone, d.autofix.run], [null, null, 0, 0, null]);
+    assert.match(d.shop.error, /isn't connected yet/);
+  }
+  assert.deepEqual([empty.stores.ed.pricing, empty.stores.ed.library], [null, null]);
+  assert.equal("pricing" in empty.stores.c3d || "library" in empty.stores.c3d, false, "ED's price and library state stay out of Charleston 3D");
+
+  // With data: today's check, the last 24 hours of automatic changes, the rank snapshot, the week and ED's syncs.
+  const mk = fakeKV(), pk = fakeKV(), ik = fakeKV();
+  await mk.put("history:c3d", JSON.stringify([{ date: "2026-11-07", scores: { overall: 80 } }, { date: "2026-11-08", at: "2026-11-08T11:00:00Z", scores: { overall: 86, seo: 90 }, fails: ["llms-txt"], warns: ["og-image"] }]));
+  await mk.put("changes:c3d", JSON.stringify([
+    { at: "2026-11-08T11:30:10Z", source: "auto", kind: "seo", title: "Rainbow Row Ornament" },
+    { at: "2026-11-08T11:30:12Z", source: "auto", kind: "revert", title: "Palmetto Coaster" },
+    { at: "2026-11-08T09:00:00Z", source: "manual", kind: "seo", title: "Hand edit" },
+    { at: "2026-11-05T11:30:00Z", source: "auto", kind: "alt", title: "Old fix" },
+  ]));
+  await mk.put("ranks:c3d", JSON.stringify([{ date: "2026-11-08", k: { "3d printing charleston": [2.4, 5, 90], "custom 3d prints": [14, 1, 40], "laser engraving sc": [null, 0, 0] } }]));
+  await mk.put("changes:ed", "not json");
+  await pk.put("pricing:state", JSON.stringify({ phase: "idle", source: "sheet", hash: "x", finishedAt: "2026-11-08T11:15:00Z", report: { products: 23, variants: 2399, changed: 4, unchanged: 2395, skipped: { no_size: 1 }, examples: [{ title: "x" }] }, error: "Shopify refused", errorAt: "2026-11-08T10:00:00Z" }));
+  await ik.put(KS.STATE_KEY, JSON.stringify({ ok: true, at: "2026-11-08T04:45:01Z", inKittl: 731, added: 3, removed: 1, waiting: 0, failed: ["a: download 404"], warning: null, trigger: "nightly" }));
+  const week = async (env, f, store) => { if (store === "ed") throw new Error("Add the read_reports scope"); return { days: 7, sessions: 120, orders: 3, sales: 84.5 }; };
+  const full = await D.buildDigest({ env: envOf(), fetchImpl: null, marketingKv: mk, pricingKv: pk, imagesKv: ik, autofix: { c3d: { applied: 1, failed: 0, reviewed: 1, remaining: 5 }, ed: { error: "access_denied" } }, now, week });
+  const c = full.stores.c3d, e = full.stores.ed;
+  assert.deepEqual([c.siteCheck.today, c.siteCheck.scores.overall, c.siteCheck.fails, c.siteCheck.warns], [true, 86, ["llms-txt"], ["og-image"]]);
+  assert.deepEqual([c.autofix.made, c.autofix.undone, c.autofix.items.map((i) => i.title)], [1, 1, ["Rainbow Row Ornament", "Palmetto Coaster"]]);
+  assert.deepEqual(c.autofix.run, { applied: 1, failed: 0, reviewed: 1, remaining: 5 });
+  assert.deepEqual([c.ranks.keywords, c.ranks.top3, c.ranks.top20, c.ranks.none, c.ranks.avgPosition, c.ranks.clicks], [3, 1, 1, 1, 8.2, 6]);
+  assert.deepEqual(c.shop, { days: 7, sessions: 120, orders: 3, sales: 84.5 });
+  assert.deepEqual([e.siteCheck, e.autofix.made, e.autofix.run, e.ranks], [null, 0, { error: "access_denied" }, null]);
+  assert.match(e.shop.error, /read_reports/);
+  assert.deepEqual([e.pricing.phase, e.pricing.source, e.pricing.report.variants, e.pricing.report.changed, e.pricing.error, e.pricing.errorAt], ["idle", "sheet", 2399, 4, "Shopify refused", "2026-11-08T10:00:00Z"]);
+  assert.equal("examples" in e.pricing.report, false, "counts only");
+  assert.deepEqual([e.library.ok, e.library.added, e.library.failed, e.library.trigger], [true, 3, 1, "nightly"]);
+  assert.equal(JSON.stringify(full).includes(ENV.CONSOLE_KEY) || JSON.stringify(full).includes(TOKEN), false, "no secrets");
+
+  // The week's totals from the store's own reports.
+  const ql = async (u, init) => {
+    const q = JSON.parse(init.body).variables.q;
+    const cols = q.startsWith("FROM sales") ? ["day", "orders", "total_sales"] : ["day", "sessions"];
+    const rows = q.startsWith("FROM sales") ? [["2026-11-07", 2, "40.5"], ["2026-11-08", 1, "19.99"]] : [["2026-11-07", 30], ["2026-11-08", 12]];
+    return new Response(JSON.stringify({ data: { shopifyqlQuery: { parseErrors: [], tableData: { columns: cols.map((name) => ({ name, dataType: "x" })), rows } } } }), { status: 200 });
+  };
+  assert.deepEqual(await D.shopWeek(envOf(), ql, "c3d"), { days: 7, sessions: 42, orders: 3, sales: 60.49 });
+
+  // Saved as latest and as the day's file; day files over 30 days old go, latest and newer days stay.
+  const RESULTS = fakeResults();
+  await RESULTS.put("digest/2026-09-30.json", "{}");
+  await RESULTS.put("digest/2026-10-20.json", "{}");
+  await RESULTS.put("results/keep-0001", "{}");
+  const saved = await D.saveDigest(RESULTS, full, now);
+  assert.deepEqual(saved, { key: "digest/2026-11-08.json", removed: 1 });
+  assert.deepEqual([...RESULTS.m.keys()].sort(), ["digest/2026-10-20.json", "digest/2026-11-08.json", "digest/latest.json", "results/keep-0001"]);
+  assert.equal(RESULTS.m.get("digest/latest.json").httpMetadata.contentType, "application/json");
+
+  // GET /api/digest: the key, then the latest (or a day's) digest.
+  const env = { ...ENV, IMAGES: fakeKV(), RESULTS };
+  const get = (q = "", headers = KEYH) => W3.handleRequest(new Request(`https://console.example/api/digest${q}`, { headers }), env);
+  assert.equal((await get("", {})).status, 401);
+  const latest = await get();
+  assert.equal(latest.status, 200);
+  assert.equal(latest.headers.get("content-type"), "application/json; charset=utf-8");
+  assert.equal((await latest.json()).stores.c3d.siteCheck.scores.overall, 86);
+  assert.equal((await get("?date=2026-11-08")).status, 200);
+  assert.equal((await get("?date=2026-11-01")).status, 404);
+  assert.equal((await get("?date=../../x")).status, 400);
+  assert.equal((await W3.handleRequest(new Request("https://console.example/api/digest", { headers: KEYH }), { ...ENV, IMAGES: fakeKV(), RESULTS: fakeResults() })).status, 404, "before the first digest");
+  const Q = await import("../worker/queue.mjs");
+  assert.equal((await Q.runAction({ id: "digest-read-01", method: "GET", path: "/api/digest" }, env)).status, 200, "the console reads it through the queue");
+
+  // The cron's own step: written even when every store read fails, and never throws.
+  const R2 = fakeResults();
+  const out = await W3.scheduledDigest({ IMAGES: fakeKV(), RESULTS: R2 }, null, { fetchImpl: async () => { throw new Error("offline"); }, now });
+  assert.equal(out.date, "2026-11-08");
+  assert.ok(R2.m.has("digest/latest.json") && R2.m.has("digest/2026-11-08.json"));
+  assert.equal(await W3.scheduledDigest({ IMAGES: fakeKV() }, null), null, "no bucket, no digest");
 });
 
 // ---------- rank tracker ----------
@@ -3297,7 +3853,7 @@ test("team: the board needs the key and the KV; each store has its own board and
 
 test("team: an agent of the other store can't be given a task; bad text is refused", async () => {
   const kv = fakeKV();
-  assert.deepEqual(ownersFor("c3d"), ["aaron", "ops", "c3d", "marketing", "builder", "admin"]);
+  assert.deepEqual(ownersFor("c3d"), ["aaron", "ops", "c3d", "marketing", "taxi", "builder", "admin"]);
   for (const body of [{ store: "c3d", text: "x", owner: "ed" }, { store: "c3d", text: "   " }, { store: "c3d", text: "x".repeat(201) }, { store: "c3d", text: 5 }, { store: "c3d", tasks: [] }])
     assert.equal((await handleTeam(teamReq("POST", body), { env: envOf(), kv })).status, 400, JSON.stringify(body));
   assert.equal(kv.m.size, 0);
@@ -3343,4 +3899,910 @@ test("worker: /api/team uses the MARKETING KV", async () => {
   assert.equal(r.status, 201);
   assert.ok(kv.m.has("team:c3d"));
   assert.equal((await W.handleRequest(new Request("https://console.example/api/team?store=c3d"), env)).status, 401);
+});
+
+// ---------- 3D file library in R2 (lib/r2-store.mjs) ----------
+const { r2BlobStore, combinedStore } = await import("../lib/r2-store.mjs");
+// A small stand-in for an R2 bucket binding: put/get/delete/list with customMetadata and paging.
+function fakeR2({ pageSize = 1000 } = {}) {
+  const m = new Map();
+  return { m,
+    async put(key, data, { customMetadata } = {}) {
+      for (const v of Object.values(customMetadata ?? {})) assert.equal(typeof v, "string", "R2 custom metadata values are strings");
+      const bytes = data instanceof ArrayBuffer ? data.slice(0) : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+      m.set(key, { bytes, customMetadata: { ...customMetadata } });
+    },
+    async get(key) { const o = m.get(key); return o ? { key, customMetadata: o.customMetadata, arrayBuffer: async () => o.bytes.slice(0) } : null; },
+    async delete(key) { m.delete(key); },
+    async list({ prefix = "", cursor, include = [] } = {}) {
+      const names = [...m.keys()].filter((k) => k.startsWith(prefix)).sort();
+      const start = cursor ? Number(cursor) : 0;
+      const objects = names.slice(start, start + pageSize).map((key) => ({ key, ...(include.includes("customMetadata") ? { customMetadata: m.get(key).customMetadata } : {}) }));
+      const truncated = start + pageSize < names.length;
+      return { objects, truncated, ...(truncated ? { cursor: String(start + pageSize) } : {}) };
+    },
+  };
+}
+
+test("r2 store: files keep their details, list across pages, and older KV files still work", async () => {
+  const r2 = fakeR2({ pageSize: 2 }), kv = fakeKV();
+  const store = r2BlobStore(r2, "c3d-file/");
+  for (const n of [1, 2, 3]) await store.set(`k${n}-0123abcd`, new Uint8Array([0x50, 0x4b, 3, 4, n]), { metadata: { name: `part ${n}.3mf`, size: 5, added: n } });
+  const { blobs } = await store.list();
+  assert.deepEqual(blobs.map((b) => [b.key, b.metadata.name, b.metadata.added]), [["k1-0123abcd", "part 1.3mf", 1], ["k2-0123abcd", "part 2.3mf", 2], ["k3-0123abcd", "part 3.3mf", 3]]);
+  assert.deepEqual([...new Uint8Array((await store.getWithMetadata("k2-0123abcd")).data)], [0x50, 0x4b, 3, 4, 2]);
+  assert.equal(await store.getWithMetadata("nope-0123abcd"), null);
+  // a file saved to KV before the move
+  const old = kvBlobStore(kv, "c3d-file:");
+  await old.set("old-0123abcd", new Uint8Array([0x50, 0x4b, 3, 4]), { metadata: { name: "old.3mf" } });
+  const both = combinedStore(store, old);
+  assert.equal((await both.list()).blobs.length, 4);
+  assert.equal((await both.getWithMetadata("old-0123abcd")).metadata.name, "old.3mf");
+  await both.set("new-0123abcd", new Uint8Array([1]), { metadata: { name: "new.3mf" } });
+  assert.ok(r2.m.has("c3d-file/new-0123abcd") && !kv.m.has("c3d-file:new-0123abcd"), "new files go to R2");
+  await both.delete("old-0123abcd");
+  assert.equal(kv.m.has("c3d-file:old-0123abcd"), false);
+});
+
+test("worker: with the FILES bucket bound, uploads go to R2 and the 3D file library lists both", async () => {
+  const kv = fakeKV(), r2 = fakeR2();
+  await kvBlobStore(kv, "c3d-file:").set("old-0123abcd", new Uint8Array([0x50, 0x4b, 3, 4]), { metadata: { name: "old.3mf", type: "model/3mf", size: 4, added: 1, store: "c3d" } });
+  const env = workerEnv({ IMAGES: kv, FILES: r2 });
+  const up = await W.handleRequest(wreq("/api/files", { method: "POST", headers: { ...KEYH, "x-filename": "vase.3mf" }, body: new Uint8Array([0x50, 0x4b, 3, 4, 9]) }), env);
+  assert.equal(up.status, 201);
+  const { item } = await up.json();
+  assert.ok(r2.m.has(`c3d-file/${item.key}`), "the file is in R2");
+  assert.ok(![...kv.m.keys()].some((k) => k.includes(item.key)), "not in KV");
+  const list = await (await W.handleRequest(wreq("/api/files", { headers: KEYH }), env)).json();
+  assert.deepEqual(list.items.map((i) => i.name).sort(), ["old.3mf", "vase.3mf"]);
+  const dl = await W.handleRequest(wreq(`/api/files/${item.key}`, { headers: KEYH }), env);
+  assert.equal(dl.status, 200);
+  assert.equal((await dl.arrayBuffer()).byteLength, 5);
+  // without the bucket, the library stays in KV as before
+  const plain = await W.handleRequest(wreq("/api/files", { method: "POST", headers: { ...KEYH, "x-filename": "cup.3mf" }, body: new Uint8Array([0x50, 0x4b, 3, 4]) }), workerEnv({ IMAGES: kv }));
+  assert.equal(plain.status, 201);
+  assert.ok(kv.m.has(`c3d-file:${(await plain.json()).item.key}`));
+});
+
+// The Creative Lab Studios console's actions arrive on a queue and their answers go to the RESULTS bucket (worker/queue.mjs).
+function fakeResults() {
+  const m = new Map();
+  return { m,
+    async put(key, data, { httpMetadata, customMetadata } = {}) {
+      for (const v of Object.values(customMetadata ?? {})) assert.equal(typeof v, "string", "R2 custom metadata values are strings");
+      m.set(key, { bytes: data instanceof ArrayBuffer ? new Uint8Array(data.slice(0)) : ArrayBuffer.isView(data) ? new Uint8Array(data) : new TextEncoder().encode(String(data)), httpMetadata: { ...httpMetadata }, customMetadata: { ...customMetadata }, uploaded: new Date() });
+    },
+    async get(key) { const o = m.get(key); return o ? { key, httpMetadata: o.httpMetadata, customMetadata: o.customMetadata, arrayBuffer: async () => o.bytes.buffer.slice(0) } : null; },
+    async delete(keys) { for (const k of [].concat(keys)) m.delete(k); },
+    async list({ prefix = "" } = {}) { return { objects: [...m.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key, uploaded: m.get(key).uploaded })), truncated: false }; },
+  };
+}
+
+test("queue: a console action runs like the old API route, signed with the engine's key", async () => {
+  const Q = await import("../worker/queue.mjs");
+  const RESULTS = fakeResults();
+  const env = workerEnv({ RESULTS });
+  const text = (id) => new TextDecoder().decode(RESULTS.m.get(`results/${id}`).bytes);
+  // A library upload: the console puts the bytes in uploads/ first, then sends the action.
+  await RESULTS.put("uploads/up-0000001", PNG.buffer.slice(PNG.byteOffset, PNG.byteOffset + PNG.byteLength), { httpMetadata: { contentType: "image/png" } });
+  const up = await Q.runAction({ id: "act-0000001", method: "POST", path: "/api/images", bodyRef: "uploads/up-0000001", filename: "palm.png", tags: "palmetto" }, env);
+  assert.equal(up.status, 201);
+  assert.equal(RESULTS.m.has("uploads/up-0000001"), false, "the upload is removed once used");
+  assert.equal(RESULTS.m.get("results/act-0000001").customMetadata.status, "201");
+  // A big upload comes in parts, joined in order, and every part is removed afterwards.
+  const half = Math.floor(PNG.byteLength / 2);
+  await RESULTS.put("uploads/up-0000002.p0", PNG.slice(0, half), { httpMetadata: { contentType: "image/png" } });
+  await RESULTS.put("uploads/up-0000002.p1", PNG.slice(half));
+  const big = await Q.runAction({ id: "act-0000004", method: "POST", path: "/api/images", bodyParts: ["uploads/up-0000002.p0", "uploads/up-0000002.p1"], filename: "palm-2.png" }, env);
+  assert.equal(big.status, 201);
+  assert.equal([...RESULTS.m.keys()].some((k) => k.startsWith("uploads/up-0000002")), false);
+  // Listing needs the key; the engine adds it, so the console never holds it.
+  const ls = await Q.runAction({ id: "act-0000002", method: "GET", path: "/api/images" }, env);
+  assert.equal(ls.status, 200);
+  assert.ok(JSON.parse(text("act-0000002")).items.some((i) => i.name === "palm.png"));
+  // Without a key on the engine, nothing that needs one runs.
+  const nokey = await Q.runAction({ id: "act-0000003", method: "GET", path: "/api/images" }, workerEnv({ RESULTS, CONSOLE_KEY: undefined }));
+  assert.equal(nokey.status >= 400, true);
+});
+
+test("queue: bad actions are refused with a plain reason and nothing outside /api/ runs", async () => {
+  const Q = await import("../worker/queue.mjs");
+  const RESULTS = fakeResults();
+  const env = workerEnv({ RESULTS });
+  for (const [msg, why] of [
+    [{ id: "act-0000010", path: "/" }, /Only \/api\//],
+    [{ id: "act-0000011", method: "TRACE", path: "/api/images" }, /Unknown method/],
+    [{ id: "act-0000012", method: "POST", path: "/api/images", bodyRef: "results/act-0000010" }, /uploads\//],
+    [{ id: "act-0000013", method: "POST", path: "/api/images", bodyRef: "uploads/missing-001" }, /wasn't found/],
+    [{ id: "act-0000014", method: "POST", path: "/api/images", bodyParts: ["uploads/a", "../x"] }, /uploads\//],
+    [{ id: "act-0000015", method: "POST", path: "/api/images", bodyParts: "uploads/a" }, /list of up to 200/],
+  ]) {
+    const r = await Q.runAction(msg, env);
+    assert.equal(r.status, 400);
+    assert.match(JSON.parse(new TextDecoder().decode(RESULTS.m.get(`results/${msg.id}`).bytes)).error, why);
+  }
+  assert.deepEqual(await Q.runAction({ id: "../../etc", path: "/api/images" }, env), { id: null, status: 400 }, "a bad id saves nothing");
+  // handleQueue acks every message, even a failing one, so nothing loops.
+  let acked = 0;
+  await Q.handleQueue({ messages: [{ body: { id: "act-0000020", path: "/api/nope" }, ack: () => acked++ }] }, env);
+  assert.equal(acked, 1);
+  assert.equal(RESULTS.m.get("results/act-0000020").customMetadata.status, "404");
+});
+
+test("queue: answers and uploads older than a day are pruned", async () => {
+  const Q = await import("../worker/queue.mjs");
+  const RESULTS = fakeResults();
+  await RESULTS.put("results/old-0000001", new ArrayBuffer(1));
+  await RESULTS.put("uploads/old-0000002", new ArrayBuffer(1));
+  await RESULTS.put("results/new-0000003", new ArrayBuffer(1));
+  for (const k of ["results/old-0000001", "uploads/old-0000002"]) RESULTS.m.get(k).uploaded = new Date(Date.now() - 2 * 864e5);
+  assert.equal(await Q.pruneResults({ RESULTS }), 2);
+  assert.deepEqual([...RESULTS.m.keys()], ["results/new-0000003"]);
+});
+
+test("engine: with CONSOLE_PAGE set, pages go to the Creative Lab console and the API and tools still work", async () => {
+  const W = await import("../worker/app.mjs");
+  const page = "https://claude.ai/artifact/U8rNeWMPq7NfF7f88AEuPK";
+  const env = workerEnv({ CONSOLE_PAGE: page });
+  const home = await W.handleRequest(wreq("/"), env);
+  assert.equal(home.status, 302);
+  assert.equal(home.headers.get("location"), page);
+  assert.equal((await W.handleRequest(wreq("/api/images?public=1"), env)).status, 200, "the shirt apps still read the library");
+  assert.notEqual((await W.handleRequest(wreq("/tools/nameplate-maker/"), env)).status, 302);
+});
+
+test("picture: any public https picture, Shopify resized, private addresses refused, behind the key", async () => {
+  const { handlePicture } = await import("../lib/picture.mjs");
+  const seen = [];
+  const fetch = async (u) => { seen.push(String(u)); return new Response(PNG, { status: 200, headers: { "content-type": "image/png" } }); };
+  const req = (u, key = ENV.CONSOLE_KEY, w) => ({ method: "GET", query: new URLSearchParams({ u, ...(w ? { w } : {}) }), header: (k) => (k === "x-console-key" ? key : null) });
+  const env = (k) => ENV[k];
+  const ok = await handlePicture(req("https://cdn.shopify.com/s/files/1/shirt.png?v=1", ENV.CONSOLE_KEY, "160"), { env, fetch });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.headers.get("content-type"), "image/png");
+  assert.match(seen[0], /width=160/);
+  await handlePicture(req("https://elevatedshirts.com/cdn/shop/files/a.jpg"), { env, fetch });
+  for (const other of ["https://images.kittl.com/a/b.png", "https://files.cdn.printful.com/x.jpg", "https://lh3.googleusercontent.com/abc"]) {
+    assert.equal((await handlePicture(req(other, ENV.CONSOLE_KEY, "160"), { env, fetch })).status, 200, other);
+    assert.doesNotMatch(seen.at(-1), /width=/, "only Shopify gets a width");
+  }
+  for (const bad of ["http://cdn.shopify.com/x.png", "https://127.0.0.1/x.png", "https://169.254.169.254/latest", "https://[::1]/x.png", "https://localhost/x.png",
+    "https://nas.local/x.png", "https://a.internal/x.png", "https://example.com:8443/x.png", "https://u:p@example.com/x.png", "https://intranet/x.png", "not a url"])
+    await assert.rejects(handlePicture(req(bad), { env, fetch }), /public https|picture address/, bad);
+  await assert.rejects(handlePicture(req("https://cdn.shopify.com/x.png", "wrong-key-xxxxxxxxxxxx"), { env, fetch }), /console key/);
+  const notPic = async () => new Response("<html>", { status: 200, headers: { "content-type": "text/html" } });
+  await assert.rejects(handlePicture(req("https://cdn.shopify.com/x.png"), { env, fetch: notPic }), /isn't a picture/);
+  const svg = async () => new Response("<svg/>", { status: 200, headers: { "content-type": "image/svg+xml" } });
+  await assert.rejects(handlePicture(req("https://example.com/x.svg"), { env, fetch: svg }), /isn't a picture/);
+});
+
+// ---------- Charleston 3D listings from the console's 3D files picker ----------
+const { handleC3dListings } = await import("../lib/c3d-listings.mjs");
+const C3D_ITEM = { store: "c3d", ref: "andy-20261017-santakey", title: "Santa's Magic Key", descriptionHtml: "<p>A key for Santa.</p>",
+  price: 10.99, tags: ["christmas", "santa key"], seoTitle: "Santa Magic Key", seoDescription: "Personalized Santa key.", productType: "Ornament",
+  photos: [{ resourceUrl: `${STAGED_URL}tmp/123/santa-1.png`, alt: "Santa key, front" }], live: true };
+const photoReq = (bytes, type = "image/png", headers = {}) => ({ method: "POST", query: new URLSearchParams(),
+  header: (k) => ({ "content-type": type, "x-console-key": "open-sesame-test-key-0001", "x-filename": "santa key.png", ...headers })[k.toLowerCase()] ?? null,
+  text: async () => "", bytes: async () => bytes });
+
+test("c3d listing: makes one product on the C3D store and puts it live", async () => {
+  const sh = fakeShopify();
+  const res = await handleC3dListings(post(C3D_ITEM), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  assert.equal(res.body.live, true);
+  assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["OnlineStorePublication", "ConsoleListingLookup", "ConsoleListingCreate", "ConsolePublish"]);
+  assert.ok(sh.calls.filter((c) => c.op).every((c) => c.domain === "charleston3d.myshopify.com"), "only the C3D store");
+  assert.equal(sh.calls.find((c) => c.op === "ConsoleListingLookup").variables.q, 'tag:"item:andy-20261017-santakey"');
+  const input = sh.calls.find((c) => c.op === "ConsoleListingCreate").variables.input;
+  assert.equal(input.vendor, "Charleston3D");
+  assert.equal(input.status, "ACTIVE");
+  assert.ok(input.tags.includes("item:andy-20261017-santakey"));
+  assert.equal(input.variants.length, 1);
+  assert.equal(input.variants[0].price, "10.99");
+  assert.equal(input.variants[0].inventoryItem.tracked, false);
+  assert.deepEqual(input.seo, { title: "Santa Magic Key", description: "Personalized Santa key." });
+  assert.equal(input.files[0].originalSource, `${STAGED_URL}tmp/123/santa-1.png`);
+  assert.ok(sh.calls.some((c) => c.indexnow));
+  noLeak(res);
+});
+
+test("c3d listing: live false leaves it off the site", async () => {
+  const sh = fakeShopify();
+  const res = await handleC3dListings(post({ ...C3D_ITEM, live: false }), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 201);
+  assert.equal(res.body.live, false);
+  assert.ok(!sh.calls.some((c) => c.op === "ConsolePublish" || c.indexnow));
+});
+
+test("c3d listing: the same item twice never makes a second product", async () => {
+  const sh = fakeShopify({ listed: [{ id: "gid://shopify/Product/777", handle: "santas-magic-key", title: "Santa's Magic Key", status: "ACTIVE", tags: ["item:andy-20261017-santakey"], publishedOnPublication: false }] });
+  const res = await handleC3dListings(post(C3D_ITEM), { env: envOf(), fetch: sh.fetch });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.alreadyListed, true);
+  assert.equal(res.body.live, true);
+  assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["OnlineStorePublication", "ConsoleListingLookup", "ConsolePublish"]);
+});
+
+test("c3d listing: bad input, wrong store, no key, scripts and foreign photo hosts are refused", async () => {
+  const sh = fakeShopify();
+  const run = async (over, headers) => handleC3dListings(post({ ...C3D_ITEM, ...over }, headers), { env: envOf(), fetch: sh.fetch });
+  assert.equal((await run({ store: "ed" })).body.code, "wrong_store");
+  assert.equal((await run({ price: 0 })).status, 400);
+  assert.equal((await run({ price: 10.999 })).status, 400);
+  assert.equal((await run({ title: "" })).status, 400);
+  assert.equal((await run({ ref: "../x" })).status, 400);
+  assert.equal((await run({ descriptionHtml: '<img src=x onerror="alert(1)">' })).status, 400);
+  assert.equal((await run({ photos: [{ resourceUrl: "https://evil.example.com/x.png" }] })).status, 400);
+  assert.equal((await run({ extra: 1 })).status, 400);
+  assert.equal((await run({}, { "content-type": "application/json" })).status, 401);
+  assert.ok(!sh.calls.some((c) => c.op === "ConsoleListingCreate"));
+});
+
+test("c3d listing photo: stages the bytes in Shopify's upload storage", async () => {
+  const sh = fakeShopify();
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+  const res = await handleC3dListings(photoReq(png), { env: envOf(), fetch: sh.fetch }, "photo");
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.match(res.body.resourceUrl, /^https:\/\/shopify-staged-uploads\.storage\.googleapis\.com\/tmp\/123\/santa-key\.png$/);
+  assert.equal(sh.calls.find((c) => c.upload).upload.size, png.byteLength);
+  assert.equal((await handleC3dListings(photoReq(png, "image/svg+xml"), { env: envOf(), fetch: sh.fetch }, "photo")).status, 415);
+  assert.equal((await handleC3dListings(photoReq(new Uint8Array()), { env: envOf(), fetch: sh.fetch }, "photo")).status, 400);
+});
+
+const PHOTOS_NODE = (urls) => ({ id: "gid://shopify/Product/777", handle: "santas-magic-key", title: "Santa's Magic Key", tags: ["item:andy-20261017-santakey"],
+  media: { nodes: urls.map((url, i) => ({ id: `gid://shopify/MediaImage/${i}`, status: "READY", image: { url } })) } });
+
+test("c3d listing photos: adds a staged photo to the item's product and answers its photo links", async () => {
+  let added = null;
+  const sh = fakeShopify({ override: {
+    ConsoleC3dPhotos: (v, data) => data({ products: { nodes: [PHOTOS_NODE(added ? ["https://cdn.shopify.com/a.jpg", "https://cdn.shopify.com/b.jpg"] : ["https://cdn.shopify.com/a.jpg"])] } }),
+    ConsoleC3dAddPhotos: (v, data) => { added = v; return data({ productUpdate: { product: { id: v.product.id }, userErrors: [] } }); },
+  } });
+  const only = await handleC3dListings(post({ store: "c3d", ref: "andy-20261017-santakey" }), { env: envOf(), fetch: sh.fetch }, "photos");
+  assert.equal(only.status, 200, JSON.stringify(only.body));
+  assert.deepEqual(only.body.images, ["https://cdn.shopify.com/a.jpg"]);
+  assert.equal(added, null);
+  const res = await handleC3dListings(post({ store: "c3d", ref: "andy-20261017-santakey", photos: [{ resourceUrl: `${STAGED_URL}tmp/123/life.png`, alt: "On a porch table" }] }), { env: envOf(), fetch: sh.fetch }, "photos");
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.added, 1);
+  assert.equal(res.body.images.length, 2);
+  assert.deepEqual(added.media, [{ originalSource: `${STAGED_URL}tmp/123/life.png`, mediaContentType: "IMAGE", alt: "On a porch table" }]);
+  assert.equal(added.product.id, "gid://shopify/Product/777");
+  assert.ok(sh.calls.filter((c) => c.op).every((c) => c.domain === "charleston3d.myshopify.com"), "only the C3D store");
+});
+
+test("c3d listing photos: refuses foreign hosts, the ED store and items not listed yet", async () => {
+  const sh = fakeShopify({ override: { ConsoleC3dPhotos: (v, data) => data({ products: { nodes: [] } }) } });
+  const run = (body) => handleC3dListings(post(body), { env: envOf(), fetch: sh.fetch }, "photos");
+  assert.equal((await run({ store: "ed", ref: "andy-20261017-santakey" })).body.code, "wrong_store");
+  assert.equal((await run({ store: "c3d", ref: "andy-20261017-santakey", photos: [{ resourceUrl: "https://evil.example.com/x.png" }] })).status, 400);
+  assert.equal((await run({ store: "c3d", ref: "andy-20261017-santakey", photos: [{ resourceUrl: "https://kittl.com.evil.example/x.png" }] })).status, 400);
+  assert.equal((await run({ store: "c3d", ref: "andy-20261017-santakey", photos: [{ resourceUrl: "http://cache.kittl.com/x.png" }] })).status, 400);
+  assert.equal((await run({ store: "c3d", ref: "andy-20261017-santakey", photos: [{ resourceUrl: "https://cache.kittl.com/x.png" }] })).body.code, "not_listed");
+  assert.equal((await run({ store: "c3d", ref: "andy-20261017-santakey" })).body.code, "not_listed");
+  assert.ok(!sh.calls.some((c) => c.op === "ConsoleC3dAddPhotos"));
+});
+
+test("c3d listing photo: a network failure says why", async () => {
+  const sh = fakeShopify({ upload: "throw" });
+  const res = await handleC3dListings(photoReq(new Uint8Array([0x89, 0x50, 0x4e, 0x47])), { env: envOf(), fetch: sh.fetch }, "photo");
+  assert.equal(res.status, 502);
+  assert.match(res.body.error, /socket hang up/);
+});
+
+// ---------- marketing scorecard ----------
+const SC = await import("../lib/scorecard.mjs");
+const scRow = (campaign, source, medium, sessions, cart = 0, checkout = 0, done = 0) =>
+  ({ utm_campaign: campaign, utm_source: source, utm_medium: medium, sessions: String(sessions), sessions_with_cart_additions: String(cart), sessions_that_reached_checkout: String(checkout), sessions_that_completed_checkout: String(done) });
+const scOrder = (campaign, amount, extra = {}) => ({ id: `gid://shopify/Order/${Math.random()}`, createdAt: "2026-11-07T12:00:00Z", test: false, cancelledAt: null,
+  currentTotalPriceSet: { shopMoney: { amount: String(amount), currencyCode: "USD" } },
+  customerJourneySummary: campaign == null ? null : { lastVisit: { utmParameters: { campaign, source: "facebook", medium: "paid" } }, firstVisit: null }, ...extra });
+
+test("scorecard: winner, average and loser against the store's own average", () => {
+  // 200 visits and 10 orders in all: the store average is 5%.
+  const sessionRows = [
+    scRow("", "", "", 100, 8, 4, 3),                   // untagged: counts toward the average only
+    scRow("Holiday-Tees", "facebook", "paid", 30, 6, 4, 4), scRow("holiday-tees", "instagram", "paid", 10, 1, 1, 0), // one campaign, two sources
+    scRow("fall-post", "social", "organic", 40, 2, 1, 1),
+    scRow("new-ad", "facebook", "paid", 5),
+    scRow("dud-post", "social", "organic", 15),
+  ];
+  const orderNodes = [
+    ...Array.from({ length: 4 }, () => scOrder("holiday-tees", 25)), scOrder("Fall-Post", 20), scOrder(null, 30), scOrder(null, 30), scOrder(null, 30), scOrder(null, 30), scOrder(null, 30),
+    scOrder("holiday-tees", 99, { test: true }), scOrder("holiday-tees", 99, { cancelledAt: "2026-11-07T13:00:00Z" }),
+  ];
+  const spend = { "holiday-tees": { dailyBudget: 2, spendToDate: 20 }, "new-ad": { dailyBudget: 1, startDate: "2026-11-07" } };
+  const sc = SC.buildScorecard({ store: "ed", days: 7, sessionRows, orderNodes, spend, now: new Date("2026-11-08T11:30:00Z") });
+  assert.deepEqual([sc.since, sc.until, sc.totals.sessions, sc.totals.orders, sc.totals.sales, sc.average.conversionRate], ["2026-11-02", "2026-11-08", 200, 10, 270, 5]);
+  const by = Object.fromEntries(sc.campaigns.map((c) => [c.campaign, c]));
+  const h = by["holiday-tees"];
+  assert.deepEqual([h.sessions, h.cartAdds, h.orders, h.sales, h.conversionRate, h.paid, h.cost, h.costPerVisit, h.costPerOrder, h.label],
+    [40, 7, 4, 100, 10, true, 14, 0.35, 3.5, "winner"]);
+  assert.deepEqual(h.sources.map((s) => [s.source, s.sessions]), [["facebook", 30], ["instagram", 10]]);
+  assert.deepEqual([by["fall-post"].label, by["fall-post"].paid, by["fall-post"].cost, by["fall-post"].conversionRate], ["loser", false, null, 2.5], "1 in 40 is half the average");
+  assert.deepEqual([by["dud-post"].label, by["dud-post"].orders], ["loser", 0]);
+  // 5 visits is too early to call; the ad started yesterday, so 2 days x $1.
+  assert.deepEqual([by["new-ad"].label, by["new-ad"].cost, by["new-ad"].costPerVisit, by["new-ad"].pauseRecommended], ["average", 2, 0.4, false]);
+  assert.match(by["new-ad"].reasons.join(" "), /too early/);
+  assert.deepEqual([sc.pauseRecommended, sc.overCap, sc.limits], [[], [], { maxCostPerVisit: 0.5, maxDailyBudget: 2 }]);
+});
+
+test("scorecard: pause flags (no visits after 3 days, cost per visit over the limit) and the $2/day cap", () => {
+  const now = new Date("2026-11-08T11:30:00Z");
+  const spend = {
+    "ghost-ad": { dailyBudget: 1, startDate: "2026-11-05" },     // 4 days, no visits: pause
+    "brand-new": { dailyBudget: 1, startDate: "2026-11-07" },    // 2 days, no visits: wait
+    "pricey": { dailyBudget: 2, spendToDate: 12 },              // $12 for 20 visits = $0.60 > $0.50
+    "big-spender": { dailyBudget: 5, spendToDate: 10 },         // over the cap, but $10 / 100 visits is fine
+  };
+  const rows = [scRow("pricey", "facebook", "paid", 20), scRow("big-spender", "instagram", "paid", 100, 5, 2, 2)];
+  const sc = SC.buildScorecard({ store: "c3d", days: 7, sessionRows: rows, orderNodes: [scOrder("big-spender", 18), scOrder("big-spender", 18)], spend, now });
+  const by = Object.fromEntries(sc.campaigns.map((c) => [c.campaign, c]));
+  assert.deepEqual([by["ghost-ad"].pauseRecommended, by["ghost-ad"].flags, by["ghost-ad"].label, by["ghost-ad"].cost], [true, ["no_visits"], "loser", 4]);
+  assert.deepEqual([by["brand-new"].pauseRecommended, by["brand-new"].flags], [false, []]);
+  assert.deepEqual([by.pricey.costPerVisit, by.pricey.flags, by.pricey.pauseRecommended, by.pricey.label], [0.6, ["cost_per_visit"], true, "loser"]);
+  assert.deepEqual([by["big-spender"].flags, by["big-spender"].pauseRecommended, by["big-spender"].cost, by["big-spender"].costPerVisit], [["over_daily_cap"], false, 10, 0.1]);
+  assert.match(by["big-spender"].reasons.join(" "), /\$5\.00\/day is over the \$2\.00\/day cap/);
+  assert.deepEqual(sc.pauseRecommended.sort(), ["ghost-ad", "pricey"]);
+  assert.deepEqual(sc.overCap, ["big-spender"]);
+  // With no startDate, a 2-day window can't say an ad has run 3 days; a 7-day one can.
+  assert.deepEqual(SC.buildScorecard({ store: "c3d", days: 2, sessionRows: [], orderNodes: [], spend: { x: { dailyBudget: 1 } }, now }).pauseRecommended, []);
+  assert.deepEqual(SC.buildScorecard({ store: "c3d", days: 7, sessionRows: [], orderNodes: [], spend: { x: { dailyBudget: 1 } }, now }).pauseRecommended, ["x"]);
+  // The store's own limits: only its section is read, and the cap can be lowered but never raised above $2.
+  const cfg = { c3d: { maxCostPerVisit: 0.75, maxDailyBudget: 9 }, ed: { maxCostPerVisit: 0.1, maxDailyBudget: 1 } };
+  assert.deepEqual(SC.storeLimits(cfg, "c3d"), { maxCostPerVisit: 0.75, maxDailyBudget: 2 });
+  assert.deepEqual(SC.storeLimits(cfg, "ed"), { maxCostPerVisit: 0.1, maxDailyBudget: 1 });
+  assert.deepEqual(SC.storeLimits(null, "ed"), { maxCostPerVisit: 0.5, maxDailyBudget: 2 });
+  const relaxed = SC.buildScorecard({ store: "c3d", days: 7, sessionRows: rows, orderNodes: [], spend, limitsConfig: cfg, now });
+  assert.equal(relaxed.campaigns.find((c) => c.campaign === "pricey").pauseRecommended, false, "$0.60 is under C3D's own $0.75 limit");
+  // Window cost: budget x days, capped by spend to date; spend to date alone when there's no budget.
+  assert.equal(SC.windowCost({ dailyBudget: 2, spendToDate: 3 }, { days: 7, today: "2026-11-08" }), 3);
+  assert.equal(SC.windowCost({ spendToDate: 4.5 }, { days: 2, today: "2026-11-08" }), 4.5);
+  assert.equal(SC.windowCost({ dailyBudget: 2, startDate: "2026-12-01" }, { days: 7, today: "2026-11-08" }), 0, "not started yet");
+});
+
+test("scorecard: without order access, completed checkouts stand in for orders; no orders anywhere compares ad cost per visit", () => {
+  const now = new Date("2026-11-08T11:30:00Z");
+  const noOrders = SC.buildScorecard({ store: "ed", days: 7, sessionRows: [scRow("a", "facebook", "paid", 20, 3, 2, 2), scRow("", "", "", 20)], orderNodes: null, now });
+  assert.deepEqual([noOrders.ordersSource, noOrders.totals.orders, noOrders.totals.sales, noOrders.campaigns[0].orders, noOrders.campaigns[0].sales], ["completed_checkouts", 2, null, 2, null]);
+  const cheapDear = SC.buildScorecard({ store: "ed", days: 7, now, orderNodes: [],
+    sessionRows: [scRow("cheap", "facebook", "paid", 100), scRow("mid", "facebook", "paid", 50), scRow("dear", "instagram", "paid", 20)],
+    spend: { cheap: { spendToDate: 5 }, mid: { spendToDate: 5 }, dear: { spendToDate: 9 } } });
+  const by = Object.fromEntries(cheapDear.campaigns.map((c) => [c.campaign, c]));
+  assert.equal(cheapDear.average.costPerVisit, 0.11);
+  assert.deepEqual([by.cheap.label, by.mid.label, by.dear.label, by.dear.pauseRecommended], ["winner", "average", "loser", false]);
+});
+
+test("GET /api/scorecard: key, store and days checked; spend and limits from R2; Shopify failures become clear errors", async () => {
+  const W = await import("../worker/app.mjs");
+  const RESULTS = fakeResults();
+  await RESULTS.put("ads/spend-c3d.json", JSON.stringify({ "ornament-ad": { dailyBudget: 3, spendToDate: 6, startDate: "2026-11-06" } }));
+  await RESULTS.put("ads/spend-ed.json", JSON.stringify({ "tee-ad": { dailyBudget: 1 } }));
+  await RESULTS.put(SC.LIMITS_KEY, JSON.stringify({ c3d: { maxCostPerVisit: 0.25 } }));
+  const queries = [];
+  const sh = fakeShopify({ override: {
+    MarketingTraffic: (v, data) => { queries.push(v.q); return data({ shopifyqlQuery: { parseErrors: [], tableData: { columns: ["utm_campaign", "utm_source", "utm_medium", "sessions", "sessions_with_cart_additions", "sessions_that_reached_checkout", "sessions_that_completed_checkout"].map((name) => ({ name, dataType: "x" })),
+      rows: [["ornament-ad", "facebook", "paid", "12", "2", "1", "1"], ["", "", "", "28", "1", "1", "1"]] } } }); },
+    ScorecardOrders: (v, data) => { queries.push(v.q); return data({ orders: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [scOrder("ornament-ad", 22), scOrder(null, 15)] } }); },
+  } });
+  const ctx = (bucket = RESULTS) => ({ env: envOf(), fetch: sh.fetch, bucket, now: () => new Date("2026-11-08T11:30:00Z") });
+  assert.equal((await SC.handleScorecard(get({ store: "c3d", days: "7" }), ctx())).status, 401);
+  assert.equal((await SC.handleScorecard(keyed({ store: "both", days: "7" }), ctx())).status, 400);
+  assert.equal((await SC.handleScorecard(keyed({ store: "c3d", days: "30" }), ctx())).status, 400);
+  const res = await SC.handleScorecard(keyed({ store: "c3d", days: "2" }), ctx());
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(queries, [SC.campaignSessionsQ(2), "created_at:>=2026-11-07"]);
+  assert.match(queries[0], /GROUP BY utm_campaign, utm_source, utm_medium SINCE -1d UNTIL today/);
+  const c = res.body.campaigns[0];
+  // 2 days x $3 = $6 over 12 visits = $0.50, over C3D's own $0.25 limit; $3/day is over the cap.
+  assert.deepEqual([c.campaign, c.sessions, c.orders, c.sales, c.cost, c.costPerVisit, c.flags, c.pauseRecommended], ["ornament-ad", 12, 1, 22, 6, 0.5, ["cost_per_visit", "over_daily_cap"], true]);
+  assert.deepEqual([res.body.totals.sessions, res.body.totals.orders, res.body.totals.sales, res.body.errors, res.body.missingScopes], [40, 2, 37, {}, []]);
+  assert.equal(JSON.stringify(res.body).includes("tee-ad"), false, "never the other brand's spend file");
+  assert.ok(sh.calls.filter((x) => x.op).every((x) => x.domain === "charleston3d.myshopify.com"), "only the C3D store");
+  noLeak(res.body);
+
+  // Missing scopes: both parts degrade with the scope to add, nothing throws.
+  const denied = (scope) => () => new Response(JSON.stringify({ errors: [{ message: "Access denied", extensions: { code: "ACCESS_DENIED", requiredAccess: `\`${scope}\` access scope` } }] }), { status: 200 });
+  const shD = fakeShopify({ override: { MarketingTraffic: denied("read_reports"), ScorecardOrders: denied("read_orders") } });
+  const d = await SC.handleScorecard(keyed({ store: "ed", days: "7" }), { env: envOf(), fetch: shD.fetch, bucket: RESULTS, now: () => new Date("2026-11-08T11:30:00Z") });
+  assert.equal(d.status, 200);
+  assert.match(d.body.errors.sessions, /read_reports/);
+  assert.match(d.body.errors.orders, /read_orders/);
+  assert.deepEqual(d.body.missingScopes, ["read_reports", "read_orders"]);
+  assert.deepEqual(d.body.pauseRecommended, ["tee-ad"], "the ED ad with no visits for the whole week");
+
+  // A broken spend file is reported, not fatal; no bucket at all is fine; a store that isn't connected says so.
+  const broken = fakeResults();
+  await broken.put("ads/spend-c3d.json", "{not json");
+  const b = await SC.handleScorecard(keyed({ store: "c3d" }), ctx(broken));
+  assert.equal(b.status, 200);
+  assert.match(b.body.errors.spend, /isn't valid JSON/);
+  assert.equal((await SC.handleScorecard(keyed({ store: "c3d" }), ctx(null))).status, 200);
+  const nc = await SC.handleScorecard(keyed({ store: "c3d" }), { env: envOf({ C3D_SHOPIFY_DOMAIN: undefined }), fetch: sh.fetch, bucket: null });
+  assert.match(nc.body.errors.shopify, /isn't connected yet/);
+
+  // Through the Worker route.
+  const env = { ...ENV, IMAGES: fakeKV(), RESULTS };
+  assert.equal((await W.handleRequest(new Request("https://console.example/api/scorecard?store=c3d&days=7"), env)).status, 401);
+  assert.equal((await W.handleRequest(new Request("https://console.example/api/scorecard?store=c3d&days=9", { headers: KEYH }), env)).status, 400);
+  // The orders query was checked against the real Admin API 2025-10 schema when it was sent.
+  assert.ok(checked().includes(SC.SCORECARD_ORDERS_QUERY));
+  assert.deepEqual(schemaErrors(SC.SCORECARD_ORDERS_QUERY), []);
+  assert.deepEqual(schemaProblems, []);
+});
+
+test("digest: each store carries its 7-day scorecard", async () => {
+  const D = await import("../lib/digest.mjs");
+  const seen = [];
+  const scorecard = async (env, f, store, bucket, now) => { seen.push([store, bucket === "B"]); return { days: 7, store, pauseRecommended: store === "ed" ? ["tee-ad"] : [] }; };
+  const out = await D.buildDigest({ env: envOf(), fetchImpl: null, bucket: "B", now: new Date("2026-11-08T11:31:00Z"), week: async () => ({}), scorecard });
+  assert.deepEqual(seen.sort(), [["c3d", true], ["ed", true]]);
+  assert.deepEqual([out.stores.c3d.scorecard.store, out.stores.ed.scorecard.pauseRecommended], ["c3d", ["tee-ad"]]);
+  const failing = await D.buildDigest({ env: envOf(), fetchImpl: null, now: new Date(), week: async () => ({}), scorecard: async () => { throw new Error("boom"); } });
+  assert.equal(failing.stores.c3d.scorecard.error, "boom");
+  // The brief drops the source breakdown and keeps the top 10.
+  const full = SC.buildScorecard({ store: "ed", days: 7, sessionRows: Array.from({ length: 12 }, (_, i) => scRow(`c${i}`, "social", "organic", 12 - i)), orderNodes: [], now: new Date() });
+  const brief = SC.scorecardBrief(full);
+  assert.equal(brief.campaigns.length, 10);
+  assert.equal("sources" in brief.campaigns[0], false);
+});
+
+test("utm(): tagged links for posts and ads", async () => {
+  const { utm, listingShareUrl } = await import("../lib/utm.mjs");
+  assert.equal(utm("https://elevatedshirts.com/products/tee", { source: "Facebook", medium: "paid", campaign: "ED Holiday Tees!", content: "photo 1" }),
+    "https://elevatedshirts.com/products/tee?utm_source=facebook&utm_medium=paid&utm_campaign=ed-holiday-tees&utm_content=photo-1");
+  assert.equal(utm("https://charleston3d.com/products/x?variant=1&utm_source=old", { source: "qr", medium: "print", campaign: "market" }),
+    "https://charleston3d.com/products/x?variant=1&utm_source=qr&utm_medium=print&utm_campaign=market");
+  assert.equal(listingShareUrl("https://charleston3d.com/products/ornament", "ornament"),
+    "https://charleston3d.com/products/ornament?utm_source=social&utm_medium=organic&utm_campaign=ornament&utm_content=new-listing");
+  assert.throws(() => utm("http://example.com", { source: "x" }));
+});
+
+// ---------- handoff board ----------
+const HO = await import("../lib/handoffs.mjs");
+const hoReq = (method, body, query = {}, headers = { "content-type": "application/json", "x-console-key": "open-sesame-test-key-0001" }) =>
+  ({ method, query: new URLSearchParams(query), header: (k) => headers[k.toLowerCase()] ?? null, text: async () => JSON.stringify(body ?? {}) });
+const hoClock = (iso) => () => new Date(iso);
+
+test("handoffs: key and KV required; a run writes one note and its lane reads it back with heads-ups", async () => {
+  const kv = fakeKV();
+  assert.equal((await HO.handleHandoffs(hoReq("GET", null, {}, {}), { env: envOf(), kv })).status, 401);
+  assert.equal((await HO.handleHandoffs(hoReq("GET"), { env: envOf(), kv: null })).status, 503);
+  const at = hoClock("2026-10-30T14:00:00Z");
+  const w = await HO.handleHandoffs(hoReq("POST", { lane: "marketing", task: "Ad budget guard", store: "c3d", did: "Checked the one live ad.", changed: "", next: "ED ad starts Nov 2 if Aaron OKs it.",
+    headsUp: [{ to: "ops", text: "ED ad is waiting for Aaron's OK." }] }), { env: envOf(), kv }, at);
+  assert.equal(w.status, 201);
+  assert.deepEqual(w.body.handoff.headsUpTo, ["ops"]);
+  assert.equal(w.body.handoff.status, "ok");
+  await HO.handleHandoffs(hoReq("POST", { lane: "ed", task: "Price watch", did: "No mismatches." }), { env: envOf(), kv }, hoClock("2026-10-30T15:00:00Z"));
+  const ops = await HO.handleHandoffs(hoReq("GET", null, { lane: "ops" }), { env: envOf(), kv }, hoClock("2026-10-30T16:00:00Z"));
+  assert.deepEqual(ops.body.handoffs.map((h) => h.task), ["Ad budget guard"], "ops sees the heads-up sent to it, not ed's note");
+  const all = await HO.handleHandoffs(hoReq("GET"), { env: envOf(), kv }, hoClock("2026-10-30T16:00:00Z"));
+  assert.deepEqual(all.body.handoffs.map((h) => h.lane), ["ed", "marketing"], "newest first");
+  assert.deepEqual(all.body.stale, ["ops", "c3d"]);
+  const since = await HO.handleHandoffs(hoReq("GET", null, { since: "2026-10-30T14:30:00Z" }), { env: envOf(), kv }, hoClock("2026-10-30T16:00:00Z"));
+  assert.equal(since.body.handoffs.length, 1);
+});
+
+test("handoffs: bad lanes, statuses, emails, phone numbers and keys are refused", async () => {
+  const kv = fakeKV();
+  const base = { lane: "ops", task: "Brief", did: "Sent it." };
+  for (const body of [{ ...base, lane: "aaron" }, { ...base, status: "great" }, { ...base, did: "" }, { ...base, store: "both-stores" },
+    { ...base, did: "Customer jane@example.com asked" }, { ...base, next: "Call 843-555-0100" }, { ...base, changed: "used shpat_abcdef123456" },
+    { ...base, headsUp: [{ to: "nobody", text: "hi" }] }, { ...base, task: "x".repeat(81) }]) {
+    assert.equal((await HO.handleHandoffs(hoReq("POST", body), { env: envOf(), kv })).status, 400, JSON.stringify(body));
+  }
+  assert.equal(kv.m.size, 0);
+  assert.equal((await HO.handleHandoffs(hoReq("GET", null, { lane: "nobody" }), { env: envOf(), kv })).status, 400);
+});
+
+test("handoffs: notes over 30 days old drop off, the manager brief is saved, and Aaron can remove a note", async () => {
+  const kv = fakeKV();
+  await HO.handleHandoffs(hoReq("POST", { lane: "c3d", task: "Triage", did: "Two new requests." }), { env: envOf(), kv }, hoClock("2026-09-01T10:00:00Z"));
+  const fresh = await HO.handleHandoffs(hoReq("POST", { lane: "c3d", task: "Triage", did: "One new request." }), { env: envOf(), kv }, hoClock("2026-10-30T10:00:00Z"));
+  const r = await HO.handleHandoffs(hoReq("GET"), { env: envOf(), kv }, hoClock("2026-10-30T11:00:00Z"));
+  assert.deepEqual(r.body.handoffs.map((h) => h.did), ["One new request."]);
+  const b = await HO.handleHandoffs(hoReq("POST", { brief: { needsYou: ["OK the ED ad for Nov 2-8"], fixed: [], watching: ["C3D ad CPC $0.41"] } }), { env: envOf(), kv }, hoClock("2026-10-30T11:30:00Z"));
+  assert.equal(b.status, 201);
+  assert.equal((await HO.handleHandoffs(hoReq("POST", { brief: { needsYou: "nope" } }), { env: envOf(), kv })).status, 400);
+  const again = await HO.handleHandoffs(hoReq("GET"), { env: envOf(), kv }, hoClock("2026-10-30T12:00:00Z"));
+  assert.deepEqual(again.body.brief.needsYou, ["OK the ED ad for Nov 2-8"]);
+  assert.equal((await HO.handleHandoffs(hoReq("DELETE", { id: fresh.body.handoff.id }), { env: envOf(), kv })).status, 200);
+  assert.equal((await HO.handleHandoffs(hoReq("DELETE", { id: fresh.body.handoff.id }), { env: envOf(), kv })).status, 404);
+});
+
+test("worker: /api/handoffs uses the MARKETING KV", async () => {
+  const kv = fakeKV(), env = workerEnv({ MARKETING: kv });
+  const r = await W.handleRequest(wreq("/api/handoffs", { method: "POST", headers: { "content-type": "application/json", ...KEYH }, body: JSON.stringify({ lane: "claude", task: "Setup upgrade", did: "Added the handoff board." }) }), env);
+  assert.equal(r.status, 201);
+  assert.ok(kv.m.has("handoffs"));
+  assert.equal((await W.handleRequest(wreq("/api/handoffs"), env)).status, 401);
+});
+
+// ---------- brands on the image library (moved here from the Design Studio, 2026-11-07) ----------
+const brandCtx = () => ({ blobs: fakeBlobs(), env: envOf() });
+const brandPost = (ctx, h = {}) => handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", "x-filename": "art.png", ...KEYH, ...h }, body: PNG }), ctx);
+
+test("brands: old images count as Elevated Designs, or Charleston 3D when their category says so", () => {
+  assert.equal(I.brandOf({}), "ed"); assert.equal(I.brandOf(null), "ed"); assert.equal(I.brandOf({ brand: "nope" }), "ed");
+  assert.equal(I.brandOf({ brand: "c3d" }), "c3d"); assert.equal(I.brandOf({ brand: "epix3d" }), "epix3d");
+  assert.equal(I.brandOf({ category: "Charleston 3D logos" }), "c3d");
+  assert.equal(I.brandOf({ brand: "ed", category: "Charleston3D" }), "ed", "a brand that was set wins");
+  assert.equal(I.canBePublic("c3d"), false); assert.equal(I.canBePublic("ed"), true); assert.equal(I.canBePublic("epix3d"), true);
+});
+
+test("brands: uploads need the key and keep their brand; Charleston 3D art is never public", async () => {
+  const ctx = brandCtx();
+  assert.equal((await handleImages(imgReq("/api/images", { method: "POST", headers: { "content-type": "image/png", "x-brand": "ed" }, body: PNG }), ctx)).status, 401);
+  for (const b of ["c3d", "ed", "epix3d"]) {
+    const r = await brandPost(ctx, { "x-brand": b, "x-public": "1", "x-access": "pro" });
+    assert.equal(r.status, 201);
+    const { item } = await r.json();
+    assert.equal(item.brand, b);
+    assert.equal(item.public, b !== "c3d", `${b} public`);
+    assert.equal(item.access, b === "c3d" ? undefined : "pro", "C3D art can't be unlocked in the shirt app either");
+  }
+  assert.equal((await (await brandPost(ctx, { "x-brand": "bogus" })).json()).item.brand, "ed");
+  assert.equal((await (await brandPost(ctx)).json()).item.brand, "ed", "no brand: Elevated Designs");
+});
+
+test("brands: the public feed hides private and Charleston 3D art (even old public ones) and filters by brand", async () => {
+  const ctx = brandCtx();
+  await brandPost(ctx, { "x-brand": "ed", "x-public": "1", "x-filename": "ed.png" });
+  await brandPost(ctx, { "x-brand": "epix3d", "x-public": "1", "x-filename": "epix.png" });
+  await brandPost(ctx, { "x-brand": "c3d", "x-public": "1", "x-filename": "c3d.png" });
+  await brandPost(ctx, { "x-brand": "ed", "x-filename": "private.png" });
+  // made public before brands existed, filed under a Charleston 3D category
+  const old = (await (await brandPost(ctx, { "x-filename": "old-c3d.png", "x-public": "1" })).json()).item;
+  const m = ctx.blobs.m.get(`image:${old.key}`).metadata; delete m.brand; m.category = "Charleston 3D";
+  const feed = async (q = "") => (await (await handleImages(imgReq(`/api/images?public=1${q}`, { headers: { origin: "https://design.elevatedshirts.com" } }), ctx)).json()).items;
+  assert.deepEqual((await feed()).map((i) => i.name).sort(), ["ed.png", "epix.png"]);
+  assert.deepEqual(Object.keys((await feed())[0]).sort(), ["added", "brand", "key", "name", "tags", "type"],
+    "the fields the studio's feed had (category and kind too when set), nothing more");
+  assert.deepEqual((await feed("&brand=ed")).map((i) => i.name), ["ed.png"]);
+  assert.deepEqual((await feed("&brand=epix3d")).map((i) => i.name), ["epix.png"]);
+  assert.deepEqual(await feed("&brand=c3d"), [], "asking for Charleston 3D gets nothing");
+  assert.equal((await handleImages(imgReq("/api/images?public=1&brand=nope"), ctx)).status, 400);
+  const keyed = (await (await handleImages(imgReq("/api/images", { headers: KEYH }), ctx)).json()).items;
+  assert.equal(keyed.find((i) => i.key === old.key).brand, "c3d", "the keyed list names every image's brand");
+  assert.ok(keyed.every((i) => ["c3d", "ed", "epix3d"].includes(i.brand)));
+  const pr = await brandPost(ctx, { "x-brand": "ed", "x-filename": "members.png", "x-access": "members" });
+  const c3dLocked = (await (await brandPost(ctx, { "x-filename": "c3d-members.png", "x-access": "members" })).json()).item;
+  const mm = ctx.blobs.m.get(`image:${c3dLocked.key}`).metadata; delete mm.brand; mm.category = "Charleston 3D";
+  const members = await I.imagesForTags(ctx.blobs, [], ctx.env, "https://console.example");
+  assert.deepEqual(members.map((i) => i.name), ["members.png"], "signed-in customers never get Charleston 3D art either");
+  assert.equal(pr.status, 201);
+});
+
+test("brands: PATCH moves an image between brands, and moving to Charleston 3D turns public and access off", async () => {
+  const ctx = brandCtx();
+  const { item } = await (await brandPost(ctx, { "x-brand": "ed", "x-public": "1", "x-access": "pro" })).json();
+  const patch = (body, h = KEYH) => handleImages(imgReq(`/api/images/${item.key}`, { method: "PATCH", headers: { "content-type": "application/json", ...h }, body: JSON.stringify(body) }), ctx);
+  let out = (await (await patch({ name: "Renamed", tags: "a, b", category: "Holidays", brand: "epix3d" })).json()).item;
+  assert.deepEqual([out.name, out.tags, out.category, out.brand, out.public, out.access], ["Renamed", "a, b", "Holidays", "epix3d", true, "pro"]);
+  out = (await (await patch({ brand: "c3d" })).json()).item;
+  assert.deepEqual([out.brand, out.public, out.access], ["c3d", false, undefined]);
+  out = (await (await patch({ public: true })).json()).item;
+  assert.equal(out.public, false, "Charleston 3D art can't be made public");
+  assert.equal((await patch({ brand: "nope" })).status, 400);
+  assert.equal((await patch({ brand: "ed" }, {})).status, 401, "moving needs the key");
+  assert.equal(ctx.blobs.m.get(`image:${item.key}`).metadata.brand, "c3d", "a refused change leaves it as it was");
+});
+
+// ---------- the E: drive library (lib/drive.mjs), checked against the PC side's own signature check ----------
+const { handleDrive } = await import("../lib/drive.mjs");
+const { verifySig, driveSig: driveSigFor, classify, shirtSearch, loadShirtSet, shirtPage, jobQueue } = await import("../drive-server/lib.mjs");
+const DKEY = ENV.CONSOLE_KEY;
+const DID = "0123456789abcdef0123";
+function fakePC(seen) {
+  return async (u, init) => {
+    const url = new URL(u);
+    seen.push({ host: url.host, path: url.pathname + url.search, ok: verifySig(DKEY, init.headers["x-drive-exp"], init.headers["x-drive-sig"], url.pathname + url.search) });
+    if (url.pathname === "/public") return Response.json({ page: 0, per: 500, total: 2, items: [{ id: DID, name: "skull.png", folder: "DTF Ready Prints", ext: ".png", kind: "dtf", rel: "E:\\secret" }, { id: "../etc", name: "bad" }],
+      folders: [{ name: "DTF Ready Prints", count: 2, path: "E:\\secret" }, { name: "bad" }] });
+    if (url.pathname === "/search") return Response.json({ total: 1, items: [{ id: DID, name: "skull.svg", thumb: true, src: "e", brand: "ed" }] });
+    if (url.pathname === "/stats") return Response.json({ kinds: [{ brand: "ed", kind: "svg", n: 3 }], index: "index-1.db" });
+    if (url.pathname.startsWith("/thumb/")) return new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/webp" } });
+    return new Response("x", { headers: { "content-type": "model/stl", "content-disposition": "attachment; filename=a.stl" } });
+  };
+}
+const driveEnv = (extra = {}) => envOf({ DRIVE_ORIGIN: "https://library.test", ...extra });
+const dcall = (p, init = {}, opts = {}) => handleDrive(new Request(`https://console.example${p}`, init), { env: driveEnv(), ...opts });
+
+test("drive: search and stats need the console key, and every request to the PC is signed", async () => {
+  const seen = [];
+  assert.equal((await dcall("/api/drive/search?q=skull", {}, { fetchImpl: fakePC(seen) })).status, 401);
+  assert.equal((await dcall("/api/drive/stats", { headers: { "x-console-key": "wrong-key-wrong-key-1" } }, { fetchImpl: fakePC(seen) })).status, 401);
+  assert.equal(seen.length, 0, "nothing reaches the PC without the key");
+  const res = await dcall("/api/drive/search?q=skull&brand=ed&evil=1", { headers: KEYH }, { fetchImpl: fakePC(seen) });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.deepEqual([seen[0].host, seen[0].path, seen[0].ok], ["library.test", "/search?q=skull&brand=ed", true], "only known fields go on, signed");
+  assert.match(body.items[0].thumbUrl, new RegExp(`^/api/drive/thumb/${DID}\\?exp=\\d+&sig=`));
+  assert.match(body.items[0].fileUrl, /^\/api\/drive\/file\//);
+  const st = await dcall("/api/drive/stats", { headers: KEYH }, { fetchImpl: fakePC(seen) });
+  assert.equal(st.status, 200); assert.equal((await st.json()).kinds[0].n, 3);
+  assert.equal(st.headers.get("cache-control"), "no-store");
+});
+
+test("drive: signed links load previews and files without the key; forged, old or swapped links don't", async () => {
+  const seen = [];
+  const { thumbUrl, fileUrl } = (await (await dcall("/api/drive/search", { headers: KEYH }, { fetchImpl: fakePC(seen) })).json()).items[0];
+  const t = await dcall(thumbUrl, {}, { fetchImpl: fakePC(seen) });
+  assert.equal(t.status, 200); assert.equal(t.headers.get("content-type"), "image/webp");
+  assert.equal(t.headers.get("x-content-type-options"), "nosniff");
+  const f = await dcall(fileUrl, {}, { fetchImpl: fakePC(seen) });
+  assert.equal(f.status, 200); assert.match(f.headers.get("content-disposition"), /attachment/);
+  assert.ok(seen.every((s) => s.ok));
+  assert.equal((await dcall(thumbUrl.replace(/sig=.*/, "sig=forged"), {}, { fetchImpl: fakePC(seen) })).status, 404);
+  assert.equal((await dcall(thumbUrl, {}, { fetchImpl: fakePC(seen), now: Date.now() + 2 * 3600_000 })).status, 404, "expired");
+  assert.equal((await dcall(fileUrl.replace("/file/", "/thumb/"), {}, { fetchImpl: fakePC(seen) })).status, 404, "a file link isn't a preview link");
+  assert.equal((await handleDrive(new Request(`https://console.example${thumbUrl}`), { env: envOf({ DRIVE_ORIGIN: "https://library.test", CONSOLE_KEY: "a-different-long-random-console-key-123" }), fetchImpl: fakePC(seen) })).status, 404,
+    "links stop working when the console key changes");
+  assert.equal((await dcall("/api/drive/thumb/..%2f..%2fwindows", { headers: KEYH }, { fetchImpl: fakePC(seen) })).status, 404);
+  assert.equal((await dcall("/api/drive/elsewhere", { headers: KEYH }, { fetchImpl: fakePC(seen) })).status, 404);
+});
+
+test("drive: a switched-off PC reads as offline; errors are handled; it's read only; no DRIVE_ORIGIN is 503", async () => {
+  const r = await dcall("/api/drive/search", { headers: KEYH }, { fetchImpl: async () => new Response("bad gateway", { status: 530 }) });
+  assert.equal(r.status, 503); assert.equal((await r.json()).code, "pc_offline");
+  const thrown = await dcall("/api/drive/stats", { headers: KEYH }, { fetchImpl: async () => { throw new Error("dns"); } });
+  assert.equal(thrown.status, 503); assert.equal((await thrown.json()).code, "pc_offline");
+  const html500 = await dcall("/api/drive/search", { headers: KEYH }, { fetchImpl: async () => new Response("<html>", { status: 500, headers: { "content-type": "text/html" } }) });
+  assert.equal((await html500.json()).code, "pc_offline");
+  const refused = await dcall("/api/drive/search", { headers: KEYH }, { fetchImpl: async () => Response.json({ error: "Bad signature" }, { status: 401 }) });
+  assert.equal(refused.status, 502, "the PC refusing the console's signature is a server problem, not a wrong key");
+  assert.equal((await dcall("/api/drive/search", { method: "POST", headers: KEYH })).status, 405);
+  const unset = await handleDrive(new Request("https://console.example/api/drive/search", { headers: KEYH }), { env: envOf() });
+  assert.equal(unset.status, 503); assert.equal((await unset.json()).code, "drive_not_set_up");
+});
+
+test("drive: the shirt app's public list needs no key, has absolute signed links on the console's address and CORS for the app only", async () => {
+  const seen = [];
+  const app = { origin: "https://design.elevatedshirts.com" };
+  const res = await dcall("/api/drive/public?q=skull&brand=c3d&folder=SVG+FILES&type=svg&page=3&per=50", { headers: app }, { fetchImpl: fakePC(seen) });
+  assert.equal(res.status, 200);
+  assert.equal(seen[0].path, "/public?q=skull&folder=SVG+FILES&type=svg&page=3&per=50", "the brand can't be chosen from outside; search, folder and paging go on");
+  assert.equal(seen[0].ok, true);
+  assert.equal(res.headers.get("access-control-allow-origin"), "https://design.elevatedshirts.com");
+  const body = await res.json();
+  assert.deepEqual(Object.keys(body).sort(), ["folders", "items", "page", "per", "total"], "the same shape the studio sent, plus the folder counts");
+  assert.deepEqual(body.folders, [{ name: "DTF Ready Prints", count: 2 }], "folder counts carry only a name and a count");
+  assert.equal(body.items.length, 1, "bad ids are dropped");
+  assert.deepEqual(Object.keys(body.items[0]).sort(), ["ext", "fileUrl", "folder", "id", "kind", "name", "thumbUrl"], "nothing about the PC's paths");
+  assert.match(body.items[0].thumbUrl, new RegExp(`^https://console\\.example/api/drive/thumb/${DID}\\?exp=\\d+&sig=`));
+  const fu = new URL(body.items[0].fileUrl);
+  const t = await dcall(fu.pathname + fu.search, { headers: app }, { fetchImpl: fakePC(seen) });
+  assert.equal(t.status, 200);
+  assert.equal(t.headers.get("access-control-allow-origin"), "https://design.elevatedshirts.com", "the app can read the file to print it");
+  for (const o of ["https://evil.example", "https://epix3d.com"])
+    assert.equal((await dcall("/api/drive/public", { headers: { origin: o } }, { fetchImpl: fakePC(seen) })).headers.get("access-control-allow-origin"), null, o);
+  const search = await dcall("/api/drive/search", { headers: app }, { fetchImpl: fakePC(seen) });
+  assert.equal(search.status, 401, "the full search still needs the key");
+  assert.equal(search.headers.get("access-control-allow-origin"), null);
+  const off = await dcall("/api/drive/public", { headers: app }, { fetchImpl: async () => new Response("", { status: 530 }) });
+  assert.equal(off.status, 503);
+  assert.equal(off.headers.get("access-control-allow-origin"), "https://design.elevatedshirts.com", "the app can tell the PC is off");
+  const extra = await handleDrive(new Request("https://console.example/api/drive/public", { headers: { origin: "https://shirts.example.com" } }),
+    { env: envOf({ DRIVE_ORIGIN: "https://library.test", BUILDER_ORIGINS: "https://shirts.example.com" }), fetchImpl: fakePC(seen) });
+  assert.equal(extra.headers.get("access-control-allow-origin"), "https://shirts.example.com", "BUILDER_ORIGINS works here too");
+});
+
+test("drive server: the shirt app only gets Elevated Designs pictures from the chosen E: folders", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const db = new DatabaseSync(":memory:");
+  db.exec("CREATE TABLE items (id TEXT PRIMARY KEY, src TEXT, root INTEGER, rel TEXT, name TEXT, folder TEXT, ext TEXT, brand TEXT, kind TEXT)");
+  const add = db.prepare("INSERT INTO items VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+  const rows = [["a", 0, "DTF Ready Prints\\skull.png", ".png", "ed", "dtf"], ["b", 0, "Fraud Account\\id.png", ".png", "ed", "image"],
+    ["c", 0, "SVG FILES\\boats\\anchor.svg", ".svg", "ed", "svg"], ["d", 0, "SVG FILES\\boats\\anchor.ai", ".ai", "ed", "source"],
+    ["e", 0, "Design Images_old\\p.png", ".png", "ed", "image"], ["f", 1, "DTF Ready Prints\\lab.png", ".png", "ed", "image"],
+    ["g", 0, "DTF Ready Prints\\boat.png", ".png", "c3d", "image"], ["h", 0, "loose.png", ".png", "ed", "image"],
+    ["i", 0, "DTF Ready Prints\\__MACOSX\\._skull.png", ".png", "ed", "dtf"]];
+  for (const [id, root, rel, ext, brand, kind] of rows) add.run(id, root ? "lab" : "e", root, rel, rel.split("\\").at(-1), rel.split("\\").slice(0, -1).join("\\"), ext, brand, kind);
+  const roots = [{ src: "e" }, { src: "lab" }];
+  const got = (q = "") => shirtSearch(db, roots, ["Design Images", "DTF Ready Prints", "SVG FILES"], new URLSearchParams(q)).items.map((i) => i.id);
+  assert.deepEqual(got(), ["a", "c"], "only pictures, only Elevated Designs, only inside the chosen folders on E:, no Mac leftovers");
+  assert.deepEqual(got("q=anchor"), ["c"]);
+  assert.deepEqual(got("q=100%25"), [], "search text can't widen the match");
+  assert.deepEqual(shirtSearch(db, roots, [], new URLSearchParams()).items, [], "no folders chosen: nothing is public");
+  // the whole share, paged, filtered by top folder and searched from memory, with true counts per top folder
+  for (let i = 0; i < 1200; i++) { const n = `art-${String(i).padStart(4, "0")}.png`; add.run(`z${i}`, "e", 0, `Design Images\\pack ${i % 3}\\${n}`, n, `Design Images\\pack ${i % 3}`, ".png", "ed", "image"); }
+  const set = loadShirtSet(db, roots, ["Design Images", "DTF Ready Prints", "SVG FILES", "Empty Folder"]);
+  const page = (q) => shirtPage(set, new URLSearchParams(q));
+  assert.deepEqual(page("").folders, [{ name: "Design Images", count: 1200 }, { name: "DTF Ready Prints", count: 1 }, { name: "SVG FILES", count: 1 }],
+    "true counts per top folder, empty ones left out");
+  assert.equal(page("").total, 1202);
+  const seenIds = new Set();
+  for (let p = 0; p < 13; p++) for (const it of page(`per=100&page=${p}`).items) seenIds.add(it.id);
+  assert.equal(seenIds.size, 1202, "paging reaches every file, none twice");
+  assert.deepEqual(page("per=100&page=13").items, [], "past the end is empty");
+  assert.deepEqual(page("folder=svg files").items.map((i) => i.id), ["c"], "the folder filter ignores case");
+  assert.equal(page("folder=Design Images&per=10&page=119").items.length, 10);
+  assert.equal(page("folder=Design Images&per=10").total, 1200);
+  assert.deepEqual(page("folder=Fraud Account").items, [], "a folder outside the share gives nothing");
+  assert.equal(page("folder=Fraud Account").total, 0);
+  const deep = page("q=art-1187");
+  assert.deepEqual([deep.total, deep.items[0].name], [1, "art-1187.png"], "search finds a file far past the first pages");
+  assert.equal(page("q=PACK art-11&folder=design images").total, 100, "every word must match, in the name or the folder path");
+  assert.equal(page("q=100%25").total, 0, "search text is plain text");
+  assert.deepEqual(page("type=svg").items.map((i) => i.id), ["c"], "type: SVGs");
+  assert.deepEqual(page("type=dtf").items.map((i) => i.id), ["a"], "type: DTF-ready");
+  assert.equal(page("type=png&folder=design images").total, 1200, "type: other pictures");
+  assert.equal(page("type=nope").total, 1202, "an unknown type is ignored");
+  assert.deepEqual(Object.keys(deep.items[0]).sort(), ["ext", "folder", "id", "kind", "name"], "no paths from the PC");
+  assert.equal(page("per=5000").per, 1000, "at most 1,000 a page");
+});
+
+test("drive server: previews are made a few at a time, newest first, and skipped once the visitor has gone", async () => {
+  const q = jobQueue(2), started = [];
+  const job = (name, gone) => q.slot(gone).then((ok) => { started.push(ok ? name : `skip ${name}`); return ok; });
+  const a = job("a"), b = job("b");
+  await Promise.all([a, b]);
+  assert.equal(q.running, 2);
+  let cGone = false;
+  const c = job("c", () => cGone), d = job("d"), e = job("e");
+  assert.equal(q.waiting, 3, "the rest wait");
+  q.done(); await e;
+  assert.deepEqual(started, ["a", "b", "e"], "the newest request goes first");
+  cGone = true;
+  q.done(); await d;
+  q.done(); await c;
+  assert.deepEqual(started, ["a", "b", "e", "d", "skip c"], "a request nobody waits for any more is skipped");
+  assert.equal(q.running, 1);
+});
+
+test("drive server: the PC rejects unsigned, forged, replayed-path and stale requests, and sorts files by brand", () => {
+  const exp = String(Math.floor(Date.now() / 1000));
+  const sig = driveSigFor(DKEY, exp, "/search?q=a");
+  assert.equal(verifySig(DKEY, exp, sig, "/search?q=a"), true);
+  assert.equal(verifySig(DKEY, exp, sig, "/file/0123456789abcdef0123"), false);
+  assert.equal(verifySig("another-key-123456789", exp, sig, "/search?q=a"), false);
+  assert.equal(verifySig(DKEY, String(Number(exp) - 3600), driveSigFor(DKEY, String(Number(exp) - 3600), "/stats"), "/stats"), false);
+  assert.equal(verifySig(DKEY, exp, undefined, "/stats"), false);
+  assert.deepEqual([classify("Print files\\boat\\hull.stl").brand, classify("Print files\\boat\\hull.stl").kind], ["c3d", "3d"]);
+  assert.deepEqual([classify("DTF Ready Prints\\skull.png").brand, classify("DTF Ready Prints\\skull.png").kind], ["ed", "dtf"]);
+  assert.equal(classify("SVG FILES\\a\\b.svg").kind, "svg");
+});
+
+test("worker: /api/drive reaches the drive library with DRIVE_ORIGIN from env, and unknown paths stay JSON 404s", async () => {
+  const seen = [];
+  await withFetch(async () => {
+    const env = workerEnv({ DRIVE_ORIGIN: "https://library.test" });
+    assert.equal((await W.handleRequest(wreq("/api/drive/search"), env)).status, 401);
+    const r = await W.handleRequest(wreq("/api/drive/search?q=a", { headers: KEYH }), env);
+    assert.equal(r.status, 200);
+    assert.deepEqual([seen[0].host, seen[0].ok], ["library.test", true]);
+    const pub = await W.handleRequest(wreq("/api/drive/public", { headers: { origin: "https://design.elevatedshirts.com" } }), env);
+    assert.equal(pub.headers.get("access-control-allow-origin"), "https://design.elevatedshirts.com");
+    assert.equal((await W.handleRequest(wreq("/api/drivex"), env)).status, 404);
+    assert.deepEqual(env.ASSETS.calls, [], "never falls through to the files");
+  }, fakePC(seen));
+});
+
+// ---------- Alice's mailbox (lib/alice-mail.mjs) ----------
+const AL = await import("../lib/alice-mail.mjs");
+function aliceR2() {
+  const m = new Map();
+  return { m,
+    async put(key, v) { m.set(key, { text: String(v), uploaded: new Date(aliceNow).toISOString() }); },
+    async get(key) { const o = m.get(key); return o ? { text: async () => o.text } : null; },
+    async head(key) { return m.has(key) ? { key } : null; },
+    async delete(keys) { for (const k of [].concat(keys)) m.delete(k); },
+    async list({ prefix = "" } = {}) { return { objects: [...m.keys()].filter((k) => k.startsWith(prefix)).sort().map((key) => ({ key, uploaded: m.get(key).uploaded })), truncated: false }; },
+  };
+}
+let aliceNow = Date.parse("2026-11-15T16:00:00Z");
+const alClock = () => new Date(aliceNow);
+const alReq = (method, body, query = {}, headers = { "content-type": "application/json", "x-console-key": "open-sesame-test-key-0001" }) =>
+  ({ method, query: new URLSearchParams(query), header: (k) => headers[k.toLowerCase()] ?? null, text: async () => JSON.stringify(body ?? {}) });
+
+test("alice mailbox: ask, the runner claims and answers, the console reads once and nothing is left behind", async () => {
+  const bucket = aliceR2(), ctx = { env: envOf(), bucket };
+  assert.equal((await AL.handleAlice(alReq("POST", { person: "Shana", text: "hi" }, {}, { "content-type": "application/json" }), ctx, "", alClock)).status, 401);
+  assert.equal((await AL.handleAlice(alReq("POST", { person: "Shana", text: "hi" }), { env: envOf(), bucket: null }, "", alClock)).status, 503);
+  assert.equal((await AL.handleAlice(alReq("POST", { person: "", text: "hi" }), ctx, "", alClock)).status, 400);
+  assert.equal((await AL.handleAlice(alReq("POST", { person: "Josh", text: "my key is shpat_abcdef123456" }), ctx, "", alClock)).status, 400, "keys are refused");
+  const a = await AL.handleAlice(alReq("POST", { person: "Shana", text: "What sells best?", private: true, history: [{ from: "alice", text: "Hi" }, { from: "x", text: "Hello" }] }), ctx, "", alClock);
+  assert.equal(a.status, 201);
+  const id = a.body.id;
+  assert.deepEqual((await AL.handleAlice(alReq("GET", null, { id }), ctx, "", alClock)).body, { status: "waiting" });
+  const n1 = await AL.handleAlice(alReq("GET"), ctx, "next", alClock);
+  assert.equal(n1.body.question.id, id);
+  assert.equal(n1.body.question.private, true);
+  assert.deepEqual(n1.body.question.history.map((h) => h.from), ["alice", "person"]);
+  assert.equal((await AL.handleAlice(alReq("GET"), ctx, "next", alClock)).body.question, null, "a claimed question isn't handed out twice");
+  aliceNow += AL.CLAIM_MS + 1000;
+  assert.equal((await AL.handleAlice(alReq("GET"), ctx, "next", alClock)).body.question.id, id, "a runner that died gives it back after the claim runs out");
+  assert.equal((await AL.handleAlice(alReq("POST", { id, text: "Rainbow Row tees." }), ctx, "answer", alClock)).status, 201);
+  assert.equal((await AL.handleAlice(alReq("GET"), ctx, "next", alClock)).body.question, null, "answered questions aren't handed out");
+  const got = await AL.handleAlice(alReq("GET", null, { id }), ctx, "", alClock);
+  assert.deepEqual([got.body.status, got.body.answer.text], ["answered", "Rainbow Row tees."]);
+  assert.equal(bucket.m.size, 0, "question, answer and claim are gone once read");
+  assert.equal((await AL.handleAlice(alReq("GET", null, { id }), ctx, "", alClock)).status, 404);
+  assert.equal((await AL.handleAlice(alReq("POST", { id, text: "late" }), ctx, "answer", alClock)).status, 404);
+});
+
+test("alice mailbox: oldest question first, stale ones dropped, and the runner's prompt keeps the rules", async () => {
+  const bucket = aliceR2(), ctx = { env: envOf(), bucket };
+  const first = (await AL.handleAlice(alReq("POST", { person: "Aaron", text: "old" }), ctx, "", alClock)).body.id;
+  aliceNow += AL.KEEP_MS + 1000;
+  const second = (await AL.handleAlice(alReq("POST", { person: "Josh", text: "new one" }), ctx, "", alClock)).body.id;
+  const third = (await AL.handleAlice(alReq("POST", { person: "Shana", text: "newest" }), ctx, "", () => new Date(aliceNow + 5))).body.id;
+  const n = await AL.handleAlice(alReq("GET"), ctx, "next", alClock);
+  assert.equal(n.body.question.id, second);
+  assert.ok(![...bucket.m.keys()].some((k) => k.includes(first)), "the 3-day-old question was dropped");
+  assert.ok([...bucket.m.keys()].some((k) => k.includes(third)));
+  const MB = await import("./alice-mailbox.mjs");
+  const msgs = MB.messagesFor({ person: "Josh", text: "Price for the tee?", private: true, history: [{ from: "alice", text: "Hey Josh" }] });
+  assert.equal(msgs[0].role, "system");
+  assert.match(msgs[0].content, /Never invent prices/);
+  assert.match(msgs[0].content, /private question/);
+  assert.deepEqual(msgs.slice(1).map((x) => x.role), ["assistant", "user"]);
+  assert.equal(msgs.at(-1).content, "Josh: Price for the tee?");
+  const lm = (body) => async () => ({ ok: true, json: async () => body });
+  assert.equal(await MB.loadedModel("x", lm({ data: [{ id: "big", state: "not-loaded" }, { id: "qwen-4b", state: "loaded", type: "llm" }] })), "qwen-4b");
+  assert.equal(await MB.loadedModel("x", lm({ data: [{ id: "big", state: "not-loaded" }] })), null, "never picks a model that would have to load");
+});
+
+test("worker: /api/alice is routed with the RESULTS bucket and needs the key", async () => {
+  const env = workerEnv({ RESULTS: aliceR2() });
+  assert.equal((await W.handleRequest(wreq("/api/alice/next"), env)).status, 401);
+  const r = await W.handleRequest(wreq("/api/alice/next", { headers: KEYH }), env);
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { question: null });
+});
+
+test("drive-server: the data folder is the Claude app's private copy when that exists, else the usual one", async () => {
+  const { dataDir } = await import("../drive-server/config.mjs");
+  const path = await import("node:path");
+  const env = { LOCALAPPDATA: "C:/L" };
+  const priv = path.join("C:/L", "Packages", "Claude_abc", "LocalCache", "Local", "design-library");
+  assert.equal(dataDir(env, (d) => d === priv, () => ["Microsoft.Foo", "Claude_abc"]), priv);
+  assert.equal(dataDir(env, () => false, () => ["Claude_abc"]), path.join("C:/L", "design-library"));
+  assert.equal(dataDir(env, () => true, () => { throw new Error("no folder"); }), path.join("C:/L", "design-library"));
+  assert.equal(dataDir({ ...env, DRIVE_DATA: "D:/x" }, () => true, () => ["Claude_abc"]), "D:/x");
+});
+
+// ---------- custom requests (Charleston 3D) ----------
+function fakeRequestsShopify(nodes) {
+  const calls = [];
+  const fetch = async (url, init) => {
+    const { query, variables } = JSON.parse(init.body);
+    calls.push({ url: String(url), op: /query\s+(\w+)/.exec(query)[1], variables });
+    checkGraphql(query, variables);
+    return new Response(JSON.stringify({ data: { orders: { pageInfo: { hasNextPage: false, endCursor: null }, nodes } } }), { status: 200 });
+  };
+  return { fetch, calls };
+}
+const requestOrder = (name, attrs, over = {}) => ({ id: `gid://shopify/Order/${name.slice(1)}`, name, createdAt: "2026-10-24T13:00:00Z", cancelledAt: null, closed: false, test: false,
+  lineItems: { nodes: [{ title: "Custom request", product: { handle: "custom-request", tags: ["request-product"] }, customAttributes: Object.entries(attrs).map(([key, value]) => ({ key, value })) }] }, ...over });
+
+test("requests: only the request itself is returned, never who sent it", async () => {
+  const sh = fakeRequestsShopify([
+    requestOrder("#1012", { "Request type": "Custom design", Request: "A sign for my boat, call me at 843-555-0199 or jo@example.com", "Example link": "https://example.com/sign", "Quantity wanted": "2", "Needed by": "2026-11-02", Size: "About 4 in tall", Colors: "Navy and white", "Photo 1": "https://cdn.shopify.com/uploads/a.jpg", "3D file": "https://cdn.shopify.com/uploads/b.stl", _Source: "app" }),
+    requestOrder("#1011", { Request: "Cancelled one" }, { cancelledAt: "2026-10-24T14:00:00Z" }),
+    requestOrder("#1010", { Request: "A test order" }, { test: true }),
+    { id: "gid://shopify/Order/1009", name: "#1009", createdAt: "2026-10-23T13:00:00Z", cancelledAt: null, closed: true, test: false, lineItems: { nodes: [{ title: "Rainbow Row Magnet", product: { handle: "magnet", tags: ["3d-printed"] }, customAttributes: [{ key: "Name", value: "Sam" }] }] } },
+  ]);
+  const res = await handleRequests(keyed({ days: "14" }), { env: envOf(), fetch: sh.fetch, now: () => NOW });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.store, "c3d");
+  assert.equal(res.body.since, "2026-10-11");
+  assert.deepEqual(res.body.requests, [{ order: "#1012", date: "2026-10-24", open: true, type: "Custom design", request: "A sign for my boat, call me at [phone removed] or [email removed]", exampleLink: true, quantity: 2, neededBy: "2026-11-02", size: "About 4 in tall", colors: "Navy and white", files: 2 }]);
+  assert.ok(!/cdn\.shopify|example\.com|555|customer|email"/i.test(JSON.stringify(res.body)), "no file links, contact details or customer fields");
+  assert.ok(sh.calls.every((c) => c.url.includes(ENV.C3D_SHOPIFY_DOMAIN)), "only the Charleston 3D store is read");
+  assert.equal(sh.calls[0].variables.q, "created_at:>=2026-10-11");
+});
+
+test("requests: needs the key, GET only, Charleston 3D only, sane days", async () => {
+  const sh = fakeRequestsShopify([]);
+  const ctx = { env: envOf(), fetch: sh.fetch, now: () => NOW };
+  assert.equal((await handleRequests(get({}), ctx)).status, 401);
+  assert.equal((await handleRequests(keyed({ store: "ed" }), ctx)).status, 400);
+  assert.equal((await handleRequests(keyed({ days: "0" }), ctx)).status, 400);
+  assert.equal((await handleRequests(keyed({ days: "365" }), ctx)).status, 400);
+  assert.equal((await handleRequests({ ...keyed({}), method: "POST" }, ctx)).status, 405);
+  assert.equal(sh.calls.length, 0, "a refused call never reaches the store");
+  assert.equal(scrub("Text 843.555.0199 or (843) 555-0199, mail a.b@c.io"), "Text [phone removed] or [phone removed], mail [email removed]");
+  assert.deepEqual(normalizeRequests([requestOrder("#1", { Request: "x", "Quantity wanted": "lots", "Needed by": "soon" })])[0].quantity, null);
 });

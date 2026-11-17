@@ -129,7 +129,7 @@ export async function meshyPage(header) {
   const credits = el("p", { class: "muted small", role: "status" });
   const setup = el("div", { class: "note warn", hidden: true },
     el("strong", {}, "Add your Meshy key to turn this on. "),
-    "On your PC, in the business-console folder, run ", el("code", {}, "npx wrangler secret put MESHY_API_KEY"),
+    "On your PC, in the creative-lab-engine folder, run ", el("code", {}, "npx wrangler secret put MESHY_API_KEY"),
     " and paste the key from meshy.ai › API. It stays in Cloudflare, never in the console.");
   const form = el("section", { class: "panel m3d-form", "aria-label": "Make a model" },
     el("div", { class: "panel-head" }, el("h3", {}, "New model"), modeSeg),

@@ -1,8 +1,9 @@
-import { BRANDS, STATUS, SERVICES, ROUTES, CLEANUP, TOPOLOGY, GO_TO, STUDIO_URL } from "./data.js";
+import { BRANDS, STATUS, SERVICES, ROUTES, CLEANUP, TOPOLOGY, GO_TO } from "./data.js";
 import { GROUPS, TOOLS, toolsFor } from "./tools.js";
 import { takeStoreHandler, cancelKeyPrompt, consoleKey } from "./api.js";
 import { filesPage } from "./files.js";
 import { meshyPage } from "./meshy.js";
+import { drivePage } from "./drive.js";
 
 // ---------- helpers ----------
 export const el = (tag, attrs = {}, ...kids) => {
@@ -118,7 +119,7 @@ async function recentImages(n = 12) {
   const { listImages, imageUrl } = await import("./studio.js");
   const { isLogo, isOtherBrand } = await import("./image-filters.js");
   const items = (await listImages()).filter((i) => !isLogo(i) && !isOtherBrand(i)).slice(0, n);
-  if (!items.length) return el("p", { class: "muted" }, "No images yet. Add them in the Design Studio.");
+  if (!items.length) return el("p", { class: "muted" }, "No images yet. Add them in the Art library.");
   return el("div", { class: "thumbs" }, items.map((i) => el("img", { src: imageUrl(i), alt: i.name, loading: "lazy" })));
 }
 
@@ -142,14 +143,15 @@ function activeTool() {
     ?? toolsFor(k).find((t) => (t.page ?? t.id) === route && !t.path);
 }
 
-// The Go to menu: the Design Studio, both shops, both apps and the reference pages, from every page.
+// The Go to menu: both shops, both apps, the EPIX3D maker site and the reference pages, from every page.
+// The art library and the shirt designer are pages of this console (the Design Studio was folded in on 2026-11-07).
 const goMenu = el("div", { class: "go-menu", id: "go-menu", popover: "auto", role: "menu", "aria-label": "Go to" },
   GO_TO.map((g) => el("div", { class: "go-group" }, el("span", { class: "eyebrow" }, g.group),
     g.links.map((l) => el("a", { class: "go-link", href: l.url, target: "_blank", rel: "noopener", role: "menuitem", onclick: () => goMenu.hidePopover?.() },
       el("span", { class: "go-text" }, el("strong", {}, l.label), el("span", { class: "muted" }, l.note)),
       el("span", { class: "ext", "aria-hidden": "true" }, "↗"))))));
 document.body.append(goMenu);
-const goBtn = el("button", { class: "btn ghost go-btn", type: "button", popovertarget: "go-menu", "aria-haspopup": "menu", title: "Go to the Design Studio and every site" },
+const goBtn = el("button", { class: "btn ghost go-btn", type: "button", popovertarget: "go-menu", "aria-haspopup": "menu", title: "Go to every site and app" },
   el("span", { class: "go-ico", "aria-hidden": "true" }, "⊞"), "Go to");
 
 const seg = document.getElementById("store-seg");
@@ -169,7 +171,6 @@ function drawNav() {
     el("span", { class: "ico", "aria-hidden": "true" }, ico), el("span", {}, label), ext(href) ? el("span", { class: "nav-ext", "aria-hidden": "true" }, "↗") : null);
   navs.replaceChildren(
     link("home", "Home", "⌂", `#home/${k}`),
-    link("design-studio", "Design Studio", "✦", STUDIO_URL),
     ...GROUPS.map((g) => {
       const items = toolsFor(k).filter((t) => t.group === g.id);
       return items.length ? el("div", { class: "nav-group" }, el("span", { class: "nav-label" }, g.name),
@@ -189,7 +190,7 @@ function drawNav() {
 }
 
 // Switching store: pages that show one store's data reload in place; a tool only the other store
-// has (the shirt designer, the nameplate maker) gives way to Home.
+// has (the shirt designer, Maker Studio) gives way to Home.
 export function setStore(k, navigate = true) {
   if (!STORE_KEYS.includes(k)) return;
   store.set("bc-store", k);
@@ -197,7 +198,9 @@ export function setStore(k, navigate = true) {
   const [route, , ...rest] = location.hash.slice(1).split("/");
   const r = route || "home";
   const t = activeTool();
-  const keeps = r === "home" || r === "map" || (t && !t.store);
+  // A page both stores have (the Art library) stays open on the other store's side.
+  const twin = t && toolsFor(k).some((x) => (x.page ?? x.id) === (t.page ?? t.id) && (x.path ?? null) === (t.path ?? null));
+  const keeps = r === "home" || r === "map" || (t && (!t.store || twin));
   const next = keeps ? `#${[r, k, ...rest].join("/")}` : `#home/${k}`;
   const handler = keeps && r !== "home" && r !== "map" ? pageStoreHandler : null;
   if (handler) {
@@ -205,7 +208,7 @@ export function setStore(k, navigate = true) {
     // The page heading names the store; keep it in step with the page that just reloaded in place.
     const eyebrow = view.querySelector(".page-head .eyebrow");
     if (eyebrow && STORE_KEYS.some((s) => BRANDS[s].name === eyebrow.textContent)) eyebrow.textContent = BRANDS[k].name;
-    document.title = document.title.replace(/· [^·]+ · Business Console$/, `· ${BRANDS[k].name} · Business Console`);
+    document.title = document.title.replace(/· [^·]+ · Creative Lab Studios$/, `· ${BRANDS[k].name} · Creative Lab Studios`);
   }
   else location.hash = next;
 }
@@ -239,28 +242,49 @@ function home() {
   const tasks = el("div", {}, el("p", { class: "muted" }, "Loading tasks…"));
   import("./team.js").then(({ homeTasks }) => homeTasks(k, !!consoleKey.get())).then((n) => tasks.replaceChildren(...[n].flat()))
     .catch(() => tasks.replaceChildren(el("a", { class: "btn ghost", href: `#team/${k}` }, "Open the Team board")));
+  const brief = el("div", {}, el("p", { class: "muted" }, "Loading the agents' report…"));
+  import("./team.js").then(({ homeBrief }) => homeBrief(!!consoleKey.get())).then((n) => brief.replaceChildren(...[n].flat()))
+    .catch(() => brief.replaceChildren(el("a", { class: "btn ghost", href: "#team" }, "Open the handoff board")));
   const imgs = el("div", {}, el("p", { class: "muted" }, "Loading images…"));
   if (k === "ed") recentImages().then((n) => imgs.replaceChildren(n)).catch(() => imgs.replaceChildren(el("p", { class: "muted" }, "Couldn't load images.")));
+  const starts = k === "ed" ? startTiles() : null;
   const primary = k === "ed" ? el("a", { class: "btn primary", href: "#products/ed/list" }, "List a design")
-    : el("a", { class: "btn primary", href: "#nameplate/c3d" }, "Make a nameplate");
+    : el("a", { class: "btn primary", href: "#makerstudio/c3d" }, "Open Maker Studio");
   return [
     el("div", { class: `home-head brand-${k}` }, el("div", { class: `brand-chip logo-${k}` }, brandLogo(k)),
       header(today, b.name, b.tagline, [primary])),
     el("div", { class: "grid-2" },
       el("section", { class: "panel" }, el("div", { class: "panel-head" }, el("h2", {}, "Needs you"), el("a", { class: "btn ghost", href: `#map/${k}` }, "Service map")), alertsList(attn)),
       el("section", { class: "panel" }, el("div", { class: "panel-head" }, el("h2", {}, "Your tasks")), tasks)),
+    el("section", { class: "panel" }, el("div", { class: "panel-head" }, el("h2", {}, "Agents' report")), brief),
+    starts,
     k === "ed" ? el("section", { class: "panel" },
-      el("div", { class: "panel-head" }, el("h2", {}, "Latest designs"), el("a", { class: "btn ghost", href: "#designs/ed" }, "Open library")), imgs) : null,
+      el("div", { class: "panel-head" }, el("h2", {}, "Latest designs"), el("a", { class: "btn ghost", href: "#designs/ed" }, "Open Art library")), imgs) : null,
   ];
 }
 
+// Start a design: one tile per shirt style, on the same real shirt photos the designer uses (assets/blanks).
+const START_STYLES = [["tee", "T-shirt"], ["hoodie", "Hoodie"], ["longsleeve", "Long sleeve"], ["tank", "Tank top"], ["crew", "Crewneck"], ["fitted", "Fitted tee"]];
+function startTiles() {
+  const open = async (style) => { const { startDesign } = await import("./studio.js"); startDesign(style); location.hash = "#studio/ed"; };
+  return el("section", { class: "panel", "aria-labelledby": "starts-h" },
+    el("div", { class: "panel-head" }, el("h2", { id: "starts-h" }, "Start a design"), el("a", { class: "btn ghost", href: "#studio/ed" }, "Open the shirt designer")),
+    el("div", { class: "starts" }, START_STYLES.map(([style, name]) => el("button", { class: "start", type: "button", "data-style": style, onclick: () => open(style) },
+      el("span", { class: "start-pic", "aria-hidden": "true" },
+        el("img", { class: "start-shade", src: `assets/blanks/${style}-front-shade.jpg`, alt: "", loading: "lazy" }),
+        el("img", { class: "start-base", src: `assets/blanks/${style}-front.jpg`, alt: "", loading: "lazy" })),
+      el("span", { class: "start-name" }, name)))));
+}
+
 // A self-contained tool app (assets in /tools/<slug>/), shown full size inside the console.
-function framePage(t) {
-  const frame = el("iframe", { class: "tool-frame", src: t.frame, title: t.name, loading: "eager", allow: "clipboard-write; fullscreen" });
+const OLD_MAKERS = ["nameplate", "hypechain", "maker"];
+function framePage(t, tab) {
+  const src = tab && /^[a-z0-9-]+$/.test(tab) ? `${t.frame}#${tab}` : t.frame;
+  const frame = el("iframe", { class: "tool-frame", src, title: t.name, loading: "eager", allow: "clipboard-write; fullscreen" });
   return [
     el("header", { class: "page-head tool-head" },
       el("div", { class: "stack" }, el("h1", {}, t.name), el("p", { class: "muted" }, t.sub)),
-      el("div", { class: "row" }, el("a", { class: "btn ghost", href: t.frame, target: "_blank", rel: "noopener" }, "Open full screen", el("span", { class: "ext", "aria-hidden": "true" }, "↗")))),
+      el("div", { class: "row" }, el("a", { class: "btn ghost", href: src, target: "_blank", rel: "noopener" }, "Open full screen", el("span", { class: "ext", "aria-hidden": "true" }, "↗")))),
     frame,
   ];
 }
@@ -355,6 +379,11 @@ async function studioPage() {
   return [header("Elevated Designs", "Shirt designer", "Pick art from the library, place it on a real shirt photo, and download the print file or a mockup. No key needed to design."), await renderStudio()];
 }
 
+async function pricesPage() {
+  const { renderPrices } = await import("./prices.js");
+  return [header("Elevated Designs", "Price sheet", "The shirt price sheet, size by size: what each blank costs, what the store charges for it plain and with a design. Prices are changed in the sheet; the store follows within 15 minutes."), await renderPrices()];
+}
+
 // ---------- router ----------
 // #<page>/<store>[/<sub>]. Old addresses keep working: #dashboard is Home, #c3d and #ed are Home for that store.
 const view = document.getElementById("view");
@@ -435,7 +464,9 @@ function addBack(nodes, k) {
 }
 
 async function render() {
-  let [route = "", second] = location.hash.slice(1).split("/");
+  let [route = "", second, third] = location.hash.slice(1).split("/");
+  // The makers used to have their own pages; old links open the same maker inside Maker Studio.
+  if (OLD_MAKERS.includes(route)) { location.replace(`#makerstudio/c3d/${route}`); return; }
   if (route === "c3d" || route === "ed") { store.set("bc-store", route); history.replaceState(null, "", `#home/${route}`); route = "home"; }
   markStep();
   if (!route || route === "dashboard") route = "home";
@@ -447,7 +478,7 @@ async function render() {
   const frameTool = TOOLS.find((t) => t.frame && t.id === route);
   // A tool of the other store: show this store's Home rather than mixing the brands.
   if (frameTool && frameTool.store !== k) { location.replace(`#home/${k}`); return; }
-  if (((route === "studio" || route === "designs") && k !== "ed") || ((route === "files" || route === "maker3d") && k !== "c3d")) { location.replace(`#home/${k}`); return; }
+  if (((route === "studio" || route === "prices") && k !== "ed") || ((route === "files" || route === "maker3d") && k !== "c3d")) { location.replace(`#home/${k}`); return; }
   const pages = {
     home,
     map: () => mapPage(pendingFilter ?? k),
@@ -459,10 +490,12 @@ async function render() {
     share: sharePage,
     team: teamPage,
     files: () => filesPage(header),
-    designs: async () => (await import("./design-library.js")).designLibraryPage(header),
+    designs: async () => (await import("./design-library.js")).designLibraryPage(header, k),
+    drive: () => drivePage(header, k),
     maker3d: () => meshyPage(header),
+    prices: pricesPage,
   };
-  const make = frameTool ? () => framePage(frameTool) : pages[route] ?? home;
+  const make = frameTool ? () => framePage(frameTool, third) : pages[route] ?? home;
   const nodes = [await make()].flat().filter(Boolean);
   if (make !== home) addBack(nodes, k);
   pageStoreHandler = takeStoreHandler();
@@ -471,7 +504,7 @@ async function render() {
   view.classList.toggle("wide", route === "studio" || route === "maker3d" || !!frameTool);
   view.classList.toggle("framed", !!frameTool);
   const t = activeTool();
-  document.title = `${t ? t.name : "Home"} · ${BRANDS[k].name} · Business Console`;
+  document.title = `${t ? t.name : "Home"} · ${BRANDS[k].name} · Creative Lab Studios`;
   drawNav();
   view.focus({ preventScroll: true });
   window.scrollTo(0, 0);

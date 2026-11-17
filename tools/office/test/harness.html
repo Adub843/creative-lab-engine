@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Lab Office test harness</title>
+<style>html,body{margin:0;height:100%;background:#1b1e23}iframe{display:block;width:100%;height:100vh;border:0}</style></head>
+<body>
+<!-- Stands in for the Lab (js/office.js) so the tools can be tested without claude.ai: an in-memory Lab files store.
+     Open with ?tool=docs|sheets|photo and optional &theme=light. Used by scripts/test-office.cjs. -->
+<script>
+const q = new URLSearchParams(location.search);
+if (q.get("theme")) document.documentElement.dataset.theme = q.get("theme");
+const ROWS = new Map(), BLOBS = new Map(); let n = 0;
+window.LAB_LOG = [];
+window.LAB_OFFICE = {
+  me: () => "Aaron",
+  async list(kind) { return [...ROWS.entries()].map(([id, r]) => ({ id, ...r })).filter((r) => r.kind === kind).sort((a, b) => String(b.at).localeCompare(String(a.at))); },
+  async load(id) { const row = ROWS.get(id); if (!row) throw new Error("missing"); return { row, blob: row.fileId ? BLOBS.get(row.fileId) : null, extra: row.extraId ? JSON.parse(BLOBS.get(row.extraId)) : null }; },
+  async save(o) { const id = o.id || "f" + (++n); const fileId = "b" + (++n); BLOBS.set(fileId, o.blob); let extraId = null; if (o.extra) { extraId = "x" + (++n); BLOBS.set(extraId, JSON.stringify(o.extra)); }
+    const at = new Date().toISOString(); const row = { ...(ROWS.get(id) || { at }), kind: o.kind, title: o.title, fileId, fileName: o.title + "." + o.ext, size: o.blob.size, type: o.type, text: o.text, extraId, updatedAt: at, by: "aaron" };
+    ROWS.set(id, row); LAB_LOG.push(["save", id, o.kind, o.title, o.blob.size, (o.text || "").slice(0, 200)]); return { id, at }; },
+  async remove(id) { ROWS.delete(id); LAB_LOG.push(["remove", id]); },
+  async download(blob, name) { LAB_LOG.push(["download", name, blob.size]); window.LAST_DOWNLOAD = blob; },
+  async ai(prompt) { LAB_LOG.push(["ai", prompt.slice(-200)]); return window.AI_ANSWER || "# Test heading\n\nA paragraph of **test** text.\n\n- one\n- two"; },
+  async aiJson(prompt) { LAB_LOG.push(["aiJson", prompt.slice(-200)]); return window.AI_JSON || { rows: [["Item", "Qty", "Price"], ["Tee", 2, 18.99], ["Total", "", "=SUM(C2:C2)"]] }; },
+  addRow(row) { const id = "a" + (++n); ROWS.set(id, { at: new Date().toISOString(), ...row }); return id; },
+};
+const f = document.createElement("iframe"); f.id = "tool"; f.title = "tool"; f.src = "../" + (q.get("tool") || "docs") + ".html" + (q.get("open") ? "#" + q.get("open") : "");
+document.body.appendChild(f);
+</script>
+</body>
+</html>

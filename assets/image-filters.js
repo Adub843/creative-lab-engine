@@ -5,8 +5,15 @@ import { el } from "./app.js";
 
 // Brand logos come from Kittl marked private, so they stay out of the shirt app and aren't designs to sell.
 export const isLogo = (i) => i.source === "kittl" && i.public !== true;
+// Every image belongs to one brand (lib/images.mjs): Charleston 3D, Elevated Designs or EPIX3D (an Elevated Designs
+// label, so its art sits in the Elevated Designs library and the shirt designer). Images from before brands existed
+// count as Elevated Designs, or Charleston 3D when their category says so: the same rule as the server.
+export const ART_BRANDS = { ed: "Elevated Designs", epix3d: "EPIX3D", c3d: "Charleston 3D" };
+export const brandOf = (i) => Object.hasOwn(ART_BRANDS, i?.brand ?? "") ? i.brand : /charleston\s*3d/i.test(i?.category ?? "") ? "c3d" : "ed";
+// The brands a store's pages show: Charleston 3D its own art; Elevated Designs its own and EPIX3D's.
+export const brandsFor = (store) => store === "c3d" ? ["c3d"] : ["ed", "epix3d"];
 // Charleston 3D art never shows in Elevated Designs (the two brands stay separate).
-export const isOtherBrand = (i) => /charleston\s*3d/i.test(i.category ?? "");
+export const isOtherBrand = (i) => brandOf(i) === "c3d";
 export const LOGOS = "Brand logos", SAVED = "Saved designs", OTHER = "No category";
 export function categoryOf(i) {
   if (isLogo(i)) return LOGOS;
