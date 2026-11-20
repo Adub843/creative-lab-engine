@@ -42,11 +42,11 @@ def main():
     ping = bool(req.get("ping"))
     args = dict(
         model=c.get("ALICE_CLAUDE_MODEL", "claude-opus-5-5"),
-        max_tokens=64 if ping else 16000,
+        max_tokens=64 if ping else int(req.get("max_tokens") or 16000),
         system=[{"type": "text", "text": req["system"], "cache_control": {"type": "ephemeral"}}],
         output_config={"effort": "low" if ping else c.get("ALICE_CLAUDE_EFFORT", "medium")},
     )
-    if not ping:
+    if not ping and req.get("tools", True):          # a job call (brain.job) is plain text in, text out: no web tools
         args["tools"] = TOOLS
     messages = list(req["messages"])
     msg = None

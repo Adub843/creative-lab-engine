@@ -100,6 +100,17 @@ def ask(message, session, notes=""):
     return reply
 
 
+def job(system, prompt, max_tokens=4000):
+    """One plain Claude call for a code job on Aaron's own machines (for example the Fusion design step when the local
+    model's answer fails its check). No web tools, no history, none of Alice's instructions or Aaron's saved facts.
+    Returns {"reply": ...} or {"error": ...}; "no-key" until Aaron has typed his key."""
+    if not ready():
+        return {"error": "no-key"}
+    out = run_worker({"system": str(system or "")[:60000], "messages": [{"role": "user", "content": str(prompt or "")[:120000]}],
+                      "tools": False, "max_tokens": max(64, min(int(max_tokens or 4000), 16000))})
+    return {"reply": out["reply"], "model": out.get("model", "")} if (out or {}).get("reply") else {"error": (out or {}).get("error", "unknown")}
+
+
 def last_error(payload=None):
     """For the health page: a tiny call that says whether the key works. Never returns the key."""
     out = run_worker({"system": "Reply with the single word: ready", "messages": [{"role": "user", "content": "ping"}], "ping": True})

@@ -134,6 +134,20 @@ class Brain(unittest.TestCase):
         self.assertIsNone(brain.ask("third", "sess-1"))
         self.assertEqual(len(brain._history["sess-1"]), 4)
 
+    def test_a_job_call_is_plain_and_says_no_key_until_there_is_one(self):
+        brain.ready = lambda: False
+        self.assertEqual(brain.job("sys", "make a key tag"), {"error": "no-key"})
+        brain.ready = lambda: True
+        seen = []
+        brain.run_worker = lambda p: (seen.append(p), {"reply": "{}", "model": "m"})[1]
+        self.assertEqual(brain.job("Pick a recipe.", "Design in Fusion: a key tag", 900), {"reply": "{}", "model": "m"})
+        self.assertIs(seen[0]["tools"], False)
+        self.assertEqual(seen[0]["system"], "Pick a recipe.")
+        self.assertEqual(len(seen[0]["messages"]), 1)
+        self.assertEqual(seen[0]["max_tokens"], 900)
+        brain.run_worker = lambda p: {"error": "busy"}
+        self.assertEqual(brain.job("s", "p"), {"error": "busy"})
+
     def test_her_rules_ride_along_and_the_key_is_never_in_the_request(self):
         t = brain.system_text()
         self.assertIn("Search words must never contain anything personal", t)
