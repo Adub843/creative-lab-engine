@@ -12,7 +12,8 @@ costs credits and is the last resort, only with Aaron's OK. Every step below is 
 | A logo, cookie-cutter blank, ornament from a drawing | Recipe `svg` (pick an SVG file) | anyone |
 | A library file bigger, smaller or in another format | Recipe `resize`, or the **Fusion** button on any file in Charleston 3D ▸ Print files | anyone, Alice |
 | Anything else (curves, fits, threads, multi-part) | `recipe: "script"` with a `make(design, root, P)` Python function, helpers in `LabBridge/labkit.py` | Claude writes it |
-| Turn a request in words into a job | `node scripts/fusion-design.mjs --ask "..." [--send]`, or "Ask Alice" in the 3D maker | Alice |
+| Turn a request in words into the best part | "Ask Alice" in the 3D maker ("Design in Fusion: ..."), or `node scripts/fusion-best.mjs --ask "..." [--send]`: Claude designs (recipe or script), code checks, Fusion test-builds, print check, fixes go back to Claude (3 rounds); the local model is the backup | Alice (Claude first) |
+| The local model alone (recipes only) | `node scripts/fusion-design.mjs --ask "..." [--send]` | Alice |
 | Check a file before printing | `node scripts/print-check.mjs part.stl [--bed 256x256x256]` (runs on every Fusion part) | anyone, Alice |
 | Remake a folder of files as clean 3MF/STL | `node scripts/fusion-batch.mjs --src ... --names ... --out ...` | NUC |
 | Rebuild a flat-layered STL as an editable Fusion design (.f3d) | `python scripts/stl-to-fusion-script.py` then `fusion-batch.mjs --jobs` | Claude |
@@ -39,7 +40,10 @@ Jobs go to `/api/fusion`; the NUC builds them in Fusion and saves the files to t
 
 1. Read the request (Charleston 3D ▸ Custom quotes). Find the size, the words, the colors, what it's for.
 2. Pick the recipe. If none fits, it is a script job: Claude writes it; never force a shape into a recipe.
-3. Send it (3D maker, "Ask Alice", or `fusion-design.mjs --send`).
+   "Ask Alice" does steps 2 and 3 for you, the best way (Aaron, 2026-11-19: "everything we make should be the best
+   design ... every time"): Claude designs it, Fusion test-builds it on the NUC, the print check reads it and the built
+   size must match the size Claude gave; only a part that passes goes to the Lab.
+3. Send it (3D maker, "Ask Alice", or `fusion-best.mjs --send`).
 4. Read the print check on the finished part. Fix anything marked: thicker walls, smaller text, split it.
 5. Download the 3MF into Bambu Studio, slice and print. Fusion's picture is a CAD preview for the Lab only,
    never a product photo (product photos follow the real-photo method).
