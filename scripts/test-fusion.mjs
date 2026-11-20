@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import * as FU from "../lib/fusion.mjs";
 import { handleRequest } from "../worker/app.mjs";
 
@@ -186,7 +187,7 @@ test("the add-in and recipes are valid Python, and the recipe list matches the f
   for (const c of ["python3", "python"]) { try { execFileSync(c, ["--version"], { stdio: "ignore" }); py = c; break; } catch { /* next */ } }
   if (!py) { console.log("  (no Python here: syntax check skipped)"); return; }
   const code = `import ast,sys\nfor f in sys.argv[1:]:\n    ast.parse(open(f,encoding='utf-8').read(), f)\n`;
-  execFileSync(py, ["-I", "-c", code, ...files.map((f) => new URL(f, dir).pathname)]);
+  execFileSync(py, ["-I", "-c", code, ...files.map((f) => fileURLToPath(new URL(f, dir)))]);
   for (const r of Object.keys(FU.RECIPES)) assert.match(fs.readFileSync(new URL(`recipes/${r}.py`, dir), "utf8"), /^def make\(design, root, P\):/m, `${r}.py has make()`);
   JSON.parse(fs.readFileSync(new URL("LabBridge/LabBridge.manifest", dir), "utf8"));
 });
