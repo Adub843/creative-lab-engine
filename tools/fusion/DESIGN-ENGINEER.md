@@ -18,6 +18,11 @@ costs credits and is the last resort, only with Aaron's OK. Every step below is 
 | Remake a folder of files as clean 3MF/STL | `node scripts/fusion-batch.mjs --src ... --names ... --out ...` | NUC |
 | Rebuild a flat-layered STL as an editable Fusion design (.f3d) | `python scripts/stl-to-fusion-script.py` then `fusion-batch.mjs --jobs` | Claude |
 
+**Every model goes through Fusion** (Aaron, 2026-11-20). Any 3D file saved to the Charleston 3D file library that
+Fusion didn't make (a Meshy model, an upload, an import, a Python or Blender script's STL) gets a Fusion remake job
+on its own: Fusion opens it, saves clean 3MF/STL/STEP tagged "made with Fusion", and the print check runs. Print from
+the "made with Fusion" files. New parts are designed in Fusion from the start (recipes, Ask Alice, script jobs).
+
 Jobs go to `/api/fusion`; the NUC builds them in Fusion and saves the files to the 3D file library, tagged
 "made with Fusion", plus a copy in `Aaron-Data\01 Charleston3D\Made in Fusion`.
 
