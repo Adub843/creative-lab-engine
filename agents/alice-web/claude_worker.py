@@ -35,6 +35,54 @@ def once(client, args):
             return s.get_final_message()
 
 
+class Google:
+    """Aaron's Gmail and Calendar tools: the same small program his local Alice uses (~/qwen-google/server.mjs),
+    spoken to over its standard input and output. It can read mail, email only Aaron, and change only his own events.
+    Its sign-in file is never read here."""
+
+    def __init__(self):
+        import subprocess
+        self.p = subprocess.Popen(["node", str(Path.home() / "qwen-google/server.mjs")], stdin=subprocess.PIPE,
+                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
+        self.n = 0
+        self.ask("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "alice-web", "version": "1"}})
+
+    def ask(self, method, params=None):
+        self.n += 1
+        self.p.stdin.write(json.dumps({"jsonrpc": "2.0", "id": self.n, "method": method, "params": params or {}}) + "\n")
+        self.p.stdin.flush()
+        while True:
+            line = self.p.stdout.readline()
+            if not line:
+                raise RuntimeError("google tools stopped")
+            try:
+                msg = json.loads(line)
+            except ValueError:
+                continue
+            if msg.get("id") == self.n:
+                if "error" in msg:
+                    raise RuntimeError(str(msg["error"].get("message", "error"))[:200])
+                return msg.get("result") or {}
+
+    def tool_defs(self):
+        return [{"name": t["name"], "description": t.get("description", ""), "input_schema": t.get("inputSchema") or {"type": "object"}}
+                for t in self.ask("tools/list").get("tools", [])]
+
+    def call(self, name, arguments):
+        try:
+            r = self.ask("tools/call", {"name": name, "arguments": arguments or {}})
+            return "\n".join(c.get("text", "") for c in r.get("content", []) if c.get("type") == "text") or "(nothing)", bool(r.get("isError"))
+        except Exception as e:
+            return "Error: " + str(e)[:200], True
+
+    def close(self):
+        try:
+            self.p.stdin.close()
+            self.p.terminate()
+        except Exception:
+            pass
+
+
 def main():
     req = json.load(sys.stdin)
     c = conf()
@@ -48,13 +96,30 @@ def main():
     )
     if not ping and req.get("tools", True):          # a job call (brain.job) is plain text in, text out: no web tools
         args["tools"] = TOOLS
+    # Aaron's mail and calendar, only when brain.py asks for them (his switch is on and the message is about them).
+    google = Google() if (not ping and req.get("google")) else None
+    if google:
+        args["tools"] = list(args.get("tools") or []) + google.tool_defs()
     messages = list(req["messages"])
     msg = None
-    for _ in range(4):                                   # a long web lookup can pause; send it back to continue
-        msg = once(client, dict(args, messages=messages))
-        if msg.stop_reason != "pause_turn":
+    try:
+        for _ in range(10):                              # web lookups can pause; mail and calendar tools take a turn each
+            msg = once(client, dict(args, messages=messages))
+            if msg.stop_reason == "pause_turn":
+                messages = messages + [{"role": "assistant", "content": msg.content}]
+                continue
+            if msg.stop_reason == "tool_use" and google:
+                results = []
+                for b in msg.content:
+                    if b.type == "tool_use":
+                        text, bad = google.call(b.name, b.input)
+                        results.append({"type": "tool_result", "tool_use_id": b.id, "content": text[:40000], "is_error": bad})
+                messages = messages + [{"role": "assistant", "content": msg.content}, {"role": "user", "content": results}]
+                continue
             break
-        messages = messages + [{"role": "assistant", "content": msg.content}]
+    finally:
+        if google:
+            google.close()
     if msg.stop_reason == "refusal":
         return {"error": "declined"}
     text = "".join(b.text for b in msg.content if b.type == "text").strip()
