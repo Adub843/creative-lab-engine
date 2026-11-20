@@ -197,6 +197,33 @@ function cube(sz = 10) {
   const f = [[0,2,1],[0,3,2],[4,5,6],[4,6,7],[0,1,5],[0,5,4],[1,2,6],[1,6,5],[2,3,7],[2,7,6],[3,0,4],[3,4,7]];
   return f.map((t) => t.map((i) => v[i]));
 }
+test("every model saved to the library gets a Fusion remake job; Fusion's own files and photos don't", async () => {
+  const bucket = r2();
+  const item = (name, tags = "") => ({ key: "m" + Math.random().toString(16).slice(2, 6) + "-0123abcd", name, tags });
+  const id = await FU.queueFusionRemake(bucket, item("Dragon.3mf", "made with Meshy"), clock);
+  assert.match(id, /^fu/);
+  const job = JSON.parse(await (await bucket.get(FU.JOB_PREFIX + id + ".json")).text());
+  assert.equal(job.recipe, "resize"); assert.equal(job.name, "Dragon"); assert.equal(job.params.longest, 0); assert.equal(job.auto, true);
+  assert.deepEqual(job.formats, ["3mf", "stl", "step"]);
+  assert.equal(await FU.queueFusionRemake(bucket, item("Tag.stl", "made with Fusion"), clock), null, "no loop on Fusion's own files");
+  assert.equal(await FU.queueFusionRemake(bucket, item("photo.png"), clock), null, "photos are not models");
+  for (let i = bucket.m.size; i < FU.MAX_JOBS; i++) await bucket.put(FU.JOB_PREFIX + "x" + i + ".json", "{}");
+  assert.equal(await FU.queueFusionRemake(bucket, item("Late.stl"), clock), null, "a full list skips, never fails the save");
+});
+
+test("worker: an upload to the 3D library queues the Fusion remake and still saves when there's no RESULTS bucket", async () => {
+  const fakeKV = () => { const m = new Map(); return { m, async get(k, o) { const v = m.get(k); return v ? (o === "arrayBuffer" || o?.type === "arrayBuffer" ? v.value : v.value) : null; }, async getWithMetadata(k, o) { const v = m.get(k); return v ? { value: v.value, metadata: v.metadata } : { value: null, metadata: null }; }, async put(k, value, o = {}) { m.set(k, { value, metadata: o.metadata }); }, async delete(k) { m.delete(k); }, async list({ prefix = "" } = {}) { return { keys: [...m.keys()].filter((k) => k.startsWith(prefix)).map((name) => ({ name, metadata: m.get(name).metadata })), list_complete: true }; } }; };
+  const stl = new Uint8Array(84 + 50); new DataView(stl.buffer).setUint32(80, 1, true);
+  const up = (env) => handleRequest(new Request("https://x.example/api/files", { method: "POST", headers: { "x-filename": "hook.stl", "x-console-key": KEY }, body: stl }), env);
+  const bucket = r2();
+  const res = await up({ CONSOLE_KEY: KEY, IMAGES: fakeKV(), RESULTS: bucket });
+  assert.equal(res.status, 201);
+  const { item } = await res.json();
+  assert.match(item.fusionJob, /^fu/);
+  assert.equal([...bucket.m.keys()].filter((k) => k.startsWith(FU.JOB_PREFIX)).length, 1);
+  assert.equal((await up({ CONSOLE_KEY: KEY, IMAGES: fakeKV() })).status, 201, "no bucket: the file is still saved");
+});
+
 test("print check: a cube is ready to slice; an open or oversized part is flagged", async () => {
   const PC = await import("./print-check.mjs");
   const good = PC.checkMesh(cube());
