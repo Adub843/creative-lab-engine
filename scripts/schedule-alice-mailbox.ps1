@@ -25,7 +25,8 @@ cd /d "$repo"
 "$node" scripts\alice-mailbox.mjs > "$runs\last-run.log" 2>&1
 "@ | Set-Content -LiteralPath $run -Encoding ascii
 
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -Command `"& '$run'`"" -WorkingDirectory $repo
+# run-hidden.vbs, not "powershell -WindowStyle Hidden": that still flashes a terminal window on the screen every minute (Aaron, 2026-11-19).
+$action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "//B //Nologo `"$repo\scripts\run-hidden.vbs`" `"$run`"" -WorkingDirectory $repo
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
