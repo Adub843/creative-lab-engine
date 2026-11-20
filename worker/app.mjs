@@ -34,7 +34,7 @@ import { handleTeam } from "../lib/team.mjs";
 import { handlePicture } from "../lib/picture.mjs";
 import { handleHandoffs } from "../lib/handoffs.mjs";
 import { handleAlice } from "../lib/alice-mail.mjs";
-import { handleFusion } from "../lib/fusion.mjs";
+import { handleFusion, queueFusionRemake } from "../lib/fusion.mjs";
 import { runScheduledSnapshots } from "../lib/tracker.mjs";
 import { syncKittlLibrary, STATE_KEY as KITTL_STATE_KEY, SYNC_DEBOUNCE_MS } from "../lib/kittl-sync.mjs";
 import { buildDigest, saveDigest, digestKey, isDigestDate, DIGEST_LATEST } from "../lib/digest.mjs";
@@ -125,6 +125,9 @@ const alice = jsonRoute((r, ctx) => handleAlice(r, ctx, ctx.sub));
 const fusion = jsonRoute((r, ctx) => handleFusion(r, ctx, ctx.sub));
 const taxes = jsonRoute(handleTaxes);
 const marketingKv = (env) => (env?.MARKETING && typeof env.MARKETING.get === "function" ? env.MARKETING : null);
+
+// Every model saved to the 3D file library (upload, import, Meshy, script) gets a Fusion remake job (lib/fusion.mjs).
+const fusionRemake = (env) => (env?.RESULTS && typeof env.RESULTS.get === "function" ? (item) => queueFusionRemake(env.RESULTS, item) : null);
 
 // Previews are small, so they stay in KV either way.
 const fileStore = (env) => env.FILES
@@ -223,12 +226,12 @@ export async function handleRequest(req, env) {
     // otherwise in the IMAGES KV namespace under their own prefix. Never in the image list.
     if (pathname === "/api/files" || pathname.startsWith("/api/files/")) {
       imageStore(env); // same binding check and message as the image library
-      return await handleFiles(req, { blobs: fileStore(env), thumbs: kvBlobStore(env.IMAGES, "c3d-thumb:"), env: envReader(env) });
+      return await handleFiles(req, { blobs: fileStore(env), thumbs: kvBlobStore(env.IMAGES, "c3d-thumb:"), env: envReader(env), afterSave: fusionRemake(env) });
     }
     // The 3D maker: jobs under their own prefix; a model it keeps goes into the 3D file library above.
     if (pathname === "/api/meshy" || pathname.startsWith("/api/meshy/")) {
       imageStore(env);
-      return await handleMeshy(req, { jobs: kvBlobStore(env.IMAGES, "c3d-meshy:"), files: fileStore(env), env: envReader(env), fetch: (input, init) => fetch(input, init) });
+      return await handleMeshy(req, { jobs: kvBlobStore(env.IMAGES, "c3d-meshy:"), files: fileStore(env), env: envReader(env), fetch: (input, init) => fetch(input, init), afterSave: fusionRemake(env) });
     }
     if (pathname === "/api" || pathname.startsWith("/api/")) return json({ error: "Not found" }, 404);
   } catch (e) {
