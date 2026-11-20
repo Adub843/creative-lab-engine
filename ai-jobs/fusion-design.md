@@ -9,6 +9,10 @@ files land in the Charleston 3D file library. The design-engineer guide is `tool
 ## When it runs
 On demand: when someone asks Alice in the Lab with a message that starts "Design in Fusion:" (the 3D maker's
 "Ask Alice" box sends that), or from the command line `node scripts/fusion-design.mjs --ask "..."`. One run per request.
+Since 2026-11-19 Alice's mailbox runs `scripts/fusion-best.mjs`: Claude designs first (it may also write a script),
+and this job is the local model's backup when Claude can't be reached. Either way the answer is test-built in Fusion
+and print-checked before it goes to the Lab, and the problems are sent back for up to 3 rounds. Designs Claude got
+through are saved in `ai-jobs/runs/fusion-design-examples/` as examples for this job.
 
 ## Inputs
 ```json

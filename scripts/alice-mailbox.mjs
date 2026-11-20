@@ -16,7 +16,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readKey } from "../drive-server/key.mjs";
 import { withForward } from "./run-ai-job.mjs";
-import { DESIGN_PREFIX, designInput, designWith, jobFor, replyFor, sendJob } from "./fusion-design.mjs";
+import { sendJob } from "./fusion-design.mjs";
+import { DESIGN_PREFIX, bestInput, bestReply, designBest, labJob } from "./fusion-best.mjs";
 
 const ENGINE = process.env.CONSOLE_URL ?? "https://creative-lab-engine.business-console.workers.dev";
 const ENGINES = JSON.parse(fs.readFileSync(fileURLToPath(new URL("../ai-jobs/engines.json", import.meta.url)), "utf8")).engines;
@@ -95,12 +96,14 @@ async function main() {
         };
         let text;
         if (DESIGN_PREFIX.test(q.text)) {
-          // "Design in Fusion: ..." from the Lab's 3D maker: Alice works as the design engineer (scripts/fusion-design.mjs).
-          const input = designInput(q.text);
-          const d = await designWith((m) => chat(m, 0.2, 1200), input);
-          if (!d.ok) text = "I couldn't turn that into a Fusion part I trust yet. Add the size in millimetres and what it's for, or ask Claude for a custom script.";
-          else if (d.output.canDo !== "yes") text = replyFor(d.output, false);
-          else { await sendJob(jobFor(d.output, input), key); text = replyFor(d.output, true); }
+          // "Design in Fusion: ..." from the Lab's 3D maker: the best design every time (scripts/fusion-best.mjs).
+          // Claude designs (a recipe or a custom script), code checks it, Fusion test-builds it here, the print check
+          // reads it, and problems go back to Claude; the model loaded on the Blink is the backup with the same checks.
+          const input = bestInput(q.text);
+          const d = await designBest(input, { local: (m) => chat(m, 0.2, 1200), log: (m) => log(`design: ${m}`) });
+          const send = d.ok && d.output.canDo === "yes";
+          if (send) await sendJob(labJob(d.output, input), key);
+          text = bestReply(d, send);
         } else text = (await chat(messagesFor(q))).replace(/<think>[\s\S]*?<\/think>/g, "").trim();
         if (!text) throw new Error("the model gave an empty answer");
         await engine("/api/alice/answer", key, { method: "POST", body: JSON.stringify({ id: q.id, text: text.slice(0, 6000) }) });

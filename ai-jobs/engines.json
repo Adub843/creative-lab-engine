@@ -3,6 +3,7 @@
   "engines": {
     "local-small": { "ssh": "AI1@100.99.149.38", "port": 11434, "model": "qwen3-4b-16k", "maxTokens": 1200, "timeoutMs": 900000 },
     "local-big": { "ssh": "aaronlewis@100.70.128.45", "port": 1234, "model": "qwen/qwen3-4b-2507", "maxTokens": 2000 },
+    "claude-blink": { "ssh": "aaronlewis@100.70.128.45", "port": 8650, "about": "Alice's Claude on the Blink (/api/claude-job, local-only), reached over SSH to the Blink's own localhost so the key never leaves the Blink. Used first by the Fusion design step (scripts/fusion-best.mjs); not in the local fallback chain." },
     "claude": { "manual": true }
   },
   "fallback": { "local-big": "local-small", "local-small": "local-big" }

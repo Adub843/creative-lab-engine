@@ -418,6 +418,17 @@ class Handler(BaseHTTPRequestHandler):
             self.send(404, {"error": "not found"})
 
     def do_POST(self):
+        if self.path == "/api/claude-job":
+            # A plain Claude call for a code job (the Fusion design step). Only from this machine itself: the tailnet
+            # share adds forwarding headers, and anything that carries them is turned away. The key never leaves the Blink.
+            if any(self.headers.get(h) for h in ("X-Forwarded-For", "X-Forwarded-Host", "Tailscale-User-Login", "Origin"))                     or self.client_address[0] not in ("127.0.0.1", "::1"):
+                return self.send(403, {"error": "local only"})
+            try:
+                body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length", 0)), 400_000)))
+                out = brain.job(body.get("system", ""), body.get("prompt", ""), body.get("max_tokens", 4000))
+            except Exception as e:
+                return self.send(400, {"error": "bad request: " + e.__class__.__name__})
+            return self.send(200 if "reply" in out else 503, out)
         if self.path not in ("/api/chat", "/api/talk"):
             return self.send(404, {"error": "not found"})
         origin = self.headers.get("Origin", "")
