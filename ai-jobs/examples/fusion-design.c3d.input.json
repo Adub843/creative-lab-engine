@@ -1,0 +1,102 @@
+{
+  "store": "c3d",
+  "ask": "a key tag about 70 mm wide that says Rainbow Row",
+  "recipes": {
+    "box": {
+      "label": "Storage box",
+      "about": "An open box with rounded corners and an optional slip-on lid.",
+      "params": {
+        "width": {
+          "type": "number",
+          "min": 10,
+          "max": 250,
+          "default": 80
+        },
+        "depth": {
+          "type": "number",
+          "min": 10,
+          "max": 250,
+          "default": 60
+        },
+        "height": {
+          "type": "number",
+          "min": 5,
+          "max": 250,
+          "default": 40
+        },
+        "wall": {
+          "type": "number",
+          "min": 0.8,
+          "max": 10,
+          "default": 2
+        },
+        "corner": {
+          "type": "number",
+          "min": 0,
+          "max": 30,
+          "default": 4
+        },
+        "lid": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "plate": {
+      "label": "Sign, name plate or key tag",
+      "about": "A rounded plate with raised text, and a key ring hole or screw holes if asked.",
+      "params": {
+        "text": {
+          "type": "text",
+          "max": 40,
+          "default": "Charleston"
+        },
+        "width": {
+          "type": "number",
+          "min": 20,
+          "max": 250,
+          "default": 90
+        },
+        "height": {
+          "type": "number",
+          "min": 10,
+          "max": 250,
+          "default": 30
+        },
+        "thickness": {
+          "type": "number",
+          "min": 1,
+          "max": 20,
+          "default": 3
+        },
+        "corner": {
+          "type": "number",
+          "min": 0,
+          "max": 40,
+          "default": 5
+        },
+        "textSize": {
+          "type": "number",
+          "min": 3,
+          "max": 120,
+          "default": 10
+        },
+        "textDepth": {
+          "type": "number",
+          "min": 0.4,
+          "max": 10,
+          "default": 1.2
+        },
+        "holes": {
+          "type": "choice",
+          "options": [
+            "none",
+            "keyring",
+            "screws"
+          ],
+          "default": "keyring"
+        }
+      }
+    }
+  }
+}

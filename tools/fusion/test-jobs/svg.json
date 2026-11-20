@@ -1,0 +1,1 @@
+{ "name": "Test SVG ring", "recipe": "svg", "params": { "svg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M50 5 A45 45 0 1 1 49.9 5 Z M50 30 A20 20 0 1 0 50.1 30 Z' fill-rule='evenodd'/><rect x='5' y='90' width='30' height='8'/></svg>", "width": 60, "thickness": 4 }, "formats": ["3mf", "stl"] }
