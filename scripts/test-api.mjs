@@ -3936,6 +3936,89 @@ test("worker: /api/team uses the MARKETING KV", async () => {
   assert.equal((await W.handleRequest(new Request("https://console.example/api/team?store=c3d"), env)).status, 401);
 });
 
+// ---------- 3D maker through the PC (no Meshy key: the CLI signed in on Aaron's PC does the Meshy calls) ----------
+function relayCtx() {
+  const kv = fakeKV(), r2 = fakeR2(), calls = [];
+  const fetch = async (url) => { calls.push(String(url)); throw new Error("nothing may reach Meshy from the engine"); };
+  return { kv, r2, calls, ctx: { jobs: kvBlobStore(kv, "c3d-meshy:"), files: kvBlobStore(kv, "c3d-file:"), env: envOf({ MESHY_API_KEY: undefined }), fetch, relay: r2, relayJobs: r2BlobStore(r2, "meshy/job/") } };
+}
+test("meshy via the PC: no key prompt, jobs wait for the PC runner, files come back through the engine", async () => {
+  const { ctx, r2, calls, kv } = relayCtx();
+  assert.equal((await handleMeshy(mreq("/api/meshy/runner", { headers: {} }), ctx)).status, 401, "the runner needs the console key too");
+  let st = await (await handleMeshy(mreq("/api/meshy"), ctx)).json();
+  assert.deepEqual([st.configured, st.via, st.runner.online, st.balance, st.jobs], [true, "pc", false, null, []], "the page never asks for a key");
+  // a photo job and a words job wait in R2 (never KV), and nothing reaches Meshy from the engine
+  const photo = (await (await handleMeshy(mreq("/api/meshy/jobs", { method: "POST", body: { mode: "photos", images: [DATA_PNG], name: "Pineapple", color: true } }), ctx)).json()).job;
+  const words = await handleMeshy(mreq("/api/meshy/jobs", { method: "POST", body: { mode: "words", prompt: "a lighthouse keychain", name: "Lighthouse" } }), ctx);
+  assert.equal(words.status, 201);
+  const w = (await words.json()).job;
+  assert.deepEqual([photo.status, photo.cost, w.kind, w.cost], ["PENDING", 30, "words", 20]);
+  assert.ok(!("taskId" in photo) && !("waiting" in photo));
+  assert.equal(calls.length, 0);
+  assert.ok(![...kv.m.keys()].some((k) => k.startsWith("c3d-meshy:")), "PC jobs live in R2, not KV");
+  assert.equal((await handleMeshy(mreq("/api/meshy/jobs", { method: "POST", body: { mode: "words", prompt: "x" } }), ctx)).status, 400, "same checks as with a key");
+  // the runner says hello with the balance and gets what to send
+  const hello = await (await handleMeshy(mreq("/api/meshy/runner?balance=1820&signedIn=1&v=1"), ctx)).json();
+  assert.deepEqual(hello.send.sort(), [photo.id, w.id].sort());
+  assert.deepEqual(hello.watch, []);
+  st = await (await handleMeshy(mreq("/api/meshy"), ctx)).json();
+  assert.deepEqual([st.runner.online, st.runner.signedIn, st.balance], [true, true, 1820]);
+  const rq = await (await handleMeshy(mreq(`/api/meshy/runner/req/${w.id}`), ctx)).json();
+  assert.equal(rq.path, "/openapi/v2/text-to-3d");
+  assert.deepEqual([rq.body.mode, rq.body.prompt, rq.body.target_formats], ["preview", "a lighthouse keychain", ["glb", "stl", "3mf", "obj"]]);
+  const prq = await (await handleMeshy(mreq(`/api/meshy/runner/req/${photo.id}`), ctx)).json();
+  assert.deepEqual([prq.path, prq.body.image_url, prq.body.should_texture], ["/openapi/v1/image-to-3d", DATA_PNG, true]);
+  // sent once only: a second report can't send it again
+  const TASK = "0193a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b";
+  await handleMeshy(mreq(`/api/meshy/runner/sent/${w.id}`, { method: "POST", body: { taskId: TASK } }), ctx);
+  await handleMeshy(mreq(`/api/meshy/runner/sent/${w.id}`, { method: "POST", body: { taskId: "ffffffff-0000-0000-0000-000000000000" } }), ctx);
+  await handleMeshy(mreq(`/api/meshy/runner/sent/${photo.id}`, { method: "POST", body: { error: "Meshy couldn't use that photo." } }), ctx);
+  assert.equal((await handleMeshy(mreq(`/api/meshy/runner/req/${w.id}`), ctx)).status, 404, "the request is gone once sent");
+  const h2 = await (await handleMeshy(mreq("/api/meshy/runner"), ctx)).json();
+  assert.deepEqual([h2.send, h2.watch], [[], [{ id: w.id, kind: "words", taskId: TASK, path: "/openapi/v2/text-to-3d" }]]);
+  assert.equal((await (await handleMeshy(mreq("/api/meshy"), ctx)).json()).balance, 1820, "a hello without a balance keeps the last one");
+  const failed = (await (await handleMeshy(mreq(`/api/meshy/jobs/${photo.id}`), ctx)).json()).job;
+  assert.deepEqual([failed.status, failed.error], ["FAILED", "Meshy couldn't use that photo."]);
+  // progress, then files, then done
+  await handleMeshy(mreq(`/api/meshy/runner/status/${w.id}`, { method: "POST", body: { status: "IN_PROGRESS", progress: 40 } }), ctx);
+  let live = (await (await handleMeshy(mreq(`/api/meshy/jobs/${w.id}`), ctx)).json()).job;
+  assert.deepEqual([live.status, live.progress], ["IN_PROGRESS", 40]);
+  assert.ok(!JSON.stringify(live).includes(TASK), "Meshy's task id stays on the server");
+  assert.equal((await handleMeshy(mreq(`/api/meshy/runner/status/${w.id}`, { method: "POST", body: { status: "SUCCEEDED", progress: 100, formats: ["stl"] } }), ctx)).status, 409, "no done before the files");
+  const STL = new Uint8Array(84 + 100); new DataView(STL.buffer).setUint32(80, 2, true);
+  const put = (fmt, bytes) => handleMeshy(new Request(`https://console.example/api/meshy/runner/file/${w.id}/${fmt}`, { method: "PUT", headers: KEYH, body: bytes }), ctx);
+  assert.equal((await put("stl", STL)).status, 200);
+  assert.equal((await put("picture", PNG)).status, 200);
+  assert.equal((await put("exe", STL)).status, 404);
+  await handleMeshy(mreq(`/api/meshy/runner/status/${w.id}`, { method: "POST", body: { status: "SUCCEEDED", progress: 100, formats: ["stl", "3mf", "glb"], credits: 20, expiresAt: 123 } }), ctx);
+  live = (await (await handleMeshy(mreq(`/api/meshy/jobs/${w.id}`), ctx)).json()).job;
+  assert.deepEqual([live.status, live.formats, live.picture, live.credits], ["SUCCEEDED", ["stl"], true, 20], "only files that really arrived are offered");
+  const stl = await handleMeshy(mreq(`/api/meshy/jobs/${w.id}/file/stl`), ctx);
+  assert.equal(stl.headers.get("content-disposition"), 'attachment; filename="Lighthouse.stl"');
+  assert.equal((await stl.arrayBuffer()).byteLength, 184);
+  assert.equal((await handleMeshy(mreq(`/api/meshy/jobs/${w.id}/file/picture`), ctx)).headers.get("content-type"), "image/png");
+  assert.equal((await handleMeshy(mreq(`/api/meshy/jobs/${w.id}/file/glb`), ctx)).status, 404);
+  // color is a new PC job built on the finished shape
+  const cj = (await (await handleMeshy(mreq(`/api/meshy/jobs/${w.id}/color`, { method: "POST" }), ctx)).json()).job;
+  assert.deepEqual([cj.name, cj.cost, cj.from, cj.status], ["Lighthouse (color)", 10, w.id, "PENDING"]);
+  const crq = await (await handleMeshy(mreq(`/api/meshy/runner/req/${cj.id}`), ctx)).json();
+  assert.deepEqual([crq.body.mode, crq.body.preview_task_id], ["refine", TASK]);
+  // save: no 3MF arrived, so the STL goes into the 3D file library
+  const saved = await handleMeshy(mreq(`/api/meshy/jobs/${w.id}/save`, { method: "POST", body: { format: "3mf" } }), ctx);
+  assert.equal(saved.status, 201);
+  const item = (await saved.json()).item;
+  assert.deepEqual([item.name, item.tags], ["Lighthouse.stl", "made with Meshy"]);
+  assert.equal((await (await handleMeshy(mreq(`/api/meshy/jobs/${w.id}`), ctx)).json()).job.saved, item.key);
+  // delete takes the job and its copies away
+  assert.equal((await handleMeshy(mreq(`/api/meshy/jobs/${w.id}`, { method: "DELETE" }), ctx)).status, 200);
+  assert.ok(![...r2.m.keys()].some((k) => k.includes(w.id)));
+  assert.equal((await handleMeshy(mreq(`/api/meshy/jobs/${w.id}`), ctx)).status, 404);
+  assert.equal(calls.length, 0, "the engine itself never called Meshy");
+  // with a key the runner routes are off
+  const keyed = meshyCtx();
+  assert.equal((await handleMeshy(mreq("/api/meshy/runner"), { ...keyed.ctx, relay: r2, relayJobs: r2BlobStore(r2, "meshy/job/") })).status, 409);
+});
+
 // ---------- 3D file library in R2 (lib/r2-store.mjs) ----------
 const { r2BlobStore, combinedStore } = await import("../lib/r2-store.mjs");
 // A small stand-in for an R2 bucket binding: put/get/delete/list with customMetadata and paging.
@@ -3944,10 +4027,11 @@ function fakeR2({ pageSize = 1000 } = {}) {
   return { m,
     async put(key, data, { customMetadata } = {}) {
       for (const v of Object.values(customMetadata ?? {})) assert.equal(typeof v, "string", "R2 custom metadata values are strings");
+      if (typeof data === "string") data = new TextEncoder().encode(data);
       const bytes = data instanceof ArrayBuffer ? data.slice(0) : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
       m.set(key, { bytes, customMetadata: { ...customMetadata } });
     },
-    async get(key) { const o = m.get(key); return o ? { key, customMetadata: o.customMetadata, arrayBuffer: async () => o.bytes.slice(0) } : null; },
+    async get(key) { const o = m.get(key); return o ? { key, customMetadata: o.customMetadata, arrayBuffer: async () => o.bytes.slice(0), text: async () => new TextDecoder().decode(o.bytes) } : null; },
     async delete(key) { m.delete(key); },
     async list({ prefix = "", cursor, include = [] } = {}) {
       const names = [...m.keys()].filter((k) => k.startsWith(prefix)).sort();
