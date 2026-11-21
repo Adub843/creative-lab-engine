@@ -444,14 +444,15 @@ function unzip(buf) { const out = {}; let o = 0;
   }
 
   /* the other generators share the same builds: each one switches on, shows its own options, and exports sealed parts */
-  for (const [mode, want] of [["bookmark", "Base"], ["coaster", "Base"], ["magnet", "Base back (magnet pockets)"], ["ornament", "Base"], ["stamp", "Handle (glue to the back)"], ["painting", "Layer 2"], ["qr", "Code"], ["relief", null]]) {
+  for (const [mode, want] of [["bookmark", "Base"], ["coaster", "Base"], ["magnet", "Base back (magnet pockets)"], ["ornament", "Base"], ["stamp", "Handle (glue to the back)"], ["painting", "Layer 2"], ["qr", "Code"], ["puzzle", "Tiles colour"], ["relief", null]]) {
     await step(`${mode}: builds and exports${want ? " sealed parts" : ""}`, async () => {
       await page.click('[data-dp="design"]'); await page.evaluate((m) => mkSetMode(m), mode);
       if (mode === "qr") { await page.fill("#mkQr", "https://example.com/a-longer-link-for-the-test"); await page.waitForFunction(() => MK.L && MK.L.parts && MK.L.parts.length === 2, null, { timeout: 15000 }); }
       await settle(700);
       const info = await page.evaluate(() => ({ title: mkTitle(), fam: mkFam(), up: !!(MK.L && MK.L.up), parts: MK.L && MK.L.parts ? MK.L.parts.map((x) => x.name) : null, lid: MK.L && MK.L.parts ? MK.L.parts.filter((x) => x.lid).length : 0 }));
       if (want) { assert.ok(info.parts.some((n) => n.startsWith(want)), `${mode} has "${want}": ${info.parts}`); assert.deepEqual(await bad(), []); }
-      assert.equal(info.up, ["stamp", "painting", "qr"].includes(mode));
+      assert.equal(info.up, ["stamp", "painting", "qr", "puzzle"].includes(mode));
+      if (mode === "puzzle") { const z = await page.evaluate(() => MK.L.puzzle); assert.equal(z.n, z.nx * z.ny, "a full rectangle of tiles"); assert.equal(info.lid, 2, "the tray is on plate 2"); }
       if (mode === "stamp") assert.equal(info.lid, 1, "the handle is on plate 2");
       if (mode === "painting") { const z = await page.evaluate(() => MK.L.parts.map((x) => [x.z0, x.z1])); for (let i = 1; i < z.length; i++) assert.equal(z[i][0], z[i - 1][1], "each colour starts where the last one ends"); }
       assert.equal(await page.isVisible("#mkMagN"), false || (mode === "magnet" && await page.isVisible("#mkMagN")));
