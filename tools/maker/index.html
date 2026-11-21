@@ -1181,6 +1181,8 @@ async function lbBuild(){ if(MK.busy) return; if(!mkHasContent()){ toast("Add an
       const one=mkUnion(L.parts.filter(p=>!p.lid),L), oneLid=lid.length?mkUnion(L.parts.filter(p=>p.lid),L):null, stand=mkFam()==="lightbox"&&MK.stand?mkStandMesh(L):null; if(stand) stand.name="Base";
       for(const x of [...front,...lid,one,...(oneLid?[oneLid]:[]),...(stand?[stand]:[])]){ if(!MakerGeo.sealed(x)){ sealed.ok=false; sealed.bad++; } } sealed.n=front.length+lid.length+(stand?1:0);
       const objects=[{name:mkFam()==="lightbox"?"Front and side":mkTitle(),plateName:mkFam()==="lightbox"?"Front and side":mkTitle(),plate:1,parts:front}];
+      /* the back cover goes out as one joined piece: plate and rim as two bodies make Bambu Studio flag the rim as a loose object */
+      if(mkFam()==="lightbox"&&oneLid&&lid.length>1&&oneLid.tris.length){ const c=lid[0].color; lid.length=0; lid.push({name:"Back cover",color:c,verts:oneLid.verts,tris:oneLid.tris,lid:true}); }
       if(lid.length) objects.push({name:L.plate2||"Back cover",plateName:L.plate2||(stand?"Back and base":"Back cover"),plate:2,parts:lid}); if(stand) objects.push({name:"Base",plateName:"Base",plate:lid.length?2:1,parts:[stand]});
       plates=[...new Set(objects.map(o=>o.plate))]; const thumbs={}; for(const pl of plates){ const t=await mkPlatePng(L,pl===2&&lid.length>0); if(t) thumbs[pl]=t; }
       await mkPresets(); const pr=await MakerBambu.project({title:name,printer:MK.printer,nozzle:MK.nozzle,presets:window.MakerBambuPresets,objects,thumbs});
