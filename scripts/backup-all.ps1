@@ -1,4 +1,4 @@
-# Nightly backup of every machine to the Dell server (\\192.168.1.221\Files\Backups). Runs on the NUC at 2:15 AM
+# Nightly backup of every machine to the Dell server (\\192.168.1.221\HDD-Storage\Files\Backups). Runs on the NUC at 2:15 AM
 # (task "Creative Lab nightly backup"). Nothing is ever deleted on a source machine.
 #
 #   Blink    Alice, Steve, the console copy and its data, the team board, all service files   -> Backups\Blink
@@ -21,7 +21,7 @@ param([ValidateSet('All', 'Blink', 'GMKtec', 'NUC')][string]$Only = 'All', [swit
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent
 $hq = Join-Path $env:USERPROFILE 'OneDrive\Desktop\Creative Lab HQ'
-$dest = '\\192.168.1.221\Files\Backups'
+$dest = '\\192.168.1.221\HDD-Storage\Files\Backups'
 $log = Join-Path $hq '00 Recovery\backup-log.txt'
 $blink = 'aaronlewis@100.70.128.45'
 $k15 = 'AI1@100.99.149.38'
@@ -60,7 +60,7 @@ function Store($file, $folder, $name) {
 }
 function Size($path) { '{0:N1} MB' -f ((Get-Item $path).Length / 1MB) }
 
-if (-not (Test-Path '\\192.168.1.221\Files')) { Say 'FAILED: the Dell server share is not reachable. Nothing was backed up.'; exit 1 }
+if (-not (Test-Path '\\192.168.1.221\HDD-Storage\Files')) { Say 'FAILED: the Dell server share is not reachable. Nothing was backed up.'; exit 1 }
 foreach ($d in 'Blink', 'GMKtec', 'NUC') { New-Item -ItemType Directory -Force -Path (Join-Path $dest $d) | Out-Null }
 $tmp = Join-Path $env:TEMP 'creative-lab-backup'; New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 $failed = @()
