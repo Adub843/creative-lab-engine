@@ -18,6 +18,7 @@
 // for the shirt app, lib/members.mjs), DRIVE_ORIGIN (the E: drive library's tunnel on Aaron's PC, lib/drive.mjs).
 import { handleProducts, HttpError, requireKey } from "../lib/shopify.mjs";
 import { handleInsights } from "../lib/insights.mjs";
+import { handleOrders } from "../lib/orders.mjs";
 import { handleRequests } from "../lib/requests.mjs";
 import { handleListings, libraryReader } from "../lib/listings.mjs";
 import { handleC3dListings, MAX_PHOTO_BYTES } from "../lib/c3d-listings.mjs";
@@ -114,6 +115,7 @@ const imageStore = (env) => {
 
 const products = jsonRoute(handleProducts);
 const insights = jsonRoute(handleInsights);
+const orders = jsonRoute(handleOrders);
 const requests = jsonRoute(handleRequests);
 const listings = jsonRoute(handleListings);
 const pricing = jsonRoute(handlePricing);
@@ -140,6 +142,7 @@ export async function handleRequest(req, env) {
   try {
     if (pathname === "/api/products") return await products(req, env);
     if (pathname === "/api/insights") return await insights(req, env);
+    if (pathname === "/api/orders") return await orders(req, env);
     // Charleston 3D custom requests for the sorting job: request text only, never who sent it (lib/requests.mjs).
     if (pathname === "/api/requests") return await requests(req, env);
     if (pathname === "/api/marketing") return await marketing(req, env, { kv: marketingKv(env) });
