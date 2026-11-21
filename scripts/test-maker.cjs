@@ -113,7 +113,7 @@ function unzip(buf) { const out = {}; let o = 0;
     await page.fill("#mkImgT", "0.9"); await page.fill("#mkLidT", "2.5"); await settle();
     let z = await zOf();
     assert.deepEqual(z["Colour 1"], [0, 0.9]); assert.deepEqual(z["White diffuser"], [0.9, 1.9]); assert.deepEqual(z["Frame front"], [0, 1.9]);
-    assert.deepEqual(z["Back cover"], [0, 2.5]); assert.deepEqual(z["Back cover rim"], [2.5, 8.5]); assert.deepEqual(z["White lining"], [1.9, 40]);
+    assert.deepEqual(z["Back cover"], [0, 2.5]); assert.deepEqual(z["Back cover rim"], [0, 8.5]); assert.deepEqual(z["White lining"], [1.9, 40]);
     await page.evaluate(() => { const r = document.getElementById("mkDepthR"); r.value = 60; r.dispatchEvent(new Event("input", { bubbles: true })); }); await settle();
     assert.equal(await page.inputValue("#mkDepth"), "60"); z = await zOf(); assert.deepEqual(z["Box wall"], [0, 60]);
     await page.fill("#mkFrameW", "12"); await settle();
@@ -296,7 +296,7 @@ function unzip(buf) { const out = {}; let o = 0;
     await page.click("#mkBedBtn"); await page.click('#mkBedMenu [data-bed="a1mini"]'); await open("dims"); await page.fill("#lbW", "200"); await settle();
     assert.match(await page.textContent("#mkCheck"), /too big for the A1 mini bed/);
     await page.fill("#lbW", "120"); await page.click("#mkBedBtn"); await page.click('#mkBedMenu [data-bed="x1"]'); await settle();
-    assert.match(await page.textContent("#mkCheck"), /Fits the X1C bed \(256 × 256 mm\)/);
+    assert.match(await page.textContent("#mkCheck"), /Fits the P1S bed \(256 × 256 mm\)/);
   });
 
   await step("canvas toolbar: zoom, hand and the light box frame toggle", async () => {
@@ -364,18 +364,38 @@ function unzip(buf) { const out = {}; let o = 0;
     const z = unzip(fs.readFileSync(zp)); const tm = Object.keys(z).find((n) => n.endsWith(".3mf")); assert.ok(tm, Object.keys(z).join());
     assert.match(z["HOW TO PRINT.txt"].toString(), /H2D with a 0\.6 mm nozzle/);
     const m = unzip(z[tm]);
-    for (const f of ["[Content_Types].xml", "_rels/.rels", "3D/3dmodel.model", "Metadata/model_settings.config"]) assert.ok(m[f], f);
-    const model = m["3D/3dmodel.model"].toString(), conf = m["Metadata/model_settings.config"].toString();
-    const chk = await page.evaluate(([model, conf]) => { const P = new DOMParser(); const x = P.parseFromString(model, "application/xml"), c = P.parseFromString(conf, "application/xml");
-      if (x.querySelector("parsererror") || c.querySelector("parsererror")) return { ok: false };
+    // a Bambu Studio project: objects made of parts kept in 3D/Objects, every part on a filament, colours and presets in project_settings
+    for (const f of ["[Content_Types].xml", "_rels/.rels", "3D/3dmodel.model", "3D/_rels/3dmodel.model.rels", "3D/Objects/object_1.model", "3D/Objects/object_2.model", "3D/Objects/object_3.model", "Metadata/model_settings.config", "Metadata/project_settings.config", "Metadata/plate_1.png", "Metadata/plate_2.png"]) assert.ok(m[f], f);
+    assert.equal(m["Metadata/plate_1.png"].slice(1, 4).toString(), "PNG"); assert.ok(!m["Metadata/plate_1.png"].equals(m["Metadata/plate_2.png"]), "each plate has its own picture");
+    const model = m["3D/3dmodel.model"].toString(), conf = m["Metadata/model_settings.config"].toString(), proj = JSON.parse(m["Metadata/project_settings.config"].toString());
+    assert.match(model, /<metadata name="Application">BambuStudio-/);
+    const objs = [1, 2, 3].map((i) => m[`3D/Objects/object_${i}.model`].toString());
+    const chk = await page.evaluate(([model, conf, objs]) => { const P = new DOMParser(); const x = P.parseFromString(model, "application/xml"), c = P.parseFromString(conf, "application/xml"), o = objs.map((t) => P.parseFromString(t, "application/xml"));
+      if ([x, c, ...o].some((d) => d.querySelector("parsererror"))) return { ok: false };
       const items = [...x.getElementsByTagName("item")].map((i) => [i.getAttribute("objectid"), +i.getAttribute("transform").split(" ")[9], +i.getAttribute("transform").split(" ")[10]]);
-      const byId = Object.fromEntries([...x.getElementsByTagName("object")].map((o) => [o.getAttribute("id"), o])); const assemblies = items.map((i) => byId[i[0]]);
-      const meshes = [...x.getElementsByTagName("object")].filter((o) => o.getElementsByTagName("mesh").length);
-      return { ok: true, items: items.length, plateX: items.map((i) => Math.round(i[1])), plateY: items.map((i) => Math.round(i[2])), assemblies: assemblies.map((o) => o.getAttribute("name")), meshesOk: meshes.every((o) => o.getElementsByTagName("triangle").length > 0), plates: c.getElementsByTagName("plate").length }; }, [model, conf]);
-    assert.ok(chk.ok, "3MF xml parses"); assert.equal(chk.items, 3); assert.equal(chk.plates, 2); assert.ok(chk.meshesOk);
+      const cobj = [...c.getElementsByTagName("object")], md = (el, k) => { const q = [...el.children].find((e) => e.tagName === "metadata" && e.getAttribute("key") === k); return q && q.getAttribute("value"); };
+      const parts = cobj.flatMap((ob) => [...ob.getElementsByTagName("part")].map((pt) => ({ id: pt.getAttribute("id"), name: md(pt, "name"), ex: +md(pt, "extruder") })));
+      const meshIds = o.flatMap((d) => [...d.getElementsByTagName("object")].map((e) => e.getAttribute("id"))), comps = [...x.getElementsByTagName("component")].map((e) => e.getAttribute("objectid"));
+      // every mesh is sealed: each edge is used once each way
+      const sealed = o.every((d) => [...d.getElementsByTagName("object")].every((e) => { const t = [...e.getElementsByTagName("triangle")]; if (!t.length) return false; const m = new Set(); for (const q of t) { const v = [q.getAttribute("v1"), q.getAttribute("v2"), q.getAttribute("v3")]; for (let k = 0; k < 3; k++) { const key = v[k] + ">" + v[(k + 1) % 3]; if (m.has(key)) return false; m.add(key); } } for (const key of m) { const [a, b] = key.split(">"); if (!m.has(b + ">" + a)) return false; } return true; }));
+      return { ok: true, items: items.length, plateX: items.map((i) => Math.round(i[1])), plateY: items.map((i) => Math.round(i[2])), assemblies: items.map((i) => md(cobj.find((ob) => ob.getAttribute("id") === i[0]), "name")), parts, sealed,
+        linked: comps.length === meshIds.length && comps.every((id) => meshIds.includes(id)) && parts.every((pt) => meshIds.includes(pt.id)), plates: c.getElementsByTagName("plate").length, tris: o.reduce((n, d) => n + d.getElementsByTagName("triangle").length, 0) }; }, [model, conf, objs]);
+    assert.ok(chk.ok, "3MF xml parses"); assert.equal(chk.items, 3); assert.equal(chk.plates, 2); assert.ok(chk.sealed, "every part in the file is a sealed solid"); assert.ok(chk.linked, "every part's mesh is in the file");
     assert.deepEqual(chk.assemblies, ["Front and side", "Back cover", "Base"]);
-    // plate 2 starts a bed and a fifth to the right (H2D: 300 × 320 mm); the base sits in front of the back cover on it
-    assert.ok(chk.plateX[1] > 360 && chk.plateX[2] > 360 && chk.plateY[2] < chk.plateY[1], `plates: ${chk.plateX} / ${chk.plateY}`);
+    // smooth outlines keep the file light: far fewer triangles than one box per pixel
+    assert.ok(chk.tris < 400000, `${chk.tris} triangles`); assert.ok(z[tm].length < 8e6, `${z[tm].length} bytes`);
+    // every part sits on a filament, and the project lists those filaments with their colours and Bambu's own presets for the H2D with a 0.6 nozzle
+    const nf = proj.filament_colour.length; assert.ok(nf >= 3 && nf <= 8, `${nf} filaments`);
+    assert.ok(chk.parts.every((pt) => pt.ex >= 1 && pt.ex <= nf)); assert.equal(new Set(chk.parts.map((pt) => pt.ex)).size, nf, "every filament is used");
+    assert.ok(proj.filament_colour.every((c) => /^#[0-9A-F]{6}$/.test(c)));
+    assert.equal(proj.printer_settings_id, "Bambu Lab H2D 0.6 nozzle"); assert.equal(proj.print_settings_id, "0.30mm Standard @BBL H2D 0.6 nozzle");
+    assert.deepEqual(proj.filament_settings_id, Array(nf).fill("Bambu PLA Basic @BBL H2D 0.6 nozzle")); assert.equal(proj.different_settings_to_system.length, nf + 2);
+    assert.equal(proj.nozzle_temperature.length % nf, 0); assert.equal(proj.flush_volumes_matrix.length, nf * nf * 2, "two nozzles on the H2D");
+    const fc = (name) => proj.filament_colour[chk.parts.find((pt) => pt.name === name).ex - 1];
+    assert.equal(fc("Box wall"), fc("Frame front")); assert.equal(fc("White diffuser").toLowerCase(), "#f5f5f5");
+    // plate 2 starts a bed and a fifth to the right (Bambu Studio's H2D bed is 350 mm wide); the base sits in front of the back cover on it
+    assert.ok(chk.plateX[1] > 420 && chk.plateX[2] > 420 && chk.plateY[2] < chk.plateY[1], `plates: ${chk.plateX} / ${chk.plateY}`);
+    assert.match(await page.textContent("#lbStat"), /Opens in Bambu Studio as a finished project: H2D, 0\.6 mm nozzle, 2 plates/);
   });
 
   await step("My designs: the design saves itself; cards with name, Last updated and ⋮ (rename, duplicate, delete); New project; open again", async () => {
@@ -422,6 +442,49 @@ function unzip(buf) { const out = {}; let o = 0;
       await page.click('[data-dp="preview"]'); await settle(500); await page.screenshot({ path: path.join(SHOTS, `${mode}-preview-1280.png`) }); await page.click('[data-dp="design"]');
     });
   }
+
+  /* the other generators share the same builds: each one switches on, shows its own options, and exports sealed parts */
+  for (const [mode, want] of [["bookmark", "Base"], ["coaster", "Base"], ["magnet", "Base back (magnet pockets)"], ["ornament", "Base"], ["stamp", "Handle (glue to the back)"], ["painting", "Layer 2"], ["qr", "Code"], ["puzzle", "Tiles colour"], ["relief", null]]) {
+    await step(`${mode}: builds and exports${want ? " sealed parts" : ""}`, async () => {
+      await page.click('[data-dp="design"]'); await page.evaluate((m) => mkSetMode(m), mode);
+      if (mode === "qr") { await page.fill("#mkQr", "https://example.com/a-longer-link-for-the-test"); await page.waitForFunction(() => MK.L && MK.L.parts && MK.L.parts.length === 2, null, { timeout: 15000 }); }
+      await settle(700);
+      const info = await page.evaluate(() => ({ title: mkTitle(), fam: mkFam(), up: !!(MK.L && MK.L.up), parts: MK.L && MK.L.parts ? MK.L.parts.map((x) => x.name) : null, lid: MK.L && MK.L.parts ? MK.L.parts.filter((x) => x.lid).length : 0 }));
+      if (want) { assert.ok(info.parts.some((n) => n.startsWith(want)), `${mode} has "${want}": ${info.parts}`); assert.deepEqual(await bad(), []); }
+      assert.equal(info.up, ["stamp", "painting", "qr", "puzzle"].includes(mode));
+      if (mode === "puzzle") { const z = await page.evaluate(() => MK.L.puzzle); assert.equal(z.n, z.nx * z.ny, "a full rectangle of tiles"); assert.equal(info.lid, 2, "the tray is on plate 2"); }
+      if (mode === "stamp") assert.equal(info.lid, 1, "the handle is on plate 2");
+      if (mode === "painting") { const z = await page.evaluate(() => MK.L.parts.map((x) => [x.z0, x.z1])); for (let i = 1; i < z.length; i++) assert.equal(z[i][0], z[i - 1][1], "each colour starts where the last one ends"); }
+      assert.equal(await page.isVisible("#mkMagN"), false || (mode === "magnet" && await page.isVisible("#mkMagN")));
+      await page.click("#mkExport"); const [d] = await Promise.all([page.waitForEvent("download", { timeout: 120000 }), page.click("#mkPrGo")]);
+      assert.ok(d.suggestedFilename().endsWith(".zip")); await page.waitForFunction(() => !MK.busy);
+      const out = await page.evaluate(() => ({ sealed: MK.sealed, names: MK.parts.map((x) => x.name) }));
+      assert.ok(out.sealed.ok, "sealed"); assert.ok(out.names.some((n) => n.endsWith(mode === "relief" ? "-relief.stl" : ".3mf")));
+      if (mode === "stamp") assert.ok(out.names.some((n) => n.endsWith("-handle.stl")));
+      await page.screenshot({ path: path.join(SHOTS, `${mode}-1280.png`) });
+    });
+  }
+  /* shape makers: made from sizes, shown in 3D, one sealed shape out */
+  for (const mode of ["vase", "organizer"]) {
+    await step(`${mode}: sliders build a sealed shape and it exports`, async () => {
+      await page.evaluate((m) => mkSetMode(m), mode); await settle(900);
+      const a = await page.evaluate(() => ({ fam: mkFam(), solid: !!(MK.L && MK.L.solid), size: MK.L.size, sliders: document.querySelectorAll("#mkSolid input[type=range]").length, styles: document.querySelectorAll("#mkSolStyle button").length, rail: [...document.querySelectorAll("#mkRail [data-tool]")].filter((x) => !x.hidden).map((x) => x.dataset.tool), shapeOpen: document.querySelector('.acc[data-sec="solid"]').classList.contains("open") }));
+      assert.equal(a.fam, "solid"); assert.ok(a.solid); assert.ok(a.sliders >= 8 && a.styles >= 4); assert.deepEqual(a.rail, ["settings"]); assert.ok(a.shapeOpen, "Shape section is open");
+      await page.evaluate(() => { const r = document.querySelector("#mkSol_hR"); r.value = 60; r.dispatchEvent(new Event("input", { bubbles: true })); }); await settle(500);
+      assert.equal(await page.evaluate(() => MK.L.size[2] >= 60 && MK.L.p.h === 60), true, "the height slider changes the shape");
+      await page.click("#mkSolStyle button:nth-child(2)"); await settle(500);
+      assert.notEqual(await page.evaluate(() => MK.L.p.h), 60, "a style sets the sizes");
+      await page.click("#mkExport"); const [d] = await Promise.all([page.waitForEvent("download", { timeout: 120000 }), page.click("#mkPrGo")]);
+      assert.ok(d.suggestedFilename().endsWith(".zip")); await page.waitForFunction(() => !MK.busy);
+      const out = await page.evaluate(() => ({ sealed: MK.sealed, names: MK.parts.map((x) => x.name) }));
+      assert.ok(out.sealed.ok, "sealed"); assert.ok(out.names.some((n) => n.endsWith(".3mf")) && out.names.some((n) => n.endsWith(".stl")));
+      await page.screenshot({ path: path.join(SHOTS, `${mode}-1280.png`) });
+    });
+  }
+  await step("switching back to Light box still works after the other generators", async () => {
+    await page.evaluate(() => mkSetMode("lightbox")); await settle(700);
+    assert.ok(await page.evaluate(() => MK.L.parts.some((x) => x.name === "Box wall"))); assert.deepEqual(await bad(), []);
+  });
 
   await step("lithophane STL is sealed (bottom matches the walls)", async () => {
     const ok = await page.evaluate(() => { const tri = lbGridSolid(12, 9, 0.5, (c, r) => 1 + ((c * 7 + r * 3) % 5) / 4);

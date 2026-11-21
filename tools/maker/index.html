@@ -8,7 +8,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Inter:wght@400;600;800&family=Archivo+Black&family=Bebas+Neue&family=Oswald:wght@400;700&family=Montserrat:wght@400;700;800&family=Roboto+Slab:wght@400;700&family=Playfair+Display:wght@400;700;800&family=Great+Vibes&display=swap">
-<script>try{var t=parent.document.documentElement.dataset.theme||localStorage.getItem("bc-theme");if(t)document.documentElement.dataset.theme=String(t).replace(/"/g,"")}catch(e){}</script>
 <style>
 /* light, neutral editor: white bars and panels, grey canvas, near-black buttons. Dark only when the console's theme asks for it. */
 :root{--bg:#f5f5f5;--card:#fff;--raise:#f2f2f3;--line:#e4e4e6;--line2:#cfcfd3;--fg:#1a1a1a;--muted:#6e6e73;--accent:#1a1a1a;--accent-fg:#fff;--sel:#3d6be0;--stage:#ececec;--bed:#b3b3b6;--field:#f4f4f5;--warn:#a35a00;--ok:#2d7a46;color-scheme:light}
@@ -32,11 +31,12 @@ svg.i{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6;stro
 #lbName::placeholder{color:var(--fg);opacity:1}#lbName:hover{border-color:var(--line)}#lbName:focus{outline:none;border-color:var(--line2);background:var(--field)}
 .modemenu{position:relative;margin-left:8px}.modemenu>.btn{color:var(--muted);border-color:var(--line);padding:4px 8px 4px 10px;font-size:12.5px}
 .menu{position:absolute;z-index:30;background:var(--card);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.14);padding:4px;display:grid;min-width:180px}
+#mkModes{max-height:min(560px,calc(100vh - 70px));overflow-y:auto;grid-template-columns:1fr 1fr}@media (max-width:700px){#mkModes{grid-template-columns:1fr}}
 .menu button{font:inherit;font-size:13px;text-align:left;border:0;background:none;color:var(--fg);padding:7px 10px;border-radius:5px;cursor:pointer;white-space:nowrap}
 .menu button:hover,.menu button[aria-current="true"],.menu button[aria-checked="true"]{background:var(--raise)}
 .menu button b{font-weight:600}.menu button small{display:block;color:var(--muted);font-size:11.5px;white-space:normal}
 .menu button.danger{color:#b42318}
-#mkModes{top:calc(100% + 6px);left:0;width:290px}
+#mkModes{top:calc(100% + 6px);left:0;width:min(580px,92vw)}
 .menu.float{position:fixed;z-index:60;min-width:160px}
 .seg{display:inline-flex;background:var(--raise);border:1px solid var(--line);border-radius:7px;padding:2px;gap:2px}
 .seg button{font:inherit;font-size:13px;font-weight:500;border:0;background:none;color:var(--muted);padding:5px 22px;border-radius:5px;cursor:pointer;white-space:nowrap}
@@ -73,7 +73,7 @@ svg.i{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6;stro
 /* canvas */
 .ed-stage{grid-row:2;grid-column:2;position:relative;background:var(--stage);display:flex;min-width:0;min-height:0}
 .stage-c{flex:1;min-height:0;min-width:0;position:relative;overflow:hidden}
-.stage-c[data-dp="preview"]{background:linear-gradient(180deg,#262628 0%,#2e2e30 42%,#45454a 100%)}
+.stage-c[data-dp="preview"]{background:linear-gradient(180deg,#f3f3f4 0%,#ececee 55%,#dcdcdf 100%)}
 #mkStage,#mk3d{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;outline:none}
 #mkStage.grab{cursor:grab}#mkStage.panning{cursor:grabbing}
 .bedchip{position:absolute;transform:translate(-100%,calc(-100% - 3px));display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:5px;padding:2px 3px 2px 9px;font-size:12px;color:var(--muted);white-space:nowrap;z-index:3}
@@ -82,23 +82,21 @@ svg.i{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6;stro
 .bedmenu{top:calc(100% + 4px);right:0}.bedmenu span{color:var(--muted)}
 .tbar{position:absolute;left:12px;bottom:12px;display:flex;align-items:center;gap:2px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:4px;box-shadow:0 2px 10px rgba(0,0,0,.05);z-index:3}
 .tbar .btn{padding:6px;color:var(--fg)}.tbar .btn[aria-pressed="true"]{background:var(--raise)}.tbar .sep{width:1px;height:20px;background:var(--line);margin:0 4px}
-.ed[data-dp="preview"] .tbar{background:#38383b;border-color:#48484c;box-shadow:none}.ed[data-dp="preview"] .tbar .btn{color:#e4e4e6}.ed[data-dp="preview"] .tbar .btn:hover{background:#48484c}
 .framepill{position:absolute;right:12px;bottom:12px;display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px 8px 12px;font-size:13px;z-index:3;cursor:pointer;user-select:none}
 .framepill .s{display:none}
 .sw{appearance:none;-webkit-appearance:none;width:30px;height:18px;border-radius:9px;background:var(--line2);position:relative;cursor:pointer;margin:0;flex:none;transition:background .15s}
 .sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:left .15s}
 .sw:checked{background:var(--accent)}.sw:checked::after{left:14px}
 :root[data-theme="dark"] .sw:checked::after{background:#141414}
-.chip{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);font-size:11.5px;font-weight:500;padding:3px 10px;border-radius:999px;background:rgba(255,255,255,.72);border:1px solid var(--line);color:var(--muted);white-space:nowrap;pointer-events:none;z-index:1}
-.stage-c[data-dp="preview"] .chip{background:rgba(0,0,0,.3);border-color:rgba(255,255,255,.1);color:#c9c9cc}
+.chip{position:absolute;left:12px;top:12px;font-size:11.5px;font-weight:500;padding:3px 10px;border-radius:999px;background:rgba(255,255,255,.72);border:1px solid var(--line);color:var(--muted);white-space:nowrap;pointer-events:none;z-index:1}.stage-c[data-dp="preview"] .chip{left:auto;right:12px}
 .pvbar{position:absolute;left:14px;top:14px;display:flex;gap:10px;align-items:center;z-index:3}
-.seg.dk{background:#38383b;border-color:#48484c}.seg.dk button{color:#d0d0d4;padding:6px 14px}.seg.dk button[aria-pressed="true"]{background:#5a5a5e;color:#fff;box-shadow:none}
-.ltog{display:flex;align-items:center;gap:6px;background:#38383b;border:1px solid #48484c;border-radius:7px;padding:6px 8px;color:#a8a8ad;cursor:pointer}
-.ltog .knob{width:26px;height:14px;border-radius:7px;background:#5a5a5e;position:relative}.ltog .knob::after{content:"";position:absolute;top:2px;left:2px;width:10px;height:10px;border-radius:50%;background:#cfcfd3;transition:left .15s}
-.ltog[aria-pressed="true"]{color:#f3d58a}.ltog[aria-pressed="true"] .knob{background:#c99a32}.ltog[aria-pressed="true"] .knob::after{left:14px;background:#fff}
-.plates{position:absolute;left:14px;top:58px;width:262px;background:#2a2a2c;border:1px solid #3c3c40;border-radius:8px;padding:6px;display:grid;gap:4px;z-index:3}
-.plates button{display:flex;align-items:center;gap:12px;border:0;background:none;color:#e8e8ea;font:inherit;font-size:13px;font-weight:600;padding:6px;border-radius:6px;cursor:pointer;text-align:left}
-.plates button[aria-pressed="true"],.plates button:hover{background:#3b3b3e}.plates img{width:56px;height:56px;border-radius:4px;flex:none}
+.seg.dk{background:var(--card);border-color:var(--line)}.seg.dk button{padding:6px 14px}
+.ltog{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:7px;padding:6px 8px;color:var(--muted);cursor:pointer}
+.ltog .knob{width:26px;height:14px;border-radius:7px;background:#c4c4c8;position:relative}.ltog .knob::after{content:"";position:absolute;top:2px;left:2px;width:10px;height:10px;border-radius:50%;background:#cfcfd3;transition:left .15s}
+.ltog[aria-pressed="true"]{color:#a8770f}.ltog[aria-pressed="true"] .knob{background:#c99a32}.ltog[aria-pressed="true"] .knob::after{left:14px;background:#fff}
+.plates{position:absolute;left:14px;top:58px;width:262px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px;display:grid;gap:4px;z-index:3;box-shadow:0 6px 24px rgba(0,0,0,.08)}
+.plates button{display:flex;align-items:center;gap:12px;border:0;background:none;color:var(--fg);font:inherit;font-size:13px;font-weight:600;padding:6px;border-radius:6px;cursor:pointer;text-align:left}
+.plates button[aria-pressed="true"],.plates button:hover{background:var(--raise)}.plates img{width:56px;height:56px;border-radius:4px;flex:none}
 .empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;pointer-events:none;z-index:2}
 .empty>div{pointer-events:auto;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px 24px;display:grid;gap:12px;max-width:340px;box-shadow:0 8px 30px rgba(0,0,0,.08)}
 .empty p{margin:0;font-weight:600}.empty .rowb{margin:0}
@@ -169,7 +167,7 @@ svg.i{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6;stro
 /* Preview: the 3D scene fills the page, settings float on the right */
 .ed[data-dp="preview"] .ed-rail,.ed[data-dp="preview"] .pop{display:none}
 .ed[data-dp="preview"] .ed-stage{grid-column:1/-1}
-.ed[data-dp="preview"] .ed-props{position:absolute;right:12px;top:60px;width:280px;max-height:calc(100% - 72px);border:1px solid #3c3c40;border-radius:8px;z-index:4;--card:#2a2a2c;--raise:#333336;--line:#3e3e42;--line2:#55555a;--fg:#ececec;--muted:#a6a6ab;--field:#333336;--accent:#ececec;--accent-fg:#141414;color:var(--fg)}
+.ed[data-dp="preview"] .ed-props{position:absolute;right:12px;top:60px;width:280px;max-height:calc(100% - 72px);border:1px solid var(--line);border-radius:8px;z-index:4;box-shadow:0 6px 24px rgba(0,0,0,.08)}
 .ed[data-dp="preview"] .acc:not([data-pv]){display:none}
 .ed[data-dp="preview"] .ph{display:none}.ed[data-dp="preview"] .pb{padding-top:8px}
 /* dialogs */
@@ -217,18 +215,40 @@ svg.i{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6;stro
 </head>
 <body>
 <div id="lbMount"></div>
+<script src="../vendor/earcut.min.js"></script>
+<script src="geo.js"></script>
+<script src="bambu.js"></script>
+<script src="solids.js"></script>
 <script>
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const SV=p=>`<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${p}</svg>`;
 const ICON={image:SV('<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>'),text:SV('<path d="M5 6V4h14v2M12 4v16M9 20h6"/>'),shapes:SV('<rect x="3" y="12" width="9" height="9" rx="1"/><circle cx="16.5" cy="7.5" r="4.5"/>'),layers:SV('<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>'),size:SV('<path d="M4 9V4h5M20 15v5h-5M4 4l7 7M20 20l-7-7"/>'),box:SV('<path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="m4 7 8 4 8-4M12 11v10"/>'),print:SV('<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>'),ok:SV('<path d="M20 6 9 17l-5-5"/>'),warn:SV('<path d="M12 8v5M12 17h.01"/><circle cx="12" cy="12" r="9"/>'),info:SV('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>'),x:SV('<path d="M6 6l12 12M18 6 6 18"/>'),undo:SV('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>'),redo:SV('<path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/>'),up:SV('<path d="m6 15 6-6 6 6"/>'),down:SV('<path d="m6 9 6 6 6-6"/>'),copy:SV('<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>'),trash:SV('<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'),folder:SV('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>')};
 function toast(msg){let box=document.getElementById("toasts");if(!box){box=document.createElement("div");box.id="toasts";box.className="toasts";box.setAttribute("role","status");document.body.appendChild(box);}const t=document.createElement("div");t.className="toast";t.textContent=msg;box.appendChild(t);setTimeout(()=>t.remove(),3500);}
-function dlBlob(name,blob){name=String(name||"file").replace(/[\\/:*?"<>|]+/g,"-");const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},4000);return true;}
+/* inside the Lab the page can't start a download itself: the Lab's own save box does it (same file, same name) */
+function dlBlob(name,blob){name=String(name||"file").replace(/[\\/:*?"<>|]+/g,"-");try{if(window.parent!==window&&typeof parent.dlBlob==="function")return parent.dlBlob(name,new parent.Blob([blob],{type:blob.type||"application/octet-stream"}));}catch(e){}const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},4000);return true;}
 </script>
 <script>
 /* ================= MAKER: Light box · Keychain · Sign · Lithophane — pictures, text and shapes in, Bambu-ready 3MF/STL out =================
    Layout: Image, Text, Shape and Layer on a narrow rail (small pop-overs), the design on the printer bed in the middle,
    the Overall settings (or the selected element's settings) on the right. Design and Preview at the top. A bottom bar on phones. */
-const MK_MODES=[["lightbox","Light box","Pictures, text and shapes glowing in a box. The lights glue inside through the back cover."],["keychain","Keychain","Picture or text traced into a flat multi-colour tag with a ring hole."],["sign","Sign","Raised lettering on a plate. Name plates, badges, shelf signs."],["litho","Lithophane","Photo as a thin plate that shows the picture when lit from behind."]];
+const MK_MODES=[["lightbox","Light box","Pictures, text and shapes glowing in a box. The lights glue inside through the back cover."],["keychain","Keychain","Picture or text traced into a flat multi-colour tag with a ring hole."],["sign","Sign","Raised lettering on a plate. Name plates, badges, shelf signs."],["litho","Lithophane","Photo as a thin plate that shows the picture when lit from behind."],
+  ["bookmark","Bookmark","A thin multi-colour bookmark from a picture or text, with a hole for a tassel."],
+  ["coaster","Coaster","A thick multi-colour coaster. A round or square background works best."],
+  ["magnet","Fridge magnet","Multi-colour magnet with pockets in the back for round magnets."],
+  ["ornament","Ornament","A flat hanging ornament, colours on the face, with a hole for a hook or ribbon."],
+  ["stamp","Stamp","Your design raised and mirrored on a plate, with a handle to glue on the back."],
+  ["painting","Filament painting","Stacked colour layers, darkest first. One colour per layer, so it prints with filament swaps and no AMS."],
+  ["qr","QR code","A link or text as a two-colour plate your phone can scan."],
+  ["relief","Relief","Photo as a raised sculpture: the bright parts stand tall. Prints lying flat."],
+  ["puzzle","Pixel puzzle","A picture cut into square colour tiles, with a tray to build it in."],
+  ["vase","Vase","Pick a style, then set the height, widths, ribs and twist. No picture needed."],
+  ["organizer","Desk organizer","A tray of compartments in your sizes, with a taller back row for pens."]];
+/* each thing to make belongs to one of four families that share a build: light box, flat tag (keychain), plate with raised marks (sign), height map (lithophane) */
+const MK_FAM={bookmark:"keychain",coaster:"keychain",magnet:"keychain",ornament:"keychain",stamp:"keychain",painting:"keychain",puzzle:"keychain",qr:"sign",relief:"litho",vase:"solid",organizer:"solid"}; /* "solid" things are made from sizes, not from a picture (solids.js) */
+function mkFam(md){ md=md||MK.mode; return MK_FAM[md]||md; }
+/* sensible starting sizes when you switch to a thing (your design stays as it is) */
+const MK_PRESET={keychain:{keyT:3,ring:true,border:4},bookmark:{keyT:1.2,ring:true,border:2},coaster:{keyT:4,ring:false,border:3},magnet:{keyT:4,ring:false,border:3},ornament:{keyT:2.4,ring:true,border:3},stamp:{ring:false,border:3},painting:{ring:false,border:2},puzzle:{ring:false,border:2,shape:"rect",bgType:"standard"},litho:{minT:0.8,maxT:3,invert:false},relief:{minT:1.2,maxT:4,arc:0,invert:false}};
+const mkNoRing=()=>["stamp","painting","coaster","magnet","puzzle"].includes(MK.mode);
 /* inside the Design Studio (the page has its back bar) the maker is the light box only */
 const MK_SOLO=!!document.getElementById("ds-back-bar");
 /* background (the outline the box or tag follows) */
@@ -243,22 +263,22 @@ const MK_INKS=[["Black","#1d1d1f"],["White","#f4f3ef"],["Red","#c8202c"],["Orang
 /* printer beds: [id, label, bed x, bed y]; printers: [name, bed id] */
 const MK_BEDS=[["a1mini","A1 mini",180,180],["x1","X1/P1/A1",256,256],["h2d","H2D/H2C",300,320],["h2s","H2S",340,320],["a2l","A2L",330,320]];
 const MK_PRINTERS=[["A1","x1"],["A1 mini","a1mini"],["P1S","x1"],["P1P","x1"],["P2S","x1"],["X1C","x1"],["X1","x1"],["X1E","x1"],["X2D","x1"],["H2D","h2d"],["H2D Pro","h2d"],["H2C","h2d"],["H2S","h2s"],["A2L","a2l"]];
-const MK_BEDPRINTER={a1mini:"A1 mini",x1:"X1C",h2d:"H2D",h2s:"H2S",a2l:"A2L"};
+const MK_BEDPRINTER={a1mini:"A1 mini",x1:"P1S",h2d:"H2D",h2s:"H2S",a2l:"A2L"};
 const MK_NOZZLES=[0.2,0.4,0.6,0.8];
 const MK_HOLE=15;
 const MK_HOLES={rect:{label:"Rectangle hole",w:20,h:10},circle:{label:"Round hole",w:15,h:15},key:{label:"Keyhole for a screw",w:9,h:8}};
 const MK={mode:"lightbox", els:[], pics:new Map(), sel:null, selHole:null, pop:null, sheet:null, dp:"design", pv:"render", plate:1, sec:"color", hand:false, zoom:1, pan:[0,0], frame:false, holeType:"rect", holeW:20, holeH:10, withStl:true,
-  shape:"trace", bgType:"standard", width:120, height:90, res:0.4, colors:4, border:4, gap:5, depth:40, wallT:3, frameW:10, imgT:0.8, diffuse:true, backT:1.0, reflect:true, reverse:false, lid:true, lidT:2, holes:[], stand:false, bed:"x1", printer:"X1C", nozzle:0.4,
-  keyT:3, ring:true, text:"", font:"Archivo Black", textT:1, plateT:3, name:"", minT:0.8, maxT:3.0, lres:0.3, arc:0, invert:false, bright:0, contrast:0, blur:0.6,
-  inkMap:{}, frameInk:"#1d1d1f", backInk:"#1d1d1f", lit3d:true, apart:false, inkOpen:null,
+  shape:"trace", bgType:"standard", width:120, height:90, res:0.25, colors:4, border:4, gap:5, depth:40, wallT:3, frameW:10, imgT:0.8, diffuse:true, backT:1.0, reflect:true, reverse:false, lid:true, lidT:2, holes:[], stand:false, bed:"x1", printer:"P1S", nozzle:0.4,
+  keyT:3, ring:true, magN:1, magD:8, magH:2, paintT:0.4, pxT:8, qrText:"", text:"", font:"Archivo Black", textT:1, plateT:3, name:"", minT:0.8, maxT:3.0, lres:0.3, arc:0, invert:false, bright:0, contrast:0, blur:0.6,
+  inkMap:{}, frameInk:"#1d1d1f", backInk:"#1d1d1f", sol:{}, solInk:"#f7e6de", lit3d:true, apart:false, inkOpen:null,
   busy:false, parts:[], node:null, dirty:true, keyTol:40, L:null, sealed:null, fontGen:0, comp:null, hist:[], fut:[], draftId:null};
 const LB=MK; /* legacy alias */
 /* what undo, redo and saved designs keep */
-const MK_SAVE=["mode","shape","bgType","width","height","res","colors","border","gap","depth","wallT","frameW","imgT","diffuse","backT","reflect","reverse","lid","lidT","holes","stand","bed","printer","nozzle","keyT","ring","text","font","textT","plateT","name","minT","maxT","lres","arc","invert","bright","contrast","blur","inkMap","frameInk","backInk"];
+const MK_SAVE=["mode","shape","bgType","width","height","res","colors","border","gap","depth","wallT","frameW","imgT","diffuse","backT","reflect","reverse","lid","lidT","holes","stand","bed","printer","nozzle","keyT","ring","magN","magD","magH","paintT","pxT","qrText","text","font","textT","plateT","name","minT","maxT","lres","arc","invert","bright","contrast","blur","inkMap","frameInk","backInk","sol","solInk"];
 let mkUid=0; const mkId=p=>p+(++mkUid).toString(36)+Date.now().toString(36).slice(-4);
 
 function mkRound(n,d){ return Math.round(n*(d||10))/(d||10); }
-function mkTitle(){ return ({lightbox:"Light box",keychain:"Keychain",sign:"Sign",litho:"Lithophane"})[MK.mode]||"Maker"; }
+function mkTitle(){ const x=MK_MODES.find(v=>v[0]===MK.mode); return x?x[1]:"Maker"; }
 function mkDefName(){ return mkTitle()+" design"; }
 /* the weight to draw a font in: the asked weight if that font has it, else its heaviest (holds up best at 0.4 mm) */
 function mkFontW(f,w){ const x=MK_FONTS.find(a=>a[0]===f); if(!x) return +w||700; return x[2].includes(+w)?+w:x[2][x[2].length-1]; }
@@ -347,7 +367,7 @@ function lbMount(){ const m=document.getElementById("lbMount"); if(!m) return; M
         <canvas id="mk3d" hidden aria-label="3D design preview. Drag to turn it."></canvas>
         <div class="bedchip" id="mkBedChip" hidden><span id="mkBedLbl"></span><button type="button" id="mkBedBtn" title="Change the printer bed" aria-label="Change the printer bed" aria-haspopup="true" aria-expanded="false">${mkIc("swap",15)}</button>
           <div class="menu bedmenu" id="mkBedMenu" role="menu" hidden>${MK_BEDS.map(b=>`<button type="button" role="menuitem" data-bed="${b[0]}"><b>${b[1]}</b> <span>(${b[2]} × ${b[3]} mm)</span></button>`).join("")}</div></div>
-        <div class="pvbar" id="mkPvBar" hidden><div class="seg dk" id="mkPvSeg" role="group" aria-label="Preview"><button type="button" data-pv="render" aria-pressed="true">Rendering effect</button><button type="button" data-pv="plates" aria-pressed="false">Plates</button></div>
+        <div class="pvbar" id="mkPvBar" hidden><div class="seg dk" id="mkPvSeg" role="group" aria-label="Preview"><button type="button" data-pv="render" aria-pressed="true">Finished look</button><button type="button" data-pv="plates" aria-pressed="false">Plates</button></div>
           <button type="button" class="ltog" id="mkLight" aria-pressed="${MK.lit3d}" title="Light on or off" aria-label="Light">${mkIc("bulb",16)}<span class="knob"></span></button></div>
         <div class="plates" id="mkPlates" hidden></div>
         <div class="tbar" id="mkTbar" role="toolbar" aria-label="Canvas">
@@ -366,8 +386,9 @@ function lbMount(){ const m=document.getElementById("lbMount"); if(!m) return; M
         <div id="mkElProps" hidden></div>
         <div id="mkOverallBody">
           ${MK_SOLO?"":`<label class="fld ph-mode">What to make<select id="mkModeSel">${opt(MK_MODES.map(x=>[x[0],x[1]]),MK.mode)}</select></label>`}
-          ${mkAcc("signtext","Text",`<div class="stack" style="margin-top:12px"><label class="fld">Sign text<input type="text" id="mkText" maxlength="40" placeholder="e.g. THE LEWIS FAMILY" value="${esc(MK.text)}"></label><label class="fld">Font<select id="mkFont">${opt(MK_FONTS.map(f=>[f[0],f[0]]),MK.font)}</select></label></div>`,"sign")}
-          ${mkAcc("color","Color",`<div id="lbPal"></div><label class="fld mk-color" style="margin-top:12px">Colours taken from the image<select id="mkColors">${opt([2,3,4,5,6,8].map(n=>[n,n]),MK.colors)}</select></label>`,"lightbox keychain sign litho",1)}
+          ${mkAcc("solid","Shape",`<div id="mkSolid"></div>`,"solid",1)}
+          ${mkAcc("signtext","Text",`<div class="stack" style="margin-top:12px"><label class="fld mk-qr">Link or text for the code<input type="text" id="mkQr" maxlength="300" placeholder="https://…" value="${esc(MK.qrText)}"></label><label class="fld mk-signtext">Sign text<input type="text" id="mkText" maxlength="40" placeholder="e.g. THE LEWIS FAMILY" value="${esc(MK.text)}"></label><label class="fld mk-signtext">Font<select id="mkFont">${opt(MK_FONTS.map(f=>[f[0],f[0]]),MK.font)}</select></label></div>`,"sign")}
+          ${mkAcc("color","Color",`<div id="lbPal"></div><label class="fld mk-color" style="margin-top:12px">Colours taken from the image<select id="mkColors">${opt([2,3,4,5,6,8].map(n=>[n,n]),MK.colors)}</select></label>`,"lightbox keychain sign litho solid",1)}
           ${mkAcc("background","Background",`<div class="k">Type</div>${mkSegw("mkBgType",[["standard","Standard shape"],["outline","Outline"]],MK.bgType)}
             <div class="tiles" id="mkBgShape"${MK.bgType==="outline"?" hidden":""}>${MK_SHAPES.map(s=>`<button type="button" data-v="${s[0]}" title="${s[1]}" aria-label="${s[1]}" aria-pressed="${MK.shape===s[0]}">${MK_BG_SVG[s[0]]}</button>`).join("")}</div>
             <div id="mkBgOutline"${MK.bgType==="outline"?"":" hidden"}>${mkSl("mkGap","Margin round the design",1,15,0.5,MK.gap)}</div>
@@ -380,16 +401,18 @@ function lbMount(){ const m=document.getElementById("lbMount"); if(!m) return; M
             <p class="hint">Holes go through the back cover: one lets the LED cable out, a keyhole hangs the box on a screw. Drag a hole on the design to place it.</p>`,"lightbox")}
           ${mkAcc("dims","Dimensions",`<div class="g2" style="margin-top:12px"><label class="fld">Width <span class="u">mm</span><input type="number" id="lbW" min="20" max="320" step="1" value="${MK.width}"></label><label class="fld mk-notsign">Height <span class="u">mm</span><input type="number" id="lbH" min="20" max="320" step="1" value="${MK.height}"></label></div>
             <div class="mk-lightbox">${mkSl("mkDepth","Light box depth",20,100,1,MK.depth)}${mkSl("mkImgT","Front thickness",0.6,1.2,0.02,MK.imgT)}${mkSl("mkFrameW","Frame width",5,15,0.5,MK.frameW)}${mkSl("mkLidT","Back thickness",1,3,0.02,MK.lidT)}</div>
-            <div class="mk-keychain">${mkSl("mkKeyT","Thickness",2,6,0.5,MK.keyT)}${mkSl("mkBorder","Border",1,15,0.5,MK.border)}<label class="chk" style="margin-top:8px"><input type="checkbox" id="mkRing" ${MK.ring?"checked":""}> Ring hole tab</label></div>
+            <div class="mk-keychain"><div class="mk-thick">${mkSl("mkKeyT","Thickness",1,8,0.2,MK.keyT)}</div><div class="mk-border">${mkSl("mkBorder","Border",1,15,0.5,MK.border)}</div><label class="chk mk-ring" style="margin-top:8px"><input type="checkbox" id="mkRing" ${MK.ring?"checked":""}> Hole tab for a ring, hook or tassel</label>
+              <div class="mk-magnet" style="margin-top:10px"><label class="fld">Magnets in the back<select id="mkMagN">${opt([[1,"1 in the middle"],[2,"2 side by side"],[4,"4, one near each corner"]],MK.magN)}</select></label><label class="fld" style="margin-top:8px">Magnet size<select id="mkMagD">${opt([[6,"6 mm round"],[8,"8 mm round"],[10,"10 mm round"],[12,"12 mm round"]],MK.magD)}</select></label><label class="fld" style="margin-top:8px">Magnet thickness<select id="mkMagH">${opt([[1,"1 mm"],[2,"2 mm"],[3,"3 mm"]],MK.magH)}</select></label></div>
+              <div class="mk-paint">${mkSl("mkPaintT","Height of each colour",0.2,0.8,0.2,MK.paintT)}</div><div class="mk-puzzle">${mkSl("mkPxT","Tile size",5,25,1,MK.pxT)}<p class="hint">Smaller tiles show more of the picture and make a harder puzzle.</p></div></div>
             <div class="mk-sign">${mkSl("mkTextT","Letter height",0.4,4,0.2,MK.textT)}${mkSl("mkPlateT","Plate thickness",2,8,0.5,MK.plateT)}</div>
-            <div class="mk-litho">${mkSl("lbMin","Thinnest",0.4,2,0.1,MK.minT)}${mkSl("lbMax","Thickest",1.5,6,0.1,MK.maxT)}${mkSl("lbArc","Curve",0,180,10,MK.arc,"°")}</div>
-            <label class="fld mk-notlitho" style="margin-top:12px">Detail<select id="mkRes">${opt([["0.6","Fast · 0.6 mm"],["0.4","Normal · 0.4 mm"],["0.3","Fine · 0.3 mm"]],MK.res)}</select></label>
+            <div class="mk-litho">${mkSl("lbMin","Thinnest",0.4,2,0.1,MK.minT)}${mkSl("lbMax","Thickest",1.5,6,0.1,MK.maxT)}<div class="mk-curve">${mkSl("lbArc","Curve",0,180,10,MK.arc,"°")}</div></div>
+            <label class="fld mk-notlitho" style="margin-top:12px">Detail on screen<select id="mkRes">${opt([["0.4","Fast"],["0.25","Normal"],["0.2","Fine"]],MK.res)}</select></label>
             <label class="fld mk-litho" style="margin-top:12px">Detail<select id="lbRes">${opt([["0.4","Fast · 0.4 mm"],["0.3","Normal · 0.3 mm"],["0.2","Fine · 0.2 mm"]],MK.lres)}</select></label>`,"lightbox keychain sign litho",1)}
           ${mkAcc("structure","Structure",`<div class="k">Structure type</div>${mkSegw("mkStruct",[["default","Default"],["reversed","Reversed"]],MK.reverse?"reversed":"default")}
             <label class="chk" style="margin-top:8px"><input type="checkbox" id="mkDiffuse" ${MK.diffuse?"checked":""}> Diffusion layer</label><label class="chk"><input type="checkbox" id="mkReflect" ${MK.reflect?"checked":""}> Reflection layer</label>
             <p class="hint">Reversed prints the background solid in the side colour, so only the design lights up. The diffusion layer spreads the light evenly; the reflection layer lines the walls in white so the box glows brighter.</p>`,"lightbox",1)}
           ${mkAcc("base","Base",`<div style="margin-top:12px">${mkSegw("mkBase",[["with","With base"],["without","Without base"]],MK.stand?"with":"without")}</div><p class="hint">The base is a stand that prints next to the back cover and holds the box upright.</p>`,"lightbox")}
-          ${mkAcc("check","Print check",`<dl class="kv" id="mkSize"></dl><ul class="pcheck" id="mkCheck"></ul><div class="lbstat small muted" id="lbStat"></div><div id="lbDl"></div>`,"lightbox keychain sign litho",1)}
+          ${mkAcc("check","Print check",`<dl class="kv" id="mkSize"></dl><ul class="pcheck" id="mkCheck"></ul><div class="lbstat small muted" id="lbStat"></div><div id="lbDl"></div>`,"lightbox keychain sign litho solid",1)}
         </div>
       </div>
     </aside>
@@ -400,7 +423,7 @@ function lbMount(){ const m=document.getElementById("lbMount"); if(!m) return; M
   ["dragenter","dragover"].forEach(ev=>m.addEventListener(ev,e=>{ if(![...(e.dataTransfer&&e.dataTransfer.types||[])].includes("Files")) return; e.preventDefault(); drop.classList.add("over"); })); ["dragleave","drop"].forEach(ev=>m.addEventListener(ev,e=>{ if(![...(e.dataTransfer&&e.dataTransfer.types||[])].includes("Files")) return; e.preventDefault(); drop.classList.remove("over"); }));
   m.addEventListener("drop",e=>{ if(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files.length) lbAddFiles(e.dataTransfer.files); });
   if(!MK.docBound){ MK.docBound=true;
-    document.addEventListener("paste",e=>{ if(!MK.node||!document.body.contains(MK.node)||MK.mode==="sign") return; const fs=[...(e.clipboardData&&e.clipboardData.files||[])].filter(f=>/^image\//.test(f.type)); if(fs.length){ e.preventDefault(); lbAddFiles(fs); } });
+    document.addEventListener("paste",e=>{ if(!MK.node||!document.body.contains(MK.node)||mkFam()==="sign") return; const fs=[...(e.clipboardData&&e.clipboardData.files||[])].filter(f=>/^image\//.test(f.type)); if(fs.length){ e.preventDefault(); lbAddFiles(fs); } });
     document.addEventListener("keydown",mkKeys); document.addEventListener("pointerdown",mkOutside); }
   /* top bar */
   $("#mkBack").onclick=mkDraftsUI; $("#mkDrafts").onclick=mkDraftsUI; $("#mkExport").onclick=mkExport;
@@ -428,11 +451,11 @@ function lbMount(){ const m=document.getElementById("lbMount"); if(!m) return; M
   const num=(id,k,min,max,comp)=>{ const i=$("#"+id); if(!i) return; const r=$("#"+id+"R"); const set=v=>{ MK[k]=Math.min(max,Math.max(min,v)); if(comp) MK.comp=null; lbPreview(); };
     i.oninput=()=>{ const v=parseFloat(i.value); if(!isFinite(v)) return; set(v); if(r) r.value=MK[k]; }; i.onchange=()=>{ i.value=MK[k]; };
     if(r) r.oninput=()=>{ set(parseFloat(r.value)); i.value=MK[k]; }; };
-  num("lbW","width",20,320,1); num("lbH","height",20,320,1); num("lbMin","minT",0.4,2); num("lbMax","maxT",1.5,6); num("lbArc","arc",0,180); num("mkBorder","border",1,15); num("mkGap","gap",1,15); num("mkDepth","depth",20,100); num("mkKeyT","keyT",2,6); num("mkTextT","textT",0.4,4); num("mkPlateT","plateT",2,8);
+  num("lbW","width",20,320,1); num("lbH","height",20,320,1); num("lbMin","minT",0.4,2); num("lbMax","maxT",1.5,6); num("lbArc","arc",0,180); num("mkBorder","border",1,15); num("mkGap","gap",1,15); num("mkDepth","depth",20,100); num("mkKeyT","keyT",1,8); num("mkPaintT","paintT",0.2,0.8); num("mkPxT","pxT",5,25,1); num("mkTextT","textT",0.4,4); num("mkPlateT","plateT",2,8);
   num("mkImgT","imgT",0.6,1.2); num("mkFrameW","frameW",5,15); num("mkLidT","lidT",1,3);
   num("lbBright","bright",-60,60); num("lbContrast","contrast",-60,60); num("lbBlur","blur",0,2);
   const sel=(id,k,f)=>{ const i=$("#"+id); if(i) i.onchange=e=>{ MK[k]=f?f(e.target.value):e.target.value; lbPreview(); }; };
-  sel("lbRes","lres",parseFloat); sel("mkRes","res",parseFloat); sel("mkColors","colors",v=>parseInt(v,10));
+  sel("lbRes","lres",parseFloat); sel("mkRes","res",parseFloat); sel("mkColors","colors",v=>parseInt(v,10)); sel("mkMagN","magN",v=>parseInt(v,10)); sel("mkMagD","magD",v=>parseInt(v,10)); sel("mkMagH","magH",v=>parseInt(v,10));
   const chk=(id,k)=>{ const i=$("#"+id); if(i) i.onchange=e=>{ MK[k]=e.target.checked; lbPreview(); }; };
   chk("lbInvert","invert"); chk("mkRing","ring"); chk("mkDiffuse","diffuse"); chk("mkReflect","reflect");
   const segw=(id,fn)=>{ const g=$("#"+id); if(g) g.onclick=e=>{ const b=e.target.closest("[data-v]"); if(!b) return; g.querySelectorAll("[data-v]").forEach(x=>x.setAttribute("aria-pressed",x===b)); fn(b.dataset.v); }; };
@@ -445,7 +468,7 @@ function lbMount(){ const m=document.getElementById("lbMount"); if(!m) return; M
   hf("mkHoleW","holeW"); hf("mkHoleH","holeH");
   $("#mkHoleAdd").onclick=()=>mkAddHole(MK.holeType,{w:MK.holeW,h:MK.holeH});
   $("#mkFont").onchange=e=>{ MK.font=e.target.value; mkFontReady(MK.font); lbPreview(); };
-  $("#mkText").oninput=e=>{ MK.text=e.target.value; lbPreview(); };
+  $("#mkText").oninput=e=>{ MK.text=e.target.value; lbPreview(); }; $("#mkQr").oninput=e=>{ MK.qrText=e.target.value; lbPreview(); };
   $("#mkAddShape").onclick=e=>{ const b=e.target.closest("[data-kind]"); if(b) mkAddShape(b.dataset.kind); };
   mkStageEvents(); mkFontReady(MK.font); MK.els.forEach(e=>{ if(e.type==="text") mkFontReady(e.font,e.weight); });
   if(window.ResizeObserver){ new ResizeObserver(()=>mkDraw()).observe($("#mkStageC")); new ResizeObserver(()=>{ const r=$("#mkRail"); ed.style.setProperty("--barh",r.offsetHeight+"px"); }).observe($("#mkRail")); }
@@ -463,11 +486,11 @@ function mkMenu(btn,items,fn){ mkMenuClose(); const r=btn.getBoundingClientRect(
   mn.onclick=e=>{ const b=e.target.closest("[data-v]"); if(!b) return; mkMenuClose(); fn(b.dataset.v); };
   mn.onkeydown=e=>{ if(e.key==="Escape"){ e.stopPropagation(); mkMenuClose(); btn.focus(); } }; const f=mn.querySelector("button"); if(f) f.focus(); }
 function mkMenuClose(){ const x=document.getElementById("mkFloatMenu"); if(x) x.remove(); }
-function mkSetMode(md){ if(!MK_MODES.some(x=>x[0]===md)) return; const m=MK.node; mkFlush(); MK.mode=md;
+function mkSetMode(md){ if(!MK_MODES.some(x=>x[0]===md)) return; const m=MK.node; mkFlush(); const was=MK.mode; MK.mode=md; if(mkFam(md)==="solid") MK.sec="solid"; const P=was!==md&&MK_PRESET[md]; if(P) Object.assign(MK,P); try{ if(window.parent!==window&&typeof parent.mkLabMode==="function") parent.mkLabMode(md); }catch{}
   m.querySelectorAll("#mkModes [data-mode]").forEach(x=>x.setAttribute("aria-checked",x.dataset.mode===md)); m.querySelector("#mkModeBtn span").textContent=mkTitle(); m.querySelector("#mkModes").hidden=true; m.querySelector("#mkModeBtn").setAttribute("aria-expanded","false");
   const s=m.querySelector("#mkModeSel"); if(s) s.value=md; m.querySelector("#lbName").placeholder=mkDefName();
-  if(md==="sign") MK.sec="signtext"; else if(MK.sec==="signtext") MK.sec="color";
-  if(MK.three) MK.three.key=null; MK.pv="render"; MK.plate=1; MK.inkOpen=null; mkClosePop(); mkShowOpts(); mkPvUI(); lbPreview(); }
+  if(mkFam(md)==="sign") MK.sec="signtext"; else if(MK.sec==="signtext") MK.sec="color";
+  if(MK.three) MK.three.key=null; MK.pv="render"; MK.plate=1; MK.inkOpen=null; mkClosePop(); if(P){ mkRemount(); lbPreview(0); return; } mkShowOpts(); mkPvUI(); lbPreview(); }
 function mkSetDP(dp){ const m=MK.node; MK.dp=dp==="preview"?"preview":"design"; m.querySelector("#mkEd").dataset.dp=MK.dp; m.querySelector("#mkStageC").dataset.dp=MK.dp;
   m.querySelectorAll("#mkDP [data-dp]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.dp===MK.dp)); mkClosePop(); mkMenuClose();
   if(MK.dp==="preview"&&MK.sec&&!["color","dims","structure","check"].includes(MK.sec)){ MK.sec="color"; mkAccUI(); }
@@ -476,7 +499,7 @@ function mkSheet(s){ MK.sheet=s; const ed=MK.node.querySelector("#mkEd"); if(s) 
 function mkTool(t){ const m=MK.node;
   if(t==="settings"){ mkClosePop(); mkSheet(MK.sheet==="props"?null:"props"); return; }
   if(MK.dp!=="design") mkSetDP("design");
-  if(t==="text"){ mkClosePop(); if(MK.mode==="sign"){ mkSelect(null); MK.sec="signtext"; mkAccUI(); if(mkPhone()) mkSheet("props"); setTimeout(()=>{ const i=m.querySelector("#mkText"); if(i) i.focus(); },0); return; } mkAddText(); return; }
+  if(t==="text"){ mkClosePop(); if(mkFam()==="sign"){ mkSelect(null); MK.sec="signtext"; mkAccUI(); if(mkPhone()) mkSheet("props"); setTimeout(()=>{ const i=m.querySelector("#mkText"); if(i) i.focus(); },0); return; } mkAddText(); return; }
   if(MK.pop===t){ mkClosePop(); return; } MK.pop=t; if(mkPhone()&&MK.sheet) mkSheet(null); mkPopUI(); }
 function mkPopUI(){ const m=MK.node; if(!m) return; const p=m.querySelector("#mkPop"), t=MK.pop; p.hidden=!t;
   if(t){ p.querySelectorAll("[data-pop]").forEach(s=>s.hidden=s.dataset.pop!==t); m.querySelector("#mkPopTitle").textContent=t==="image"?([...MK.pics.values()].some(x=>!x.gone)?"Your images":"Image"):t==="shape"?"Shape":"Layer";
@@ -486,12 +509,12 @@ function mkClosePop(){ if(!MK.pop) return; MK.pop=null; mkPopUI(); }
 function mkRailState(){ const m=MK.node; if(!m) return; m.querySelectorAll("#mkRail [data-tool]").forEach(b=>{ const t=b.dataset.tool; b.setAttribute("aria-pressed",t==="settings"?MK.sheet==="props":MK.pop===t); }); }
 function mkAccUI(){ const m=MK.node; if(!m) return; m.querySelectorAll("#mkOverallBody .acc").forEach(s=>{ const o=s.dataset.sec===MK.sec; s.classList.toggle("open",o); s.querySelector(".ah").setAttribute("aria-expanded",o); }); if(MK.L!==undefined) mkInksUI(MK.L); }
 function mkBgUI(){ const m=MK.node; m.querySelectorAll("#mkBgType [data-v]").forEach(x=>x.setAttribute("aria-pressed",x.dataset.v===MK.bgType)); m.querySelectorAll("#mkBgShape [data-v]").forEach(x=>x.setAttribute("aria-pressed",x.dataset.v===MK.shape)); m.querySelector("#mkBgShape").hidden=MK.bgType==="outline"; m.querySelector("#mkBgOutline").hidden=MK.bgType!=="outline"; }
-function mkShowOpts(){ const m=MK.node; if(!m) return; const md=MK.mode;
-  const rule={"mk-lightbox":md==="lightbox","mk-keychain":md==="keychain","mk-sign":md==="sign","mk-litho":md==="litho","mk-color":md==="lightbox"||md==="keychain","mk-notsign":md!=="sign","mk-notlitho":md!=="litho"};
+function mkShowOpts(){ const m=MK.node; if(!m) return; const md=mkFam(), raw=MK.mode;
+  const rule={"mk-lightbox":md==="lightbox","mk-keychain":md==="keychain","mk-sign":md==="sign","mk-litho":md==="litho","mk-color":md==="lightbox"||md==="keychain","mk-notsign":md!=="sign","mk-notlitho":md!=="litho","mk-thick":md==="keychain"&&raw!=="stamp"&&raw!=="painting"&&raw!=="puzzle","mk-border":raw!=="puzzle","mk-puzzle":raw==="puzzle","mk-ring":md==="keychain"&&!mkNoRing(),"mk-magnet":raw==="magnet","mk-paint":raw==="painting","mk-qr":raw==="qr","mk-signtext":raw==="sign","mk-curve":raw==="litho"};
   m.querySelectorAll(".ed-props [class*='mk-'], .pop [class*='mk-']").forEach(x=>{ const cls=[...x.classList].filter(c=>c in rule); if(cls.length) x.hidden=!cls.some(c=>rule[c]); });
   const vis=[]; m.querySelectorAll("#mkOverallBody .acc").forEach(s=>{ const on=s.dataset.modes.split(" ").includes(md); s.hidden=!on; if(on) vis.push(s.dataset.sec); });
   if(MK.sec&&!vis.includes(MK.sec)) MK.sec=vis[0];
-  for(const t of ["image","shape","layer"]) m.querySelector(".r-"+t).hidden=md==="sign"; if(md==="sign") mkClosePop();
+  for(const t of ["image","shape","layer"]) m.querySelector(".r-"+t).hidden=md==="sign"||md==="solid"; m.querySelector(".r-text").hidden=md==="solid"; if(md==="sign"||md==="solid") mkClosePop(); mkSolidUI(true);
   m.querySelector("#mkEmpty [data-act=text]").hidden=md==="litho"; m.querySelector("#mkEmpty [data-act=upload]").hidden=md==="sign";
   mkAccUI(); mkBgUI(); mkRailState(); mkElUI(); mkPvUI(); }
 function mkHand(on){ MK.hand=!!on; const m=MK.node; m.querySelector("#mkToolSel").setAttribute("aria-pressed",!MK.hand); m.querySelector("#mkToolHand").setAttribute("aria-pressed",MK.hand); m.querySelector("#mkStage").classList.toggle("grab",MK.hand); }
@@ -501,17 +524,17 @@ function mkChipUI(){ const m=MK.node; if(!m) return; const c=m.querySelector("#m
   m.querySelectorAll("#mkBedMenu [data-bed]").forEach(x=>x.setAttribute("aria-current",x.dataset.bed===MK.bed));
   const R=MK.bedR; if(MK.dp!=="design"||!R){ c.hidden=true; return; } c.hidden=false; const d=R[4]; c.style.left=Math.max(c.offsetWidth+6,(R[0]+R[2])/d)+"px"; c.style.top=Math.max(c.offsetHeight+6,R[1]/d)+"px"; }
 /* Preview: rendering effect or the plates as they print */
-function mkPvUI(){ const m=MK.node; if(!m) return; const pv=MK.dp==="preview", md=MK.mode; const pl=m.querySelector("#mkPlates");
-  m.querySelector("#mkPvBar").hidden=!pv; m.querySelector("#mkPvSeg").hidden=md==="litho"; if(md==="litho") MK.pv="render";
+function mkPvUI(){ const m=MK.node; if(!m) return; const pv=MK.dp==="preview", md=mkFam(); const pl=m.querySelector("#mkPlates");
+  m.querySelector("#mkPvBar").hidden=!pv; m.querySelector("#mkPvSeg").hidden=md==="litho"||md==="solid"; if(md==="litho"||md==="solid") MK.pv="render";
   m.querySelectorAll("#mkPvSeg [data-pv]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.pv===MK.pv));
   const lt=m.querySelector("#mkLight"); lt.hidden=!((md==="lightbox"&&MK.pv==="render")||md==="litho"); lt.setAttribute("aria-pressed",MK.lit3d);
   const show=pv&&MK.pv==="plates"&&!!MK.L; pl.hidden=!show;
   if(show){ const list=mkPlateList(); if(!list.some(x=>x[0]===MK.plate)) MK.plate=1; pl.innerHTML=list.map(x=>`<button type="button" data-plate="${x[0]}" aria-pressed="${MK.plate===x[0]}"><img src="${x[2]}" alt=""><span>${esc(x[1])}</span></button>`).join(""); }
-  m.querySelectorAll("#mkTbar .t-d").forEach(x=>x.hidden=pv); m.querySelector("#mkFramePill").hidden=pv||md!=="lightbox"; mkChipUI(); }
-function mkPlateList(){ const L=MK.L; if(!L||L.litho) return []; if(MK.thumbs&&MK.thumbs.gen===MK.Lgen) return MK.thumbs.list;
+  m.querySelectorAll("#mkTbar .t-d").forEach(x=>x.hidden=pv||md==="solid"); const chip=m.querySelector("#mkPrevChip"); if(chip) chip.textContent=md==="solid"?"Drag to turn it":"Design preview"; m.querySelector("#mkFramePill").hidden=pv||md!=="lightbox"; mkChipUI(); }
+function mkPlateList(){ const L=MK.L; if(!L||L.litho||L.solid) return []; if(MK.thumbs&&MK.thumbs.gen===MK.Lgen) return MK.thumbs.list;
   const th=(cells,flip)=>{ const c=document.createElement("canvas"); c.width=c.height=112; const x=c.getContext("2d"); x.fillStyle="#3c3c3f"; x.fillRect(0,0,112,112); const r=cells.height/cells.width, w=r>1?Math.round(92/r):92, h=r>1?92:Math.round(92*r); x.drawImage(mkUp(cells,w,h,flip),(112-w)/2,(112-h)/2); return c.toDataURL("image/png"); };
-  const list=[[1,MK.mode==="lightbox"?"Plate 1 – Front and side":"Plate 1",th(mkFaceCells(L,false).face,MK.mode!=="sign")]];
-  if(MK.mode==="lightbox"&&L.lidPlate){ const bc=mkRgb(MK.backInk).map(v=>Math.round(v*0.85+28)); list.push([2,MK.stand?"Plate 2 – Back and base":"Plate 2 – Back",th(mkCells(L.cols,L.rows,i=>L.lidPlate[i]?bc:null),false)]); }
+  const list=[[1,mkFam()==="lightbox"?"Plate 1 – Front and side":"Plate 1",th(mkFaceCells(L,false).face,mkFam()!=="sign")]];
+  if(mkFam()==="lightbox"&&L.lidPlate){ const bc=mkRgb(MK.backInk).map(v=>Math.round(v*0.85+28)); list.push([2,MK.stand?"Plate 2 – Back and base":"Plate 2 – Back",th(mkCells(L.cols,L.rows,i=>L.lidPlate[i]?bc:null),false)]); }
   MK.thumbs={gen:MK.Lgen,list}; return list; }
 /* ---- elements: pictures, text and shapes on the design. x, y = centre as a fraction of the design; w = width as a fraction; rot in degrees ---- */
 function mkSelEl(){ return MK.els.find(e=>e.id===MK.sel)||null; }
@@ -549,7 +572,7 @@ function mkMoveLayer(from,to){ const i=MK.els.findIndex(e=>e.id===from), j=MK.el
 function mkDelBtn(){ const b=MK.node&&MK.node.querySelector("#mkDel"); if(b) b.disabled=!MK.sel&&!MK.selHole; }
 /* the right panel: the selected element's settings, or Overall */
 function mkElUI(){ const m=MK.node; if(!m) return; const box=m.querySelector("#mkElProps"), ov=m.querySelector("#mkOverallBody"), title=m.querySelector("#mkPropsTitle"), back=m.querySelector("#mkOverall");
-  const e=(MK.mode==="sign"||MK.dp!=="design")?null:mkSelEl(); box.hidden=!e; ov.hidden=!!e; back.hidden=!e; mkDelBtn();
+  const e=(mkFam()==="sign"||mkFam()==="solid"||MK.dp!=="design")?null:mkSelEl(); box.hidden=!e; ov.hidden=!!e; back.hidden=!e; mkDelBtn();
   if(!e){ box.innerHTML=""; title.textContent="Overall"; return; }
   title.textContent=e.type==="text"?"Text":e.type==="shape"?"Shape":"Image"; let body="";
   const colRow=(k,label,id,swId)=>`<div class="k">${label}</div><div class="colrow"><span class="cdot" style="background:${esc(e[k])}"></span><input type="text" class="hex" id="${id}" value="${esc(String(e[k]).replace("#","").toUpperCase())}" maxlength="7" aria-label="${label} as a hex code"></div>${mkSwatches(swId,e[k])}`;
@@ -626,7 +649,7 @@ function lbPaintThumbs(){ const t=MK.node&&MK.node.querySelector("#lbThumbs"); i
   t.onclick=e=>{ const rm=e.target.closest("[data-lbrm]"), add=e.target.closest("[data-pic]"); if(rm){ const id=rm.dataset.lbrm; const p=MK.pics.get(id); if(p) p.gone=true; MK.els=MK.els.filter(x=>x.pic!==id); if(!MK.els.some(x=>x.id===MK.sel)) MK.sel=null; MK.comp=null; lbPaintThumbs(); mkLayersUI(); mkElUI(); lbPreview(0); return; }
     if(add){ const p=MK.pics.get(add.dataset.pic); const fill=Math.min(1,(MK.height/MK.width)*(p.w/p.h)); mkAddEl({id:mkId("i"),type:"image",pic:p.id,cut:!!p.cut,x:0.5,y:0.5,w:fill*0.5,rot:0}); lbPaintThumbs(); mkLayersUI(); } }; }
 /* ---- holes in the back cover: x, y = centre as a fraction of the box seen from behind; placed by dragging on the design ---- */
-function mkAddHole(type,sz){ if(MK.mode!=="lightbox") return; MK.lid=true; const d=MK_HOLES[type]||MK_HOLES.rect, n=MK.holes.length;
+function mkAddHole(type,sz){ if(mkFam()!=="lightbox") return; MK.lid=true; const d=MK_HOLES[type]||MK_HOLES.rect, n=MK.holes.length;
   const w=Math.min(80,sz&&sz.w>=4?sz.w:d.w), hh=type==="circle"?w:Math.min(80,sz&&sz.h>=4?sz.h:d.h);
   const h={id:mkId("h"),type,w,h:hh,x:0.5+[0,0.22,-0.22,0.38,-0.38][n%5],y:type==="key"?0.2:0.5};
   mkFlush(); MK.holes.push(h); MK.selHole=h.id; MK.sel=null; if(MK.dp!=="design") mkSetDP("design"); mkHolesUI(); mkLayersUI(); mkElUI(); lbPreview(0); mkCommitNow(); }
@@ -646,7 +669,9 @@ function mkHoleMask(h,C,R,cx,cy,res){ const k=1/res; if(h.type==="circle") retur
   /* keyhole: screw head goes in the round part, the box drops onto the slot above it */ const sw=2.4*k; box(cx-sw,cx+sw,cy-h.h*k,cy); const a=mkDisk(C,R,cx,cy,h.w/2*k,m); return mkDisk(C,R,cx,cy-h.h*k,sw,a); }
 
 /* ---- source picture: the layers drawn onto the design (sign: its own text) ---- */
-function mkSource(){ if(MK.mode==="sign"){ const t=(MK.text||"").trim()||"YOUR TEXT"; const cv=document.createElement("canvas"); const ctx=cv.getContext("2d"); const fs=200, f=`${mkFontW(MK.font)} ${fs}px "${MK.font}"`; ctx.font=f; const tw=Math.ceil(ctx.measureText(t).width)+fs*0.6; cv.width=Math.max(300,tw); cv.height=Math.round(fs*1.5); ctx.font=f; ctx.textBaseline="middle"; ctx.textAlign="center"; ctx.fillStyle="#000"; ctx.fillText(t,cv.width/2,cv.height/2+fs*0.05); return {img:cv,w:cv.width,h:cv.height,alpha:true}; }
+let mkQrP=null; function mkQrLib(){ if(window.qrcode) return true; if(!mkQrP) mkQrP=mkLoadScript(["../vendor/qrcode.js","https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"]).then(()=>{ lbPreview(0); }).catch(()=>{ mkQrP=null; toast("The QR code maker couldn't load. Check the connection and try again."); }); return false; }
+function mkQrSource(){ const t=(MK.qrText||"").trim(); if(!t||!mkQrLib()) return null; let q; try{ q=window.qrcode(0,"M"); q.addData(t); q.make(); }catch{ return null; } const n=q.getModuleCount(), k=12; const cv=document.createElement("canvas"); cv.width=cv.height=n*k; const ctx=cv.getContext("2d"); ctx.fillStyle="#000"; for(let r=0;r<n;r++) for(let c=0;c<n;c++) if(q.isDark(r,c)) ctx.fillRect(c*k,r*k,k,k); return {img:cv,w:cv.width,h:cv.height,alpha:true,modules:n}; }
+function mkSource(){ if(MK.mode==="qr") return mkQrSource(); if(mkFam()==="sign"){ const t=(MK.text||"").trim()||"YOUR TEXT"; const cv=document.createElement("canvas"); const ctx=cv.getContext("2d"); const fs=200, f=`${mkFontW(MK.font)} ${fs}px "${MK.font}"`; ctx.font=f; const tw=Math.ceil(ctx.measureText(t).width)+fs*0.6; cv.width=Math.max(300,tw); cv.height=Math.round(fs*1.5); ctx.font=f; ctx.textBaseline="middle"; ctx.textAlign="center"; ctx.fillStyle="#000"; ctx.fillText(t,cv.width/2,cv.height/2+fs*0.05); return {img:cv,w:cv.width,h:cv.height,alpha:true}; }
   return mkComposite(); }
 function mkElOk(e){ return e.type==="image"?MK.pics.has(e.pic):e.type==="text"?!!(e.text||"").trim():true; }
 /* one layer onto a canvas of cw×ch px, k px per mm; returns its unturned size in px */
@@ -664,24 +689,24 @@ function mkComposite(){ const els=MK.els.filter(mkElOk); if(!els.length) return 
   const k=Math.min(10,1800/Math.max(W,H)), cw=Math.max(1,Math.round(W*k)), ch=Math.max(1,Math.round(H*k)); const cv=document.createElement("canvas"); cv.width=cw; cv.height=ch; const ctx=cv.getContext("2d");
   for(const e of els){ const s=mkDrawEl(ctx,e,cw,ch,k); e._wh=[s[0]/k,s[1]/k]; } for(const e of MK.els) if(!mkElOk(e)) e._wh=null;
   MK.comp={img:cv,w:cw,h:ch,alpha:true,textOnly:!els.some(e=>e.type!=="text"),key}; return MK.comp; }
-function lbDims(src){ src=src||mkSource(); if(MK.mode==="sign"){ const w=MK.width; return {w,h:Math.min(320,Math.max(10,src?Math.round(w*src.h/src.w):Math.round(w*0.3)))}; } return {w:MK.width,h:MK.height}; }
+function lbDims(src){ src=src||mkSource(); if(mkFam()==="sign"){ const w=MK.width; return {w,h:Math.min(320,Math.max(10,src?Math.round(w*src.h/src.w):Math.round(w*0.3)))}; } return {w:MK.width,h:MK.height}; }
 /* sample the picture into a cols×rows grid: rgba per cell */
 function mkSample(src,cols,rows,filters){ const cv=document.createElement("canvas"); cv.width=cols; cv.height=rows; const ctx=cv.getContext("2d",{willReadFrequently:true}); const sc=Math.max(cols/src.w,rows/src.h), dw=src.w*sc, dh=src.h*sc;
-  const f=[]; if(filters){ if(MK.blur>0&&MK.mode==="litho") f.push(`blur(${(MK.blur*0.6).toFixed(2)}px)`); if(MK.bright) f.push(`brightness(${(1+MK.bright/100).toFixed(2)})`); if(MK.contrast) f.push(`contrast(${(1+MK.contrast/100).toFixed(2)})`); } try{ ctx.filter=f.join(" ")||"none"; }catch{}
+  const f=[]; if(filters){ if(MK.blur>0&&mkFam()==="litho") f.push(`blur(${(MK.blur*0.6).toFixed(2)}px)`); if(MK.bright) f.push(`brightness(${(1+MK.bright/100).toFixed(2)})`); if(MK.contrast) f.push(`contrast(${(1+MK.contrast/100).toFixed(2)})`); } try{ ctx.filter=f.join(" ")||"none"; }catch{}
   ctx.drawImage(src.img,(cols-dw)/2,(rows-dh)/2,dw,dh); ctx.filter="none"; return ctx.getImageData(0,0,cols,rows).data; }
 /* ---- masks (Uint8Array cols*rows) ---- */
 function mkFlood(m,cols,rows){ const out=new Uint8Array(cols*rows); const st=[]; const push=(i)=>{ if(!m[i]&&!out[i]){ out[i]=1; st.push(i); } }; for(let c=0;c<cols;c++){ push(c); push((rows-1)*cols+c); } for(let r=0;r<rows;r++){ push(r*cols); push(r*cols+cols-1); }
   while(st.length){ const i=st.pop(); const c=i%cols, r=(i-c)/cols; if(c>0) push(i-1); if(c<cols-1) push(i+1); if(r>0) push(i-cols); if(r<rows-1) push(i+cols); } return out; }
 /* grow a mask by rad cells (round brush) */
-function mkDilate(m,cols,rows,rad){ if(rad<=0) return m.slice(); const out=new Uint8Array(cols*rows); const R=Math.ceil(rad); const off=[]; for(let dy=-R;dy<=R;dy++) for(let dx=-R;dx<=R;dx++) if(dx*dx+dy*dy<=rad*rad) off.push([dx,dy]);
-  /* edge cells only: a cell on the boundary of m paints the brush */ for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){ const i=r*cols+c; if(!m[i]) continue; out[i]=1; const edge=c===0||r===0||c===cols-1||r===rows-1||!m[i-1]||!m[i+1]||!m[i-cols]||!m[i+cols]; if(!edge) continue; for(const o of off){ const x=c+o[0], y=r+o[1]; if(x>=0&&y>=0&&x<cols&&y<rows) out[y*cols+x]=1; } } return out; }
-function mkErode(m,cols,rows,rad){ const inv=new Uint8Array(cols*rows); for(let i=0;i<inv.length;i++) inv[i]=m[i]?0:1; const d=mkDilate(inv,cols,rows,rad); for(let i=0;i<d.length;i++) d[i]=d[i]?0:1; return d; }
+function mkDilate(m,cols,rows,rad){ return MakerGeo.dilate(m,cols,rows,rad); }
+function mkErode(m,cols,rows,rad){ return MakerGeo.erode(m,cols,rows,rad); }
 function mkSub(a,b){ const o=new Uint8Array(a.length); for(let i=0;i<a.length;i++) o[i]=a[i]&&!b[i]?1:0; return o; }
 function mkDisk(cols,rows,cx,cy,rad,base){ const o=base?base.slice():new Uint8Array(cols*rows); for(let r=Math.max(0,Math.floor(cy-rad));r<=Math.min(rows-1,Math.ceil(cy+rad));r++) for(let c=Math.max(0,Math.floor(cx-rad));c<=Math.min(cols-1,Math.ceil(cx+rad));c++){ const dx=c-cx,dy=r-cy; if(dx*dx+dy*dy<=rad*rad) o[r*cols+c]=1; } return o; }
 function mkPad(m,cols,rows,pad){ /* embed into a bigger grid with pad cells around */ const C=cols+2*pad, R=rows+2*pad; const o=new Uint8Array(C*R); for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) o[(r+pad)*C+c+pad]=m[r*cols+c]; return {m:o,cols:C,rows:R}; }
 function mkCentroid(m,C,R){ let cx=0,cy=0,n=0; for(let r=0;r<R;r++) for(let c=0;c<C;c++) if(m[r*C+c]){ cx+=c; cy+=r; n++; } return n?[cx/n,cy/n]:[C/2,R/2]; }
 /* ---- colour quantising (k-means) ---- */
-function mkQuant(d,mask,cols,rows,k){ const pts=[]; for(let i=0;i<cols*rows;i+=1){ if(mask[i]) pts.push(i); } const step=Math.max(1,Math.floor(pts.length/12000)); const smp=[]; for(let j=0;j<pts.length;j+=step){ const i=pts[j]*4; smp.push([d[i],d[i+1],d[i+2]]); }
+function mkQuant(d,mask,cols,rows,k,fixed){ const pts=[]; for(let i=0;i<cols*rows;i+=1){ if(mask[i]) pts.push(i); }
+  if(fixed&&fixed.length){ /* the colours are already chosen (on screen): only sort the cells into them */ const idx=new Uint8Array(cols*rows); for(const i of pts){ let bi=0,bd=1e12; for(let c=0;c<fixed.length;c++){ const dd=(d[i*4]-fixed[c][0])**2+(d[i*4+1]-fixed[c][1])**2+(d[i*4+2]-fixed[c][2])**2; if(dd<bd){ bd=dd; bi=c; } } idx[i]=bi; } return {palette:fixed.map(c=>c.slice()),idx}; } const step=Math.max(1,Math.floor(pts.length/12000)); const smp=[]; for(let j=0;j<pts.length;j+=step){ const i=pts[j]*4; smp.push([d[i],d[i+1],d[i+2]]); }
   if(!smp.length) return {palette:[[255,255,255]],idx:new Uint8Array(cols*rows)};
   const cents=[smp[0].slice()]; while(cents.length<k){ let best=null,bd=-1; for(const p of smp){ let md=1e9; for(const c of cents){ const dd=(p[0]-c[0])**2+(p[1]-c[1])**2+(p[2]-c[2])**2; if(dd<md) md=dd; } if(md>bd){ bd=md; best=p; } } if(!best||bd<60) break; cents.push(best.slice()); }
   for(let it=0;it<10;it++){ const sum=cents.map(()=>[0,0,0,0]); for(const p of smp){ let bi=0,bd=1e12; for(let c=0;c<cents.length;c++){ const dd=(p[0]-cents[c][0])**2+(p[1]-cents[c][1])**2+(p[2]-cents[c][2])**2; if(dd<bd){ bd=dd; bi=c; } } const s=sum[bi]; s[0]+=p[0]; s[1]+=p[1]; s[2]+=p[2]; s[3]++; } for(let c=0;c<cents.length;c++) if(sum[c][3]) cents[c]=[sum[c][0]/sum[c][3],sum[c][1]/sum[c][3],sum[c][2]/sum[c][3]]; }
@@ -699,13 +724,13 @@ function mkClean(idx,mask,C,R,k){ if(k<=1) return 0; const thin=new Uint8Array(C
   return changed; }
 
 /* ---- masks (Uint8Array cols*rows) ---- */
-function mkShapeMask(d,cols,rows,src){ const n=cols*rows, m=new Uint8Array(n); const shape=(MK.shape==="trace"&&src&&src.textOnly&&MK.mode!=="sign")?"round":MK.shape;
-  if(shape==="trace"||MK.mode==="sign"){ let hasAlpha=false; for(let i=0;i<n;i++) if(d[i*4+3]<128){ hasAlpha=true; break; }
+function mkShapeMask(d,cols,rows,src){ const n=cols*rows, m=new Uint8Array(n); const shape=(MK.shape==="trace"&&src&&src.textOnly&&mkFam()!=="sign")?"round":MK.shape;
+  if(shape==="trace"||mkFam()==="sign"){ let hasAlpha=false; for(let i=0;i<n;i++) if(d[i*4+3]<128){ hasAlpha=true; break; }
     if(hasAlpha){ for(let i=0;i<n;i++) m[i]=d[i*4+3]>=128?1:0; }
     else { /* key out the background colour sampled from the corners */ const cs=[0,cols-1,(rows-1)*cols,rows*cols-1].map(i=>[d[i*4],d[i*4+1],d[i*4+2]]); const bg=cs.reduce((a,c)=>[a[0]+c[0]/4,a[1]+c[1]/4,a[2]+c[2]/4],[0,0,0]); const tol=MK.keyTol*MK.keyTol*3;
       for(let i=0;i<n;i++){ const dr=d[i*4]-bg[0],dg=d[i*4+1]-bg[1],db=d[i*4+2]-bg[2]; m[i]=(dr*dr+dg*dg+db*db)>tol?1:0; }
       /* only cells reachable from the edge through background count as outside */ const out=mkFlood(m,cols,rows); for(let i=0;i<n;i++) m[i]=out[i]?0:1; }
-    if(MK.mode==="sign") return m; /* letters only; plate is built separately */
+    if(mkFam()==="sign") return m; /* letters only; plate is built separately */
     const out=mkFlood(m,cols,rows); for(let i=0;i<n;i++) m[i]=out[i]?0:1; /* fill holes */ return m; }
   if(shape==="rect"){ m.fill(1); return m; }
   const cv=document.createElement("canvas"); cv.width=cols; cv.height=rows; const c=cv.getContext("2d",{willReadFrequently:true}); c.translate(cols/2,rows/2); mkPath(c,shape,cols,rows,0.12); c.fillStyle="#000"; c.fill();
@@ -721,14 +746,15 @@ function mkFrame(){ const fw=Math.min(15,Math.max(5,+MK.frameW||10)); const wall
 function mkMinFeat(){ return mkRound((+MK.nozzle||0.4)*1.5,100); }
 function mkGapE(){ return MK.bgType==="outline"?Math.max(0,+MK.gap||0):0; }
 /* ---- build the layout (masks + colours) used by the canvas, the preview and the mesh ---- */
-function mkLayout(){ const src=mkSource(); if(!src) return null; const {w,h}=lbDims(src); const res=MK.res; const cols=Math.min(800,Math.round(w/res)), rows=Math.max(4,Math.min(800,Math.round(h/res)));
+/* o.fine: the layout the print files are cut from, finer than the one on screen (about 0.15 mm), with the same colours (o.qpal) */
+function mkLayout(o){ const src=mkSource(); if(!src) return null; const {w,h}=lbDims(src); const fine=!!(o&&o.fine), res=fine?Math.min(MK.res,Math.max(0.15,mkRound(Math.max(w,h)/1400,100))):MK.res, cap=fine?1500:900; const cols=Math.min(cap,Math.round(w/res)), rows=Math.max(4,Math.min(cap,Math.round(h/res)));
   const d=mkSample(src,cols,rows,true); let shape=mkShapeMask(d,cols,rows,src); const L={w,h,res,cols,rows,cols0:cols,rows0:rows,d,shape,parts:[],pad:0,cleaned:0,src,minFeat:mkMinFeat()};
   /* see-through cells inside the outline show the white backing (or, reversed, the solid background) */ const clear=new Uint8Array(cols*rows);
-  if(MK.mode!=="sign") for(let i=0;i<cols*rows;i++) if(d[i*4+3]<128){ if(shape[i]) clear[i]=1; d[i*4]=d[i*4+1]=d[i*4+2]=245; d[i*4+3]=255; }
+  if(mkFam()!=="sign") for(let i=0;i<cols*rows;i++) if(d[i*4+3]<128){ if(shape[i]) clear[i]=1; d[i*4]=d[i*4+1]=d[i*4+2]=245; d[i*4+3]=255; }
   const cellsOf=(mm)=>mm/res; const minRun=Math.ceil(L.minFeat/res-1e-9); const fc=mkRgb(MK.frameInk), white=[245,245,245], gapE=mkGapE();
   const colourParts=(q,S0,idx,C,R,z1)=>q.palette.forEach((col,ci)=>{ const m=new Uint8Array(C*R); let any=0; for(let i=0;i<C*R;i++) if(S0[i]&&idx[i]===ci){ m[i]=1; any=1; } if(any) L.parts.push({name:`Colour ${ci+1} ${mkHex(col)}`,color:col,mask:m,z0:0,z1,mirror:true,lit:true}); });
-  if(MK.mode==="lightbox"){ const fr=mkFrame(), rev=!!MK.reverse, bc=mkRgb(MK.backInk||MK.frameInk); const front=mkZ(MK.imgT+(MK.diffuse?MK.backT:0)); const pad=Math.ceil(cellsOf(gapE+fr.border+fr.wallT))+2; const P=mkPad(shape,cols,rows,pad); const C=P.cols,R=P.rows; const S0=P.m;
-    const qm=rev?mkSub(shape,clear):shape; const q=mkQuant(d,qm,cols,rows,MK.colors); L.cleaned=mkClean(q.idx,qm,cols,rows,minRun); const ik=mkInks(q); const idx=new Uint8Array(C*R); for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) idx[(r+pad)*C+c+pad]=ik.idx[r*cols+c];
+  if(mkFam()==="lightbox"){ const fr=mkFrame(), rev=!!MK.reverse, bc=mkRgb(MK.backInk||MK.frameInk); const front=mkZ(MK.imgT+(MK.diffuse?MK.backT:0)); const pad=Math.ceil(cellsOf(gapE+fr.border+fr.wallT))+2; const P=mkPad(shape,cols,rows,pad); const C=P.cols,R=P.rows; const S0=P.m;
+    const qm=rev?mkSub(shape,clear):shape; const q=mkQuant(d,qm,cols,rows,MK.colors,o&&o.qpal); L.qpal=q.palette; L.cleaned=mkClean(q.idx,qm,cols,rows,minRun); const ik=mkInks(q); const idx=new Uint8Array(C*R); for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) idx[(r+pad)*C+c+pad]=ik.idx[r*cols+c];
     const bgm=rev?mkPad(clear,cols,rows,pad).m:null; const lit=bgm?mkSub(S0,bgm):S0;
     const area=gapE>0?mkDilate(S0,C,R,cellsOf(gapE)):S0; const mat=mkSub(area,S0); const outer=mkDilate(area,C,R,cellsOf(fr.border+fr.wallT)); const inner=mkDilate(area,C,R,cellsOf(fr.border)); const wall=mkSub(outer,inner); const rim=mkSub(inner,area);
     Object.assign(L,{cols:C,rows:R,pad,palette:ik.palette,inks:ik.inks,idx,shape:S0,outer,inner,area,mat,front,bgm,rev,wallT:fr.wallT,border:fr.border});
@@ -746,22 +772,58 @@ function mkLayout(){ const src=mkSource(); if(!src) return null; const {w,h}=lbD
       let c0=C,c1=0,r0=R,r1=0; for(let r=0;r<R;r++) for(let c=0;c<C;c++) if(outer[r*C+c]){ if(c<c0) c0=c; if(c>c1) c1=c; if(r<r0) r0=r; if(r>r1) r1=r; } L.bb=[c0,c1,r0,r1]; L.holes=[];
       for(const h of MK.holes){ const cx=c1-h.x*(c1-c0), cy=r0+h.y*(r1-r0); const hm=mkHoleMask(h,C,R,cx,cy,res); let off=false; for(let i=0;i<C*R;i++) if(hm[i]&&!inner[i]){ off=true; break; } plate=mkSub(plate,hm); ring=mkSub(ring,hm); L.holes.push({h,cx,cy,off}); }
       L.lidPlate=plate; L.lidRing=ring;
-      L.parts.push({name:"Back cover",color:bc,mask:plate,z0:0,z1:mkZ(MK.lidT),lid:true}); L.parts.push({name:"Back cover rim",color:bc,mask:ring,z0:mkZ(MK.lidT),z1:mkZ(MK.lidT+6),lid:true}); } }
-  else if(MK.mode==="keychain"){ const pad=Math.ceil(cellsOf(gapE+MK.border+12))+2; const P=mkPad(shape,cols,rows,pad); const C=P.cols,R=P.rows; let S0=P.m; const q=mkQuant(d,shape,cols,rows,MK.colors); L.cleaned=mkClean(q.idx,shape,cols,rows,minRun); const ik=mkInks(q); const idx=new Uint8Array(C*R); for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) idx[(r+pad)*C+c+pad]=ik.idx[r*cols+c];
-    const area=gapE>0?mkDilate(S0,C,R,cellsOf(gapE)):S0; let base=mkDilate(area,C,R,cellsOf(MK.border)); if(MK.ring){ let cx=0,n=0,top=R; for(let r=0;r<R;r++) for(let c=0;c<C;c++) if(base[r*C+c]){ if(r<top) top=r; cx+=c; n++; } cx=n?cx/n:C/2; const cy=top-cellsOf(2.5); const tab=mkDisk(C,R,cx,cy,cellsOf(5.5)); for(let i=0;i<C*R;i++) base[i]=base[i]||tab[i]?1:0; const hole=mkDisk(C,R,cx,cy,cellsOf(2.2)); base=mkSub(base,hole); }
+      /* the rim runs from the bed up through the plate, so Bambu Studio sees one joined piece (a rim that only rests on the plate is flagged as a loose object) */
+      L.parts.push({name:"Back cover",color:bc,mask:mkSub(plate,ring),z0:0,z1:mkZ(MK.lidT),lid:true}); L.parts.push({name:"Back cover rim",color:bc,mask:ring,z0:0,z1:mkZ(MK.lidT+6),lid:true}); } }
+  else if(mkFam()==="keychain"){ const kind=MK.mode, lum=c=>0.2126*c[0]+0.7152*c[1]+0.0722*c[2]; const pad=Math.ceil(cellsOf(gapE+MK.border+12))+2; const P=mkPad(shape,cols,rows,pad); const C=P.cols,R=P.rows; let S0=P.m; const q=mkQuant(d,shape,cols,rows,kind==="stamp"?2:MK.colors,o&&o.qpal); L.qpal=q.palette; L.cleaned=mkClean(q.idx,shape,cols,rows,minRun); const ik=mkInks(q); const idx=new Uint8Array(C*R); for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) idx[(r+pad)*C+c+pad]=ik.idx[r*cols+c];
+    const area=gapE>0?mkDilate(S0,C,R,cellsOf(gapE)):S0; let base=mkDilate(area,C,R,cellsOf(MK.border)); if(MK.ring&&!mkNoRing()){ let cx=0,n=0,top=R; for(let r=0;r<R;r++) for(let c=0;c<C;c++) if(base[r*C+c]){ if(r<top) top=r; cx+=c; n++; } cx=n?cx/n:C/2; const cy=top-cellsOf(2.5); const tab=mkDisk(C,R,cx,cy,cellsOf(5.5)); for(let i=0;i<C*R;i++) base[i]=base[i]||tab[i]?1:0; const hole=mkDisk(C,R,cx,cy,cellsOf(2.2)); base=mkSub(base,hole); }
     Object.assign(L,{cols:C,rows:R,pad,palette:ik.palette,inks:ik.inks,idx,shape:S0,outer:base,area,mat:mkSub(area,S0)});
-    colourParts(ik,S0,idx,C,R,mkZ(MK.imgT));
-    L.parts.push({name:"Base",color:fc,mask:base,z0:mkZ(MK.imgT),z1:MK.keyT,mirror:true}); if(gapE>0) L.parts.push({name:"White margin",color:white,mask:L.mat,z0:0,z1:mkZ(MK.imgT),mirror:true}); const edge=mkSub(base,area); L.parts.push({name:"Base edge",color:fc,mask:edge,z0:0,z1:mkZ(MK.imgT),mirror:true}); }
-  else if(MK.mode==="sign"){ const pad=Math.ceil(cellsOf(6)); const P=mkPad(shape,cols,rows,pad); const C=P.cols,R=P.rows; const letters=P.m; const plate=new Uint8Array(C*R); const rad=cellsOf(4); for(let r=0;r<R;r++) for(let c=0;c<C;c++){ const ix=Math.max(0,Math.max(rad-c,c-(C-1-rad))), iy=Math.max(0,Math.max(rad-r,r-(R-1-rad))); plate[r*C+c]=ix*ix+iy*iy<=rad*rad?1:0; }
-    Object.assign(L,{cols:C,rows:R,pad,palette:[[250,250,250],[30,30,30]],shape:letters,outer:plate,w:C*res,h:R*res,letterMm:mkRound(h*(200/300)*0.72)});
-    L.parts.push({name:"Plate",color:[30,30,30],mask:plate,z0:0,z1:MK.plateT}); L.parts.push({name:"Letters",color:[250,250,250],mask:letters,z0:MK.plateT,z1:mkZ(MK.plateT+MK.textT)}); }
+    if(kind==="stamp"){ /* prints face up: plate first, the dark colour raised on it. Mirrored, so the print it makes reads the right way round. The handle prints on plate 2. */
+      let dk=0; ik.palette.forEach((c,i)=>{ if(lum(c)<lum(ik.palette[dk])) dk=i; }); const face=new Uint8Array(C*R); for(let i=0;i<C*R;i++) if(S0[i]&&idx[i]===dk) face[i]=1;
+      const pT=3, body=[206,207,212], ink=[38,38,44]; L.up=true; L.plate2="Handle"; L.stampH=mkZ(pT+1.6);
+      L.parts.push({name:"Stamp plate",color:body,mask:base,z0:0,z1:pT,mirror:true}); L.parts.push({name:"Stamp face",color:ink,fil:body,mask:face,z0:pT,z1:L.stampH,mirror:true});
+      let c0=C,c1=0,r0=R,r1=0; for(let r=0;r<R;r++) for(let c=0;c<C;c++) if(base[r*C+c]){ if(c<c0) c0=c; if(c>c1) c1=c; if(r<r0) r0=r; if(r>r1) r1=r; }
+      const hw=Math.max(cellsOf(14),(c1-c0)*0.55)/2, hh=Math.min(cellsOf(16),Math.max(cellsOf(8),(r1-r0)*0.5))/2, mx=(c0+c1)/2, my=(r0+r1)/2, rr=Math.min(hh,cellsOf(3)); const hm=new Uint8Array(C*R);
+      for(let r=Math.max(0,Math.floor(my-hh));r<=Math.min(R-1,Math.ceil(my+hh));r++) for(let c=Math.max(0,Math.floor(mx-hw));c<=Math.min(C-1,Math.ceil(mx+hw));c++){ const ix=Math.max(0,Math.abs(c-mx)-(hw-rr)), iy=Math.max(0,Math.abs(r-my)-(hh-rr)); if(ix*ix+iy*iy<=rr*rr) hm[r*C+c]=1; }
+      L.parts.push({name:"Handle (glue to the back)",color:body,mask:hm,z0:0,z1:25,lid:true}); }
+    else if(kind==="painting"){ /* one colour per layer, darkest at the bottom: every spot is built up to its own colour, so it prints with filament swaps */
+      const order=ik.palette.map((c,i)=>i).sort((a,b)=>lum(ik.palette[a])-lum(ik.palette[b])), rank=new Uint8Array(ik.palette.length); order.forEach((ci,k)=>{ rank[ci]=k; });
+      const bT=0.8, t=Math.max(0.2,+MK.paintT||0.4); L.up=true; L.swaps=[];
+      L.parts.push({name:`Layer 1 (base) ${mkHex(ik.palette[order[0]])}`,color:ik.palette[order[0]],mask:base,z0:0,z1:bT});
+      for(let k=1;k<order.length;k++){ const m=new Uint8Array(C*R); let any=0; for(let i=0;i<C*R;i++) if(S0[i]&&rank[idx[i]]>=k){ m[i]=1; any=1; } if(!any) continue; const z0=mkZ(bT+(k-1)*t), z1=mkZ(bT+k*t); L.parts.push({name:`Layer ${k+1} ${mkHex(ik.palette[order[k]])}`,color:ik.palette[order[k]],mask:m,z0,z1}); L.swaps.push([z0,mkHex(ik.palette[order[k]])]); }
+      L.paintH=mkZ(bT+(order.length-1)*t); L.paintBase=mkHex(ik.palette[order[0]]); }
+    else if(kind==="puzzle"){ /* the picture as square tiles, one colour each, in a full rectangle (see-through spots become background tiles), and a tray on plate 2 to build it in */
+      const tc=Math.max(3,Math.round((+MK.pxT||8)/res)), gp=Math.max(1,Math.round(0.2/res)), K=ik.palette.length; let c0=C,c1=0,r0=R,r1=0; for(let r=0;r<R;r++) for(let c=0;c<C;c++) if(S0[r*C+c]){ if(c<c0) c0=c; if(c>c1) c1=c; if(r<r0) r0=r; if(r>r1) r1=r; }
+      const nx=Math.max(2,Math.round((c1-c0+1)/tc)), ny=Math.max(2,Math.round((r1-r0+1)/tc)), x0=Math.max(0,Math.round((c0+c1+1)/2-nx*tc/2)), y0=Math.max(0,Math.round((r0+r1+1)/2-ny*tc/2)); const masks=new Array(K+1).fill(null), cnt=new Int32Array(K+1), tiles=[]; let n=0;
+      for(let ty=0;ty<ny;ty++) for(let tx=0;tx<nx;tx++){ const tally=new Int32Array(K); let inS=0; for(let r=y0+ty*tc;r<Math.min(R,y0+(ty+1)*tc);r++) for(let c=x0+tx*tc;c<Math.min(C,x0+(tx+1)*tc);c++){ const i=r*C+c; if(S0[i]){ tally[idx[i]]++; inS++; } }
+        let ci=K; if(inS*2>=tc*tc){ ci=0; for(let k=1;k<K;k++) if(tally[k]>tally[ci]) ci=k; } const m=masks[ci]||(masks[ci]=new Uint8Array(C*R));
+        for(let r=y0+ty*tc+gp;r<Math.min(R,y0+(ty+1)*tc-gp);r++) for(let c=x0+tx*tc+gp;c<Math.min(C,x0+(tx+1)*tc-gp);c++) m[r*C+c]=1; cnt[ci]++; n++; tiles.push(ci); }
+      const tH=3, rect=(a,b,c,d)=>{ const m=new Uint8Array(C*R); for(let r=Math.max(0,b);r<Math.min(R,d);r++) for(let q=Math.max(0,a);q<Math.min(C,c);q++) m[r*C+q]=1; return m; }; L.up=true; L.plate2="Tray";
+      masks.forEach((m,ci)=>{ if(m) L.parts.push(ci<K?{name:`Tiles colour ${ci+1} ${mkHex(ik.palette[ci])} (${cnt[ci]})`,color:ik.palette[ci],mask:m,z0:0,z1:tH}:{name:`Tiles background (${cnt[ci]})`,color:fc,mask:m,z0:0,z1:tH}); });
+      const rim=Math.max(2,Math.round(3/res)), inner=rect(x0-gp,y0-gp,x0+nx*tc+gp,y0+ny*tc+gp), tray=rect(x0-gp-rim,y0-gp-rim,x0+nx*tc+gp+rim,y0+ny*tc+gp+rim);
+      /* the tray prints in the background colour, or (with no background tiles) in the colour with the most tiles, so the project stays inside one AMS */ let most=0; for(let k=1;k<K;k++) if(cnt[k]>cnt[most]) most=k; const tcol=masks[K]?fc:ik.palette[most];
+      L.parts.push({name:"Tray",color:tcol,mask:inner,z0:0,z1:1.2,lid:true}); L.parts.push({name:"Tray rim",color:tcol,mask:mkSub(tray,inner),z0:0,z1:mkZ(1.2+2),lid:true});
+      L.outer=tray; L.puzzle={n,nx,ny,size:mkRound(tc*res),tile:mkRound((tc-2*gp)*res,100),h:tH,colours:cnt.filter(v=>v>0).length}; }
+    else { colourParts(ik,S0,idx,C,R,mkZ(MK.imgT));
+      if(kind==="magnet"){ /* pockets in the back (the top as it prints) for round magnets, a little wider than the magnet so it drops in */
+        const pd=Math.min(mkZ(MK.magH+0.2),Math.max(0.4,mkZ(MK.keyT-MK.imgT-0.8))), rad=cellsOf((MK.magD+0.3)/2); let c0=C,c1=0,r0=R,r1=0; for(let r=0;r<R;r++) for(let c=0;c<C;c++) if(S0[r*C+c]){ if(c<c0) c0=c; if(c>c1) c1=c; if(r<r0) r0=r; if(r>r1) r1=r; }
+        const fx=MK.magN===1?[0.5]:[0.27,0.73], fy=MK.magN===4?[0.27,0.73]:[0.5]; let back=base.slice(); L.magnets=[];
+        for(const y of fy) for(const x of fx){ const cx=c0+(c1-c0)*x, cy=r0+(r1-r0)*y; back=mkSub(back,mkDisk(C,R,cx,cy,rad)); L.magnets.push([cx,cy]); } L.pocket=pd;
+        L.parts.push({name:"Base",color:fc,mask:base,z0:mkZ(MK.imgT),z1:mkZ(MK.keyT-pd),mirror:true}); L.parts.push({name:"Base back (magnet pockets)",color:fc,mask:back,z0:mkZ(MK.keyT-pd),z1:MK.keyT,mirror:true}); }
+      else L.parts.push({name:"Base",color:fc,mask:base,z0:mkZ(MK.imgT),z1:MK.keyT,mirror:true});
+      if(gapE>0) L.parts.push({name:"White margin",color:white,mask:L.mat,z0:0,z1:mkZ(MK.imgT),mirror:true}); const edge=mkSub(base,area); L.parts.push({name:"Base edge",color:fc,mask:edge,z0:0,z1:mkZ(MK.imgT),mirror:true}); } }
+  else if(mkFam()==="sign"){ const qr=MK.mode==="qr"; const pad=Math.ceil(cellsOf(qr&&src.modules?Math.max(5,4*w/src.modules):6)); L.up=true; const P=mkPad(shape,cols,rows,pad); const C=P.cols,R=P.rows; const letters=P.m; const plate=new Uint8Array(C*R); const rad=cellsOf(4); for(let r=0;r<R;r++) for(let c=0;c<C;c++){ const ix=Math.max(0,Math.max(rad-c,c-(C-1-rad))), iy=Math.max(0,Math.max(rad-r,r-(R-1-rad))); plate[r*C+c]=ix*ix+iy*iy<=rad*rad?1:0; }
+    Object.assign(L,{cols:C,rows:R,pad,palette:[[250,250,250],[30,30,30]],shape:letters,outer:plate,w:C*res,h:R*res,letterMm:mkRound(h*(200/300)*0.72),moduleMm:src.modules?mkRound(w/src.modules,100):0});
+    L.parts.push({name:"Plate",color:qr?[250,250,250]:[30,30,30],mask:plate,z0:0,z1:MK.plateT}); L.parts.push({name:qr?"Code":"Letters",color:qr?[24,24,26]:[250,250,250],mask:letters,z0:MK.plateT,z1:mkZ(MK.plateT+MK.textT)}); if(qr) L.palette=[[24,24,26],[250,250,250]]; }
   return L; }
 /* ---- print check ---- */
 function mkPrinterName(){ const p=MK_PRINTERS.find(x=>x[0]===MK.printer); return p&&p[1]===MK.bed?p[0]:mkBed()[1]; }
 function mkChecks(L){ const out=[]; const ok=t=>out.push(["ok",t]), warn=t=>out.push(["warn",t]), info=t=>out.push(["info",t]); const b=mkBed(), pn=mkPrinterName(), nz=+MK.nozzle||0.4, mf=mkMinFeat(), minLetter=Math.max(5,mkRound(nz*10));
-  if(MK.mode==="litho"){ const {w,h}=lbDims(); const fit=Math.max(w,h)<=Math.min(b[2],b[3]); (fit?ok:warn)(fit?`${w} × ${h} mm fits the ${pn} standing up.`:`${w} × ${h} mm is too tall for the ${pn}. Make it smaller.`); (MK.minT>=0.6?ok:warn)(MK.minT>=0.6?`Thinnest spot ${MK.minT} mm: no see-through holes.`:`Thinnest spot ${MK.minT} mm can print with holes. Use 0.6 mm or more.`); if(nz>0.4) info(`A ${nz} mm nozzle softens the detail. 0.4 mm or finer shows the most.`); info("Print in white PLA, 0.12 mm layers, 100% infill."); return out; }
+  if(L&&L.solid){ const [w,d,h]=L.size, top={a1mini:180,x1:250}[b[0]]||320; const fit=((w<=b[2]&&d<=b[3])||(w<=b[3]&&d<=b[2]))&&h<=top; (fit?ok:warn)(fit?`${w} × ${d} mm and ${h} mm tall fits the ${pn}.`:h>top?`${h} mm is too tall for the ${pn} (${top} mm). Make it shorter.`:`${w} × ${d} mm is too big for the ${pn} bed. Make it smaller.`); for(const c of L.checks) out.push(c);
+    if(MK.sealed&&MK.sealed.mode===MK.mode&&!MK.dirty) (MK.sealed.ok?ok:warn)(MK.sealed.ok?"The shape is a sealed solid (checked).":"The shape isn't sealed. Change a size a little and export again."); return out; }
+  if(MK.mode==="relief"){ const {w,h}=lbDims(); const fit=(w<=b[2]&&h<=b[3])||(w<=b[3]&&h<=b[2]); (fit?ok:warn)(fit?`${w} × ${h} mm fits the ${pn} lying flat.`:`${w} × ${h} mm is too big for the ${pn} bed. Make it smaller.`); ok(`Base ${MK.minT} mm, tallest point ${mkRound(Math.max(MK.minT+0.3,MK.maxT))} mm.`); info("Any colour works. 0.12 mm layers show the most detail; no supports needed."); return out; }
+  if(mkFam()==="litho"){ const {w,h}=lbDims(); const fit=Math.max(w,h)<=Math.min(b[2],b[3]); (fit?ok:warn)(fit?`${w} × ${h} mm fits the ${pn} standing up.`:`${w} × ${h} mm is too tall for the ${pn}. Make it smaller.`); (MK.minT>=0.6?ok:warn)(MK.minT>=0.6?`Thinnest spot ${MK.minT} mm: no see-through holes.`:`Thinnest spot ${MK.minT} mm can print with holes. Use 0.6 mm or more.`); if(nz>0.4) info(`A ${nz} mm nozzle softens the detail. 0.4 mm or finer shows the most.`); info("Print in white PLA, 0.12 mm layers, 100% infill."); return out; }
   const W=mkRound(L.cols*L.res), H=mkRound(L.rows*L.res); const fits=(W<=b[2]&&H<=b[3])||(W<=b[3]&&H<=b[2]); (fits?ok:warn)(fits?`Fits the ${pn} bed (${b[2]} × ${b[3]} mm).`:`${W} × ${H} mm is too big for the ${pn} bed (${b[2]} × ${b[3]} mm). Make it smaller or pick a bigger printer.`);
-  if(MK.mode==="lightbox"){ const fr=mkFrame(), wmin=Math.max(1.6,mkRound(nz*3)); (fr.wallT>=wmin?ok:warn)(fr.wallT>=wmin?`Frame ${fr.fw} mm wide with a ${fr.wallT} mm wall.`:`The ${fr.wallT} mm wall is only ${Math.floor(fr.wallT/nz+1e-9)} lines of a ${nz} mm nozzle and can flex. Make the frame wider.`);
+  if(mkFam()==="lightbox"){ const fr=mkFrame(), wmin=Math.max(1.6,mkRound(nz*3)); (fr.wallT>=wmin?ok:warn)(fr.wallT>=wmin?`Frame ${fr.fw} mm wide with a ${fr.wallT} mm wall.`:`The ${fr.wallT} mm wall is only ${Math.floor(fr.wallT/nz+1e-9)} lines of a ${nz} mm nozzle and can flex. Make the frame wider.`);
     (MK.imgT>=0.6?ok:warn)(MK.imgT>=0.6?`Front ${MK.imgT} mm${MK.diffuse?` with a ${MK.backT} mm diffusion layer behind it.`:"."}`:`Front ${MK.imgT} mm can print with gaps that let light leak through. Use 0.6 mm or more.`);
     if(MK.imgT>1) info(`A ${MK.imgT} mm front lets less light through. Around 0.8 mm is brighter.`);
     if(!MK.diffuse) info("No diffusion layer: the lights may show through as bright spots.");
@@ -771,35 +833,44 @@ function mkChecks(L){ const out=[]; const ok=t=>out.push(["ok",t]), warn=t=>out.
     for(const x of L.holes||[]){ const n=x.h.type==="circle"?`${x.h.w} mm round hole`:x.h.type==="rect"?`${x.h.w} × ${x.h.h} mm hole`:"Keyhole"; (x.off?warn:ok)(x.off?`${n} runs past the inside of the box. Drag it inside the frame on the design.`:`${n} in the back cover${x.h.type==="key"?" for hanging on a screw":" for gluing in the lights and running the cable"}.`); }
     if(MK.stand) ok("Base prints on plate 2 with the back cover and holds the box upright.");
     L.palette.forEach((c,i)=>{ if(mkLum(c)<0.12) info(`Colour ${i+1} is very dark and will look almost black when lit.`); }); }
-  if(MK.mode==="keychain") ok(`${MK.keyT} mm thick${MK.ring?", 4.4 mm ring hole":""}.`);
-  if(MK.mode==="sign") (L.letterMm>=minLetter?ok:warn)(L.letterMm>=minLetter?`Letters about ${L.letterMm} mm tall.`:`Letters are about ${L.letterMm} mm tall. Make the sign wider so they're at least ${minLetter} mm.`);
-  if(MK.mode!=="sign"){ for(const e of MK.els){ if(e.type!=="text"||!(e.text||"").trim()) continue; const mm=mkRound(e.size*L.h*0.7); const nm=String(e.text).split("\n")[0]; (mm>=minLetter?ok:warn)(mm>=minLetter?`"${nm}" letters about ${mm} mm tall.`:`"${nm}" letters are about ${mm} mm tall. Make them at least ${minLetter} mm so they print clean with a ${nz} mm nozzle.`); }
-    if(L.cleaned){ const pic=L.shape.reduce((s,v)=>s+v,0)||1; const pct=L.cleaned/pic; (pct>0.03?warn:info)(pct>0.03?`A lot of fine detail is thinner than ${mf} mm (the finest a ${nz} mm nozzle prints) and was merged into nearby colours. Make it bigger or use bolder art.`:`${L.cleaned} tiny spots thinner than ${mf} mm were merged into the colour next to them so a ${nz} mm nozzle can print them.`); }
-    const fil=new Set(L.palette.map(mkHex)); fil.add(MK.frameInk); if(MK.mode==="lightbox"){ if(MK.lid) fil.add(MK.backInk); if(MK.diffuse||MK.reflect||mkGapE()>0) fil.add("#f5f5f5"); } (fil.size<=4?ok:info)(fil.size<=4?`${fil.size} filaments: fits one AMS.`:`${fil.size} filaments: needs a second AMS or a filament swap.`); }
+  if(MK.mode==="puzzle"&&L.puzzle){ const z=L.puzzle; ok(`${z.n} tiles (${z.nx} across, ${z.ny} down), each ${z.tile} mm square and ${z.h} mm thick.`); (z.tile>=6?ok:info)(z.tile>=6?"The tiles are big enough to pick up easily.":"Tiles under 6 mm are fiddly to pick up. Try a bigger tile size."); info("The tray is on plate 2. Tip the tiles out, mix them up and build the picture in the tray."); }
+  if(MK.mode==="stamp"){ ok(`Stamp ${L.stampH} mm tall, design raised 1.6 mm and mirrored. The handle is on plate 2.`); info("Print in TPU for a soft stamp, or PLA with a foam pad. Glue the handle to the back."); }
+  else if(MK.mode==="painting"){ ok(`${L.parts.length} colour layers, ${L.paintH} mm tall. One colour per layer.`); info(L.swaps.length?`No AMS: start with ${L.paintBase}, then pause and swap at ${L.swaps.map(x=>x[0]+" mm").join(", ")}.`:"One colour only. Add colours for a painting."); }
+  else if(MK.mode==="magnet"){ const room=MK.keyT-MK.imgT-0.8>=MK.magH+0.2; (room?ok:warn)(room?`${MK.keyT} mm thick, ${L.magnets.length} pocket${L.magnets.length>1?"s":""} for ${MK.magD} × ${MK.magH} mm magnets in the back.`:`${MK.keyT} mm is too thin for ${MK.magH} mm magnets. Make it ${mkRound(MK.magH+MK.imgT+1)} mm or thicker.`); }
+  else if(mkFam()==="keychain"&&MK.mode!=="puzzle") ok(`${MK.keyT} mm thick${MK.ring&&!mkNoRing()?", 4.4 mm hole for a ring or ribbon":""}.`);
+  if(MK.mode==="qr"){ const mm=L.moduleMm, good=mm>=Math.max(0.8,nz*2); (good?ok:warn)(good?`Each square of the code is ${mm} mm: prints clean and scans.`:`Each square is only ${mm} mm. Make the plate wider or shorten the link so a ${nz} mm nozzle prints it clean.`); info("Test it with your phone camera on the preview before printing."); }
+  else if(mkFam()==="sign") (L.letterMm>=minLetter?`Letters about ${L.letterMm} mm tall.`:`Letters are about ${L.letterMm} mm tall. Make the sign wider so they're at least ${minLetter} mm.`);
+  if(mkFam()!=="sign"){ for(const e of MK.els){ if(e.type!=="text"||!(e.text||"").trim()) continue; const mm=mkRound(e.size*L.h*0.7); const nm=String(e.text).split("\n")[0]; (mm>=minLetter?ok:warn)(mm>=minLetter?`"${nm}" letters about ${mm} mm tall.`:`"${nm}" letters are about ${mm} mm tall. Make them at least ${minLetter} mm so they print clean with a ${nz} mm nozzle.`); }
+    if(L.cleaned&&MK.mode!=="puzzle"){ const pic=L.shape.reduce((s,v)=>s+v,0)||1; const pct=L.cleaned/pic; (pct>0.03?warn:info)(pct>0.03?`A lot of fine detail is thinner than ${mf} mm (the finest a ${nz} mm nozzle prints) and was merged into nearby colours. Make it bigger or use bolder art.`:`${L.cleaned} tiny spots thinner than ${mf} mm were merged into the colour next to them so a ${nz} mm nozzle can print them.`); }
+    const fil=new Set(L.parts.filter(x=>!x.lid||mkFam()==="lightbox"||MK.mode==="puzzle").map(x=>mkHex((x.fil||x.color).map(v=>Math.round(v))))); if(!L.up) fil.add(MK.frameInk); if(mkFam()==="lightbox"){ if(MK.lid) fil.add(MK.backInk); if(MK.diffuse||MK.reflect||mkGapE()>0) fil.add("#f5f5f5"); } if(MK.mode==="stamp") ok("One filament."); else (fil.size<=4?ok:info)(fil.size<=4?`${fil.size} filament${fil.size>1?"s":""}: fits one AMS.`:`${fil.size} filaments: needs a second AMS or a filament swap.`); }
   if(MK.sealed&&MK.sealed.mode===MK.mode&&!MK.dirty) (MK.sealed.ok?ok:warn)(MK.sealed.ok?`All ${MK.sealed.n} parts are sealed solids (checked).`:`${MK.sealed.bad} part(s) aren't sealed. Try another detail level.`);
   return out; }
 /* ---- preview ---- */
 let lbPrevTimer=null; function lbPreview(ms){ clearTimeout(lbPrevTimer); lbPrevTimer=setTimeout(lbPreviewNow,ms==null?150:ms); mkCommit(); }
 function lbPreviewNow(){ const m=MK.node; if(!m) return; const st=m.querySelector("#lbStat"), size=m.querySelector("#mkSize"), ck=m.querySelector("#mkCheck"); MK.dirty=true; MK.parts=[]; const dl=m.querySelector("#lbDl"); if(dl) dl.innerHTML="";
-  const src=mkSource(); const hint=m.querySelector("#mkShapeHint"); if(hint) hint.hidden=!(MK.shape==="trace"&&src&&src.textOnly&&MK.mode!=="sign");
-  const L=MK.mode==="litho"?(src?mkLithoLayout():null):mkLayout(); MK.L=L; MK.Lgen=(MK.Lgen||0)+1; MK.thumbs=null;
-  m.querySelector("#mkEmpty").hidden=!!L; m.querySelector("#mkEmptyMsg").textContent=MK.mode==="sign"?"Type your sign text to start.":MK.mode==="litho"?"Upload a photo to start.":"Add an image, some text or a shape to start.";
+  const src=mkSource(); const hint=m.querySelector("#mkShapeHint"); if(hint) hint.hidden=!(MK.shape==="trace"&&src&&src.textOnly&&mkFam()!=="sign");
+  const L=mkFam()==="solid"?mkSolidLayout():mkFam()==="litho"?(src?mkLithoLayout():null):mkLayout(); if(L) L.sig=mkElSig(); MK.L=L; MK.Lgen=(MK.Lgen||0)+1; MK.thumbs=null;
+  m.querySelector("#mkEmpty").hidden=!!L; m.querySelector("#mkEmptyMsg").textContent=MK.mode==="qr"?"Type a link or some text to make its QR code.":mkFam()==="sign"?"Type your sign text to start.":mkFam()==="litho"?"Upload a photo to start.":"Add an image, some text or a shape to start.";
   if(!L){ size.innerHTML=""; ck.innerHTML=""; st.textContent=""; mkInksUI(null); mkPvUI(); mkDraw(); return; }
   const row=(a,b)=>`<dt>${a}</dt><dd>${b}</dd>`;
-  if(MK.mode==="litho") size.innerHTML=row("Size",`${L.w} × ${L.h} mm`)+row("Thickness",`${MK.minT}–${mkRound(Math.max(MK.minT+0.3,MK.maxT))} mm`)+row("Prints","standing up");
+  if(L.solid) size.innerHTML=row("Footprint",`${L.size[0]} × ${L.size[1]} mm`)+row("Height",`${L.size[2]} mm`)+row("Prints","standing, no supports");
+  else if(mkFam()==="litho") size.innerHTML=row("Size",`${L.w} × ${L.h} mm`)+row(MK.mode==="relief"?"Height":"Thickness",`${MK.minT}–${mkRound(Math.max(MK.minT+0.3,MK.maxT))} mm`)+row("Prints",MK.mode==="relief"?"lying flat":"standing up");
   else { const W=mkRound(L.cols*L.res), H=mkRound(L.rows*L.res); const nh=(L.holes||[]).length;
-    size.innerHTML=row("Outside",`${W} × ${H} mm`)+(MK.mode==="lightbox"?row("Depth",`${MK.depth} mm`)+row("Back cover",MK.lid?(nh?`${nh} hole${nh>1?"s":""}`:"no holes"):"none")+(MK.stand?row("Base","yes"):""):MK.mode==="keychain"?row("Thickness",`${MK.keyT} mm`):row("Thickness",`${mkZ(MK.plateT+MK.textT)} mm`))+row("Prints",MK.mode==="sign"?"face up":"face down"); }
+    size.innerHTML=row("Outside",`${W} × ${H} mm`)+(mkFam()==="lightbox"?row("Depth",`${MK.depth} mm`)+row("Back cover",MK.lid?(nh?`${nh} hole${nh>1?"s":""}`:"no holes"):"none")+(MK.stand?row("Base","yes"):""):MK.mode==="puzzle"&&L.puzzle?row("Tiles",`${L.puzzle.nx} × ${L.puzzle.ny}, ${L.puzzle.tile} mm`)+row("Tray","on plate 2"):MK.mode==="stamp"?row("Height",`${L.stampH} mm`)+row("Handle","on plate 2"):MK.mode==="painting"?row("Height",`${L.paintH} mm`):mkFam()==="keychain"?row("Thickness",`${MK.keyT} mm`):row("Thickness",`${mkZ(MK.plateT+MK.textT)} mm`))+row("Prints",L.up?"face up":"face down"); }
   mkInksUI(L);
   ck.innerHTML=mkChecks(L).map(([k,t])=>`<li class="${k}">${ICON[k]}<span>${esc(t)}</span></li>`).join("");
-  st.textContent=MK.mode==="litho"?"Prints standing up in white PLA.":MK.mode==="sign"?"Prints face up.":"Prints face down, colours first.";
+  st.textContent=L.solid?L.print:MK.mode==="relief"?"Prints lying flat, picture side up.":mkFam()==="litho"?"Prints standing up in white PLA.":MK.mode==="painting"?"Prints face up, one colour per layer.":(MK.L&&MK.L.up)?"Prints face up.":"Prints face down, colours first.";
   mkPvUI(); mkDraw(); }
 /* Color section: Plate 1 front colours and side, Plate 2 back. Click a dot to pick its filament */
-function mkInksUI(L){ const pal=MK.node&&MK.node.querySelector("#lbPal"); if(!pal) return; const md=MK.mode;
+function mkInksUI(L){ const pal=MK.node&&MK.node.querySelector("#lbPal"); if(!pal) return; const md=mkFam(), raw=MK.mode;
   const dot=r=>`<button type="button" class="cdot${r.key?"":" fixed"}" ${r.key?`data-key="${esc(r.key)}" aria-expanded="${MK.inkOpen===r.key}"`:"disabled"} style="background:${esc(r.cur)}" title="${esc(r.label+": "+r.sub)}" aria-label="${esc(r.label+": "+r.sub)}"></button>`;
   const grp=(label,rows,empty)=>`<div class="pk">${label}</div><div class="dots">${rows.map(dot).join("")||`<span class="small muted">${empty||""}</span>`}</div>`;
   let html="", all=[];
-  if(md==="litho") html=`<div class="pl">Plate 1</div><div class="plate">${grp("Lithophane",[{label:"Lithophane",cur:"#f4f3ef",sub:"White PLA"}])}</div>`;
+  if(raw==="relief") html=`<div class="pl">Plate 1</div><div class="plate">${grp("Relief",[{label:"Relief",cur:"#f4f3ef",sub:"Any colour"}])}</div>`;
+  else if(md==="litho") html=`<div class="pl">Plate 1</div><div class="plate">${grp("Lithophane",[{label:"Lithophane",cur:"#f4f3ef",sub:"White PLA"}])}</div>`;
+  else if(raw==="qr") html=`<div class="pl">Plate 1</div><div class="plate">${grp("Code",[{label:"Code",cur:"#18181a",sub:"Black"}])}${grp("Plate",[{label:"Plate",cur:"#fafafa",sub:"White"}])}</div><p class="hint">Black on white scans best. Use matte filament.</p>`;
   else if(md==="sign") html=`<div class="pl">Plate 1</div><div class="plate">${grp("Letters",[{label:"Letters",cur:"#f4f3ef",sub:"White"}])}${grp("Plate",[{label:"Plate",cur:"#1d1d1f",sub:"Black"}])}</div>`;
+  else if(md==="solid"){ const one={key:"sol",label:"Colour",cur:MK.solInk,sel:MK.solInk,sub:mkInkName(MK.solInk)}; all=[one]; html=`<div class="pl">Plate 1</div><div class="plate">${grp(mkTitle(),[one])}</div><p class="hint">Click the dot to pick the filament colour.</p>`; }
   else { const front=((L&&L.inks)||[]).map((x,i)=>({key:"c:"+x.src,label:`Front colour ${i+1}`,cur:x.cur,sel:x.mapped?x.cur:"",orig:true,sub:x.mapped?mkInkName(x.cur):"Image colour"}));
     const side={key:"frame",label:md==="lightbox"?"Side":"Base",cur:MK.frameInk,sel:MK.frameInk,sub:mkInkName(MK.frameInk)}; all=[...front,side];
     if(md==="lightbox"){ const back={key:"back",label:"Back",cur:MK.backInk,sel:MK.backInk,sub:mkInkName(MK.backInk)}; all.push(back);
@@ -808,7 +879,7 @@ function mkInksUI(L){ const pal=MK.node&&MK.node.querySelector("#lbPal"); if(!pa
     else html=`<div class="pl">Plate 1</div><div class="plate">${grp("Front",front,"Add an image or text to see its colours.")}${grp("Base",[side])}</div>`; }
   const open=all.find(r=>r.key===MK.inkOpen); if(!open) MK.inkOpen=null;
   pal.innerHTML=html+(open?`<div class="inkpick"><div class="k">${esc(open.label)} · ${esc(open.sub)}</div>${mkSwatches("mkInkSw",open.sel,open.orig)}</div>`:"");
-  pal.onclick=e=>{ const sw=e.target.closest("[data-ink]"); if(sw&&MK.inkOpen){ const key=MK.inkOpen, ink=sw.dataset.ink; if(key==="frame") MK.frameInk=ink||MK.frameInk; else if(key==="back") MK.backInk=ink||MK.backInk; else { const src=key.slice(2); if(ink) MK.inkMap[src]=ink; else delete MK.inkMap[src]; MK.inkMap=Object.assign({},MK.inkMap); } MK.inkOpen=null; lbPreview(0); mkCommitNow(); return; }
+  pal.onclick=e=>{ const sw=e.target.closest("[data-ink]"); if(sw&&MK.inkOpen){ const key=MK.inkOpen, ink=sw.dataset.ink; if(key==="frame") MK.frameInk=ink||MK.frameInk; else if(key==="sol") MK.solInk=ink||MK.solInk; else if(key==="back") MK.backInk=ink||MK.backInk; else { const src=key.slice(2); if(ink) MK.inkMap[src]=ink; else delete MK.inkMap[src]; MK.inkMap=Object.assign({},MK.inkMap); } MK.inkOpen=null; lbPreview(0); mkCommitNow(); return; }
     const d=e.target.closest("[data-key]"); if(!d) return; MK.inkOpen=MK.inkOpen===d.dataset.key?null:d.dataset.key; mkInksUI(MK.L); }; }
 function mkLithoLayout(){ const src=mkSource(); if(!src) return null; const {w,h}=lbDims(src); const cols=Math.min(360,Math.round(w/0.3)), rows=Math.max(8,Math.round(cols*h/w)); return {w,h,cols,rows,cols0:cols,rows0:rows,pad:0,res:w/cols,T:lbThick(lbGrey(src,cols,rows)),litho:true}; }
 let mkNoise=null; function mkNoisePat(ctx){ if(!mkNoise){ mkNoise=document.createElement("canvas"); mkNoise.width=mkNoise.height=96; const c=mkNoise.getContext("2d"); const im=c.createImageData(96,96); for(let i=0;i<96*96;i++){ const v=Math.random()*255|0; im.data[i*4]=im.data[i*4+1]=im.data[i*4+2]=v; im.data[i*4+3]=255; } c.putImageData(im,0,0); } return ctx.createPattern(mkNoise,"repeat"); }
@@ -823,15 +894,16 @@ function mkCss(v,f){ try{ return getComputedStyle(MK.node).getPropertyValue(v).t
 /* Design: the printer bed with the design on it at true size. Preview: the 3D box (or one plate as it prints) on a dark stage */
 function mkDraw(){ const m=MK.node; if(!m) return; const cv=m.querySelector("#mkStage"), c3=m.querySelector("#mk3d"), sc=m.querySelector("#mkStageC"); const box=sc.getBoundingClientRect(); const dpr=Math.min(2,window.devicePixelRatio||1); const W=Math.max(10,Math.round(box.width*dpr)), H=Math.max(10,Math.round(box.height*dpr)); if(cv.width!==W) cv.width=W; if(cv.height!==H) cv.height=H;
   const L=MK.L, pv=MK.dp==="preview"; MK.vp=null; MK.vpB=null; MK.vpH=null; MK.bedR=null;
-  const use3d=pv&&!!L&&!MK.no3d&&MK.mode!=="litho"&&(MK.pv==="plates"||MK.mode==="lightbox");
+  const use3d=!!L&&!MK.no3d&&(L.solid||(pv&&mkFam()!=="litho"&&(MK.pv==="plates"||mkFam()==="lightbox")));
   c3.hidden=!use3d; cv.style.visibility=use3d?"hidden":"";
   if(use3d){ mkChipUI(); mk3D(L,box); return; }
   const ctx=cv.getContext("2d"); ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,W,H);
+  if(L&&L.solid){ ctx.fillStyle=mkCss("--stage","#ececec"); ctx.fillRect(0,0,W,H); ctx.fillStyle=mkCss("--muted","#666"); ctx.font=`${14*dpr}px system-ui,sans-serif`; ctx.textAlign="center"; ctx.fillText(`${mkTitle()} · ${L.size[0]} × ${L.size[1]} × ${L.size[2]} mm (the 3D view isn't available in this browser)`,W/2,H/2); mkChipUI(); return; }
   if(!pv){ try{ mkDrawDesign(ctx,W,H,L,dpr); }catch(e){ console.error("maker design",e); } mkChipUI(); return; }
   mkChipUI(); if(!L) return;
-  try{ if(MK.mode==="litho") mkDrawLitho(ctx,W,H,L,MK.lit3d?"lit":"relief",dpr);
-    else if(MK.pv==="plates"){ if(MK.plate===2&&MK.mode==="lightbox") mkDrawBack(ctx,W,H,L,dpr); else mkDrawFront(ctx,W,H,L,"off",dpr,null,true); }
-    else if(MK.mode==="lightbox"){ if(MK.lit3d) mkDrawFront(ctx,W,H,L,"lit",dpr); else mkDrawBox(ctx,W,H,L,dpr); }
+  try{ if(mkFam()==="litho") mkDrawLitho(ctx,W,H,L,MK.lit3d&&MK.mode!=="relief"?"lit":"relief",dpr);
+    else if(MK.pv==="plates"){ if(MK.plate===2&&mkFam()==="lightbox") mkDrawBack(ctx,W,H,L,dpr); else mkDrawFront(ctx,W,H,L,"off",dpr,null,true); }
+    else if(mkFam()==="lightbox"){ if(MK.lit3d) mkDrawFront(ctx,W,H,L,"lit",dpr); else mkDrawBox(ctx,W,H,L,dpr); }
     else mkDrawFront(ctx,W,H,L,"off",dpr); }catch(e){ console.error("maker preview",e); } }
 function mkDrawDesign(ctx,W,H,L,dpr){ const b=mkBed(); ctx.fillStyle=mkCss("--stage","#ececec"); ctx.fillRect(0,0,W,H);
   const k=Math.min(W*0.84/b[2],H*0.8/b[3])*MK.zoom; const cx=W/2+MK.pan[0]*dpr, cy=H/2+MK.pan[1]*dpr+H*0.02; const bw=b[2]*k, bh=b[3]*k, bx=cx-bw/2, by=cy-bh/2; MK.bedR=[bx,by,bw,bh,dpr];
@@ -841,24 +913,37 @@ function mkDrawDesign(ctx,W,H,L,dpr){ const b=mkBed(); ctx.fillStyle=mkCss("--st
     ctx.save(); ctx.shadowColor="rgba(0,0,0,.16)"; ctx.shadowBlur=12*dpr; ctx.shadowOffsetY=3*dpr; ctx.fillStyle="#f4f3ef"; ctx.fillRect(F.ox,F.oy,F.w,F.h); ctx.restore();
     if(src){ ctx.save(); try{ ctx.filter="grayscale(1)"; }catch{} ctx.drawImage(src.img,F.ox,F.oy,F.w,F.h); ctx.restore(); } mkDrawSel(ctx,dpr); return; }
   const s=k*L.res; const F={s,w:L.cols*s,h:L.rows*s,ox:cx-L.cols*s/2,oy:cy-L.rows*s/2}; MK.vp=F;
-  if(MK.mode==="sign"||(MK.frame&&MK.mode==="lightbox")) mkDrawFront(ctx,W,H,L,"off",dpr,F);
+  if(mkFam()==="sign"||(MK.frame&&mkFam()==="lightbox")) mkDrawFront(ctx,W,H,L,"off",dpr,F);
   else { /* the outline the box or tag follows, faint, then the design exactly as placed */
-    ctx.drawImage(mkUp(mkCells(L.cols,L.rows,i=>L.outer[i]?[0,0,0,MK.mode==="keychain"?38:20]:null),F.w,F.h),F.ox,F.oy);
-    const comp=mkComposite(); if(comp){ ctx.save(); ctx.imageSmoothingQuality="high"; ctx.drawImage(comp.img,F.ox+L.pad*s,F.oy+L.pad*s,L.cols0*s,L.rows0*s); ctx.restore(); } }
-  if(MK.mode==="lightbox"&&MK.lid) mkDrawHolesF(ctx,F,L,dpr);
+    ctx.drawImage(mkUp(mkCells(L.cols,L.rows,i=>L.outer[i]?[0,0,0,mkFam()==="keychain"?38:20]:null),F.w,F.h),F.ox,F.oy);
+    /* the design in the colours it will print in (what you see is what the file holds); while something is being dragged, the art itself, so it follows the pointer */
+    if(L.sig===mkElSig()) mkPaint(ctx,L,F,"design");
+    else { const comp=mkComposite(); if(comp){ ctx.save(); ctx.imageSmoothingQuality="high"; ctx.drawImage(comp.img,F.ox+L.pad*s,F.oy+L.pad*s,L.cols0*s,L.rows0*s); ctx.restore(); } } }
+  if(mkFam()==="lightbox"&&MK.lid) mkDrawHolesF(ctx,F,L,dpr);
   mkDrawSel(ctx,dpr); }
+/* paint a layout's parts as smooth shapes in their print colours, from the same outlines the print files are cut from.
+   what: "design" = the picture as it prints (without the frame), "front" = everything seen from the front, "lid" = the back cover */
+const mkElSig=()=>MK.els.map(e=>[e.x,e.y,e.w,e.size,e.rot].join(":")).join("|");
+function mkPaintList(L,what){ L._paint=L._paint||{}; if(L._paint[what]) return L._paint[what]; const C=L.cols,R=L.rows, sign=!!L.up;
+  const pick=L.parts.filter(p=>what==="lid"?p.lid:!p.lid&&(sign||p.z0===0)&&(what!=="design"||!/^(Frame front|Box wall|Base edge)$/.test(p.name)));
+  const lab=new Uint16Array(C*R); pick.forEach((p,k)=>{ const m=p.mask; for(let i=0;i<m.length;i++) if(m[i]) lab[i]=k+1; });
+  const rings=MakerGeo.traceLabels(lab,C,R), out=[];
+  pick.forEach((p,k)=>{ const rs=rings.get(k+1); if(!rs) return; const path=new Path2D(); for(const g of rs){ path.moveTo(g[0],g[1]); for(let i=2;i<g.length;i+=2) path.lineTo(g[i],g[i+1]); path.closePath(); } out.push({path,css:`rgb(${p.color.map(v=>Math.round(v)).join(",")})`}); });
+  return L._paint[what]=out; }
+function mkPaint(ctx,L,F,what){ ctx.save(); ctx.translate(F.ox,F.oy); ctx.scale(F.s,F.s); ctx.lineJoin="round"; ctx.lineWidth=0.7/F.s;
+  for(const x of mkPaintList(L,what)){ ctx.fillStyle=ctx.strokeStyle=x.css; ctx.fill(x.path,"evenodd"); ctx.stroke(x.path); } ctx.restore(); }
 function mkFit(W,H,cols,rows,extraX,extraY){ const s=Math.min((W*0.62-(extraX||0))/cols,(H*0.66-(extraY||0))/rows); const w=cols*s,h=rows*s; return {s,w,h,ox:(W-w-(extraX||0))/2,oy:(H-h+(extraY||0))/2}; }
 /* where an element sits on the canvas (canvas px): centre, half size, turn */
 function mkElGeom(e){ const v=MK.vp, L=MK.L; if(!v||!L||!e||!e._wh) return null; const k=L.cols0*v.s/MK.width; return {cx:v.ox+(L.pad+e.x*L.cols0)*v.s, cy:v.oy+(L.pad+e.y*L.rows0)*v.s, hw:e._wh[0]*k/2, hh:e._wh[1]*k/2, a:(e.rot||0)*Math.PI/180}; }
 function mkLocal(g,p){ const dx=p[0]-g.cx, dy=p[1]-g.cy, c=Math.cos(-g.a), s=Math.sin(-g.a); return [dx*c-dy*s,dx*s+dy*c]; }
-function mkDrawSel(ctx,dpr){ if(MK.mode==="sign") return; const g=mkElGeom(mkSelEl()); if(!g) return; const p=4*dpr, st=20*dpr; ctx.save(); ctx.translate(g.cx,g.cy); ctx.rotate(g.a); const col=mkCss("--sel","#3d6be0");
+function mkDrawSel(ctx,dpr){ if(mkFam()==="sign") return; const g=mkElGeom(mkSelEl()); if(!g) return; const p=4*dpr, st=20*dpr; ctx.save(); ctx.translate(g.cx,g.cy); ctx.rotate(g.a); const col=mkCss("--sel","#3d6be0");
   ctx.strokeStyle=col; ctx.lineWidth=1.4*dpr; ctx.strokeRect(-g.hw-p,-g.hh-p,2*(g.hw+p),2*(g.hh+p));
   ctx.beginPath(); ctx.moveTo(0,-g.hh-p); ctx.lineTo(0,-g.hh-p-st); ctx.stroke();
   ctx.fillStyle="#fff"; ctx.lineWidth=1.4*dpr; ctx.beginPath(); ctx.arc(0,-g.hh-p-st,5.5*dpr,0,Math.PI*2); ctx.fill(); ctx.stroke();
   const hs=9*dpr; ctx.fillRect(g.hw+p-hs/2,g.hh+p-hs/2,hs,hs); ctx.strokeRect(g.hw+p-hs/2,g.hh+p-hs/2,hs,hs); ctx.restore(); }
 /* face of the print as seen from the front: lit = LEDs on in a dark room, off/front = daylight */
 function mkFaceCells(L,lit){ const C=L.cols,R=L.rows; const fc=mkRgb(MK.frameInk); const frame=lit?fc.map(v=>Math.round(v*0.45+8)):fc.map(v=>Math.round(v*0.92+6)), white=lit?[255,248,236]:[236,234,229];
-  if(MK.mode==="sign") return {face:mkCells(C,R,i=>L.outer[i]?[34,35,38]:null),top:mkCells(C,R,i=>L.shape[i]?[244,243,239]:null)};
+  if(mkFam()==="sign") return {face:mkCells(C,R,i=>L.outer[i]?[34,35,38]:null),top:mkCells(C,R,i=>L.shape[i]?[244,243,239]:null)};
   const bg=i=>!!(L.bgm&&L.bgm[i]), glows=i=>(L.shape[i]&&!bg(i))||(!!(L.mat&&L.mat[i])&&!L.rev);
   let f=null; if(lit){ const [cx,cy]=mkCentroid(L.shape,C,R); const md=Math.hypot(C,R)/2; const k=MK.reflect?0.12:0.2; f=i=>{ const c=i%C, r=(i-c)/C; const d=Math.hypot(c-cx,r-cy)/md; return (1-k)+k*(1-Math.min(1,d*d)); }; }
   const glow=(c,k)=>[0,1,2].map(j=>Math.min(255,Math.round(255*Math.pow(c[j]/255,0.62)*k*[1,0.975,0.92][j]*(MK.diffuse?1:1.05)+6)));
@@ -866,9 +951,12 @@ function mkFaceCells(L,lit){ const C=L.cols,R=L.rows; const fc=mkRgb(MK.frameInk
   const pic=lit?mkCells(C,R,i=>{ if(glows(i)){ const c=L.shape[i]?L.palette[L.idx[i]]:white; return glow(c,f(i)); } return null; }):null;
   const fr=mkCells(C,R,i=>(!glows(i)&&(L.outer[i]||bg(i)))?frame:null);
   return {face,pic,fr}; }
-function mkDrawFront(ctx,W,H,L,view,dpr,F,flip){ const lit=MK.mode==="lightbox"&&view==="lit"; F=F||mkFit(W,H,L.cols,L.rows); MK.vp=F; flip=!!flip&&MK.mode!=="sign"; const {face,pic,fr,top}=mkFaceCells(L,lit);
+function mkDrawFront(ctx,W,H,L,view,dpr,F,flip){ const lit=mkFam()==="lightbox"&&view==="lit"; F=F||mkFit(W,H,L.cols,L.rows); MK.vp=F; flip=!!flip&&mkFam()!=="sign";
+  if(!lit){ /* daylight: the parts in their print colours with smooth edges, the same outlines the files are cut from */ const cv=document.createElement("canvas"); cv.width=Math.max(1,Math.ceil(F.w)); cv.height=Math.max(1,Math.ceil(F.h)); const c=cv.getContext("2d"); if(flip){ c.translate(cv.width,0); c.scale(-1,1); }
+    mkPaint(c,L,{s:F.s,ox:0,oy:0},"front"); ctx.save(); ctx.shadowColor="rgba(0,0,0,.26)"; ctx.shadowBlur=24*dpr; ctx.shadowOffsetY=10*dpr; ctx.drawImage(cv,F.ox,F.oy); ctx.restore(); return; }
+  const {face,pic,fr,top}=mkFaceCells(L,lit);
   const up=mkUp(face,F.w,F.h,flip);
-  if(MK.mode==="sign"){ mkShade(up,"rgba(255,255,255,.10)","rgba(0,0,0,.25)"); mkGrain(up,0.05); const t=mkGrain(mkUp(top,F.w,F.h),0.04);
+  if(mkFam()==="sign"){ mkShade(up,"rgba(255,255,255,.10)","rgba(0,0,0,.25)"); mkGrain(up,0.05); const t=mkGrain(mkUp(top,F.w,F.h),0.04);
     ctx.save(); ctx.shadowColor="rgba(0,0,0,.3)"; ctx.shadowBlur=26*dpr; ctx.shadowOffsetY=12*dpr; ctx.drawImage(up,F.ox,F.oy); ctx.restore();
     ctx.save(); ctx.shadowColor="rgba(0,0,0,.55)"; ctx.shadowBlur=3*dpr; ctx.shadowOffsetX=1.2*dpr; ctx.shadowOffsetY=2*dpr; ctx.drawImage(t,F.ox,F.oy); ctx.restore(); return; }
   const frU=mkShade(mkUp(fr,F.w,F.h,flip),lit?"rgba(255,255,255,.07)":"rgba(255,255,255,.16)","rgba(0,0,0,.30)");
@@ -915,11 +1003,11 @@ function mkStageEvents(){ const cv=MK.node.querySelector("#mkStage"); let drag=n
     const pan=()=>{ drag={type:"pan",x0:e.clientX,y0:e.clientY,p0:MK.pan.slice()}; cv.setPointerCapture(e.pointerId); cv.classList.add("panning"); e.preventDefault(); };
     if(MK.hand||e.button===1||!L||!MK.vp) return pan();
     const hitEl=el=>{ const gg=mkElGeom(el); if(!gg) return false; const l=mkLocal(gg,p); return Math.abs(l[0])<=gg.hw+6*q&&Math.abs(l[1])<=gg.hh+6*q; };
-    const sel=MK.mode==="sign"?null:mkSelEl(), g=mkElGeom(sel);
+    const sel=mkFam()==="sign"?null:mkSelEl(), g=mkElGeom(sel);
     if(g){ const l=mkLocal(g,p), pd=4*q; if(Math.hypot(l[0],l[1]+g.hh+pd+20*q)<12*q) drag={type:"rot",e:sel,g}; else if(Math.abs(l[0]-g.hw-pd)<12*q&&Math.abs(l[1]-g.hh-pd)<12*q) drag={type:"size",e:sel,d0:Math.max(1,Math.hypot(l[0],l[1])),w0:sel.w,s0:sel.size}; else if(hitEl(sel)) drag={type:"move",e:sel,f0:frac(p),x0:sel.x,y0:sel.y,moved:false}; }
-    if(!drag&&MK.vpH&&MK.mode==="lightbox"&&MK.lid){ const F=MK.vpH; for(const x of [...(L.holes||[])].reverse()){ const b=mkHoleBoxF(x,F,L.res); if(p[0]>=b[0]-6*q&&p[0]<=b[2]+6*q&&p[1]>=b[1]-6*q&&p[1]<=b[3]+6*q){
+    if(!drag&&MK.vpH&&mkFam()==="lightbox"&&MK.lid){ const F=MK.vpH; for(const x of [...(L.holes||[])].reverse()){ const b=mkHoleBoxF(x,F,L.res); if(p[0]>=b[0]-6*q&&p[0]<=b[2]+6*q&&p[1]>=b[1]-6*q&&p[1]<=b[3]+6*q){
       const h=x.h; MK.selHole=h.id; MK.sel=null; MK.holeType=h.type; MK.holeW=h.w; MK.holeH=h.h; mkHoleFields(); mkHolesUI(); mkLayersUI(); mkElUI(); drag={type:"hole",h,dx:p[0]-b[4],dy:p[1]-b[5]}; mkDraw(); break; } } }
-    if(!drag&&MK.mode!=="sign"){ let hit=null; for(let i=MK.els.length-1;i>=0;i--) if(hitEl(MK.els[i])){ hit=MK.els[i]; break; }
+    if(!drag&&mkFam()!=="sign"){ let hit=null; for(let i=MK.els.length-1;i>=0;i--) if(hitEl(MK.els[i])){ hit=MK.els[i]; break; }
       if(hit){ if(MK.sel!==hit.id) mkSelect(hit.id); drag={type:"move",e:hit,f0:frac(p),x0:hit.x,y0:hit.y,moved:false}; } }
     if(!drag){ if(MK.sel) mkSelect(null); if(MK.selHole){ MK.selHole=null; mkHolesUI(); mkElUI(); mkDraw(); } return pan(); }
     mkFlush(); cv.setPointerCapture(e.pointerId); e.preventDefault(); });
@@ -936,12 +1024,12 @@ function mkStageEvents(){ const cv=MK.node.querySelector("#mkStage"); let drag=n
   cv.addEventListener("pointerup",end); cv.addEventListener("pointercancel",end);
   cv.addEventListener("wheel",e=>{ if(MK.dp!=="design") return; e.preventDefault(); mkZoom(e.deltaY<0?1.1:1/1.1); },{passive:false});
   cv.addEventListener("dblclick",e=>{ if(MK.dp!=="design"||MK.sel) return; MK.zoom=1; MK.pan=[0,0]; mkDraw(); });
-  cv.addEventListener("keydown",e=>{ const el=mkSelEl(); if(!el||MK.mode==="sign"||!MK.vp) return; const s=e.shiftKey?0.05:0.01; const mv={ArrowLeft:[-s,0],ArrowRight:[s,0],ArrowUp:[0,-s],ArrowDown:[0,s]}[e.key]; if(!mv) return; e.preventDefault(); el.x=Math.min(1.2,Math.max(-0.2,el.x+mv[0])); el.y=Math.min(1.2,Math.max(-0.2,el.y+mv[1])); MK.comp=null; lbPreview(60); }); }
+  cv.addEventListener("keydown",e=>{ const el=mkSelEl(); if(!el||mkFam()==="sign"||!MK.vp) return; const s=e.shiftKey?0.05:0.01; const mv={ArrowLeft:[-s,0],ArrowRight:[s,0],ArrowUp:[0,-s],ArrowDown:[0,s]}[e.key]; if(!mv) return; e.preventDefault(); el.x=Math.min(1.2,Math.max(-0.2,el.x+mv[0])); el.y=Math.min(1.2,Math.max(-0.2,el.y+mv[1])); MK.comp=null; lbPreview(60); }); }
 /* keyboard: undo, redo, delete the selected element or hole, V and H for the canvas tools */
 function mkKeys(e){ if(!MK.node||!document.body.contains(MK.node)) return; const t=e.target, typing=t&&(t.tagName==="INPUT"||t.tagName==="TEXTAREA"||t.tagName==="SELECT"||t.isContentEditable); const k=e.key.toLowerCase(), mod=e.ctrlKey||e.metaKey;
   if(document.querySelector(".modal")) return;
   if(mod&&k==="z"&&!typing){ e.preventDefault(); if(e.shiftKey) mkRedo(); else mkUndo(); return; } if(mod&&k==="y"&&!typing){ e.preventDefault(); mkRedo(); return; }
-  if(typing) return; if((k==="delete"||k==="backspace")&&MK.sel&&MK.mode!=="sign"){ e.preventDefault(); mkElOp(MK.sel,"del"); return; } if((k==="delete"||k==="backspace")&&MK.selHole){ e.preventDefault(); mkDelHole(MK.selHole); return; }
+  if(typing) return; if((k==="delete"||k==="backspace")&&MK.sel&&mkFam()!=="sign"){ e.preventDefault(); mkElOp(MK.sel,"del"); return; } if((k==="delete"||k==="backspace")&&MK.selHole){ e.preventDefault(); mkDelHole(MK.selHole); return; }
   if(!mod&&MK.dp==="design"&&(k==="v"||k==="h")){ mkHand(k==="h"); return; }
   if(k==="escape"){ if(document.getElementById("mkFloatMenu")){ mkMenuClose(); return; } if(MK.pop){ mkClosePop(); return; } if(MK.sel) mkSelect(null); } }
 /* ---- 3D view (three.js r128: the console's own copy first, then a CDN) ---- */
@@ -959,18 +1047,25 @@ function mk3D(L,box){ const m=MK.node, c3=m.querySelector("#mk3d");
     dir.position.set(0.6,1.2,-1.4); scene.add(hemi,dir,group); const ctl=THREE.OrbitControls?new THREE.OrbitControls(cam,c3):null;
     T=MK.three={canvas:c3,r,scene,cam,hemi,dir,group,ctl,key:null,dims:null}; T.render=()=>r.render(scene,cam); if(ctl){ ctl.addEventListener("change",T.render); ctl.enablePan=false; } }
   const dpr=Math.min(2,window.devicePixelRatio||1); T.r.setPixelRatio(dpr); T.r.setSize(Math.max(10,box.width),Math.max(10,box.height),false); T.cam.aspect=Math.max(10,box.width)/Math.max(10,box.height); T.cam.updateProjectionMatrix();
-  const lit=MK.lit3d, plates=MK.pv==="plates"||MK.mode!=="lightbox", b=mkBed(), key=[MK.Lgen,lit,plates?"p"+MK.plate:"r",MK.bed].join("|");
+  const lit=MK.lit3d, plates=MK.pv==="plates"||mkFam()!=="lightbox", b=mkBed(), key=[MK.Lgen,lit,plates?"p"+MK.plate:"r",MK.bed].join("|");
   if(T.key!==key){ T.key=key; for(const o of [...T.group.children]){ T.group.remove(o); o.geometry.dispose(); if(o.material.map) o.material.map.dispose(); o.material.dispose(); }
     const Wg=L.cols*L.res, Hg=L.rows*L.res;
     const add=(tri,col,glow)=>{ const g=new THREE.BufferGeometry(); g.setAttribute("position",new THREE.BufferAttribute(tri,3)); g.computeVertexNormals(); const c=new THREE.Color(col[0]/255,col[1]/255,col[2]/255);
-      const mat=new THREE.MeshStandardMaterial({color:c,roughness:0.82,metalness:0,flatShading:true}); if(glow&&lit&&!plates){ mat.emissive=c.clone(); mat.emissiveIntensity=0.92; } T.group.add(new THREE.Mesh(g,mat)); };
+      const mat=new THREE.MeshStandardMaterial({color:c,roughness:0.82,metalness:0,flatShading:true}); if(glow&&lit&&!plates){ mat.emissive=c.clone(); mat.emissiveIntensity=0.32; } T.group.add(new THREE.Mesh(g,mat)); };
     let cam;
-    if(!plates){ /* the box standing up, seen from the front left, the back cover pressed in */ const lidOff=MK.depth+MK.lidT;
+    if(L.solid){ /* the shape standing on the printer bed, at true size */ const [w,d,h]=L.size, g=new THREE.BufferGeometry(), pos=new Float32Array(L.mesh.verts.length); for(let i=0;i<pos.length;i+=3){ pos[i]=L.mesh.verts[i]-w/2; pos[i+1]=L.mesh.verts[i+2]; pos[i+2]=-(L.mesh.verts[i+1]-d/2); }
+      g.setAttribute("position",new THREE.BufferAttribute(pos,3)); g.setIndex(new THREE.BufferAttribute(new Uint32Array(L.mesh.tris),1)); g.computeVertexNormals(); const c=new THREE.Color(L.color[0]/255,L.color[1]/255,L.color[2]/255);
+      T.group.add(new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:c,roughness:0.6,metalness:0,flatShading:!L.smooth,side:THREE.DoubleSide})));
+      const bed=new THREE.Mesh(new THREE.BoxGeometry(b[2],1.6,b[3]),new THREE.MeshStandardMaterial({color:0xb9babd,roughness:0.95,metalness:0})); bed.position.set(0,-0.81,0); T.group.add(bed); T.group.add(mkShadowPlane(Math.max(w,d)*1.9,Math.max(w,d)*1.9,0,0.05,0,0.3));
+      T.hemi.intensity=0.72; T.dir.intensity=0.6; T.dir.position.set(-0.6,1.5,1.0);
+      const asp=T.cam.aspect, big=Math.max(b[2]*0.62,h*1.25,w,d), dist=big*3.5/Math.min(1,asp*0.95); cam=["s",b[0],Math.round(big/15),Math.round(asp*10)].join("x");
+      if(T.dims!==cam){ T.dims=cam; T.cam.position.set(dist*0.5,h*0.45+dist*0.42,dist*0.76); T.cam.near=dist/50; T.cam.far=dist*20; T.cam.updateProjectionMatrix(); if(T.ctl){ T.ctl.target.set(0,h*0.42,0); T.ctl.update(); } else T.cam.lookAt(0,h*0.42,0); } }
+    else if(!plates){ /* the box standing up, seen from the front left, the back cover pressed in */ const lidOff=MK.depth+MK.lidT;
       for(const p of L.parts){ const tri=mkTriArray(mkMesh(p,L)); if(p.lid) for(let i=0;i<tri.length;i+=3){ tri[i]=Wg-tri[i]; tri[i+2]=lidOff-tri[i+2]; } add(tri,p.color,p.lit); }
       let r1=0; for(let i=0;i<L.outer.length;i++) if(L.outer[i]) r1=Math.floor(i/L.cols); const yb=Hg-(r1+1)*L.res;
       if(MK.stand){ const s=mkStandMesh(L), tri=mkTriArray(s); for(let i=0;i<tri.length;i+=3){ const x=tri[i],y=tri[i+1],z=tri[i+2]; tri[i]=(Wg-s.len)/2+x; tri[i+1]=yb+z-4; tri[i+2]=y-s.wS/2+s.deep/2; } add(tri,s.color,false); }
-      const deep=MK.depth+MK.lidT; T.group.add(mkShadowPlane(Wg*1.7,deep*2.4+Wg*0.35,Wg/2,yb-(MK.stand?4.3:0.3),deep/2,lit?0.62:0.42));
-      T.hemi.intensity=lit?0.22:0.95; T.dir.intensity=lit?0.25:0.78; T.dir.position.set(0.6,1.2,-1.4);
+      const deep=MK.depth+MK.lidT; T.group.add(mkShadowPlane(Wg*1.7,deep*2.4+Wg*0.35,Wg/2,yb-(MK.stand?4.3:0.3),deep/2,0.28));
+      T.hemi.intensity=lit?0.78:0.95; T.dir.intensity=lit?0.6:0.78; T.dir.position.set(0.6,1.2,-1.4);
       const asp=T.cam.aspect, dist=Math.max(Wg,Hg,MK.depth)*2.7/Math.min(1,asp*1.1), cx=Wg/2, cy=Hg/2, cz=MK.depth/2; cam=["r",Wg,Hg,MK.depth,Math.round(asp*10)].join("x");
       if(T.dims!==cam){ T.dims=cam; T.cam.position.set(cx-dist*0.42,cy+dist*0.26,-dist*0.86); T.cam.near=dist/50; T.cam.far=dist*20; T.cam.updateProjectionMatrix(); if(T.ctl){ T.ctl.target.set(cx,cy,cz); T.ctl.update(); } else T.cam.lookAt(cx,cy,cz); } }
     else { /* one plate laid on the printer bed the way it prints (the front face down, so it reads mirrored from above) */
@@ -979,14 +1074,14 @@ function mk3D(L,box){ const m=MK.node, c3=m.querySelector("#mk3d");
       /* the base shares plate 2 with the back cover, in front of it (as in the 3MF) */ const s=MK.plate===2&&MK.stand?mkStandMesh(L):null, dy=s?(s.wS+8)/2:0;
       for(const [tri,col] of list){ for(let i=0;i<tri.length;i+=3){ const x=tri[i],y=tri[i+1],z=tri[i+2]; tri[i]=x-w/2; tri[i+1]=z; tri[i+2]=-(y-h/2)-dy; } add(tri,col,false); }
       if(s){ const tri=mkTriArray(s); for(let i=0;i<tri.length;i+=3){ const x=tri[i],y=tri[i+1],z=tri[i+2]; tri[i]=x-s.len/2; tri[i+1]=z; tri[i+2]=-(y-s.wS/2)+h/2+8+s.wS/2-dy; } add(tri,s.color,false); }
-      const bed=new THREE.Mesh(new THREE.BoxGeometry(b[2],1.6,b[3]),new THREE.MeshStandardMaterial({color:0x2c2d31,roughness:0.92,metalness:0})); bed.position.set(0,-0.81,0); T.group.add(bed);
+      const bed=new THREE.Mesh(new THREE.BoxGeometry(b[2],1.6,b[3]),new THREE.MeshStandardMaterial({color:0x77787e,roughness:0.95,metalness:0})); bed.position.set(0,-0.81,0); T.group.add(bed);
       T.hemi.intensity=0.95; T.dir.intensity=0.8; T.dir.position.set(-0.5,1.6,0.9);
       const asp=T.cam.aspect, dist=Math.max(b[2],b[3])*2.2/Math.min(1,asp*0.95); cam=["p",b[0],Math.round(asp*10)].join("x");
       if(T.dims!==cam){ T.dims=cam; T.cam.position.set(0,dist*0.8,dist*0.62); T.cam.near=dist/50; T.cam.far=dist*20; T.cam.updateProjectionMatrix(); if(T.ctl){ T.ctl.target.set(0,0,0); T.ctl.update(); } else T.cam.lookAt(0,0,0); } } }
   T.render(); }
 /* ---- lithophane grey map / thickness ---- */
-function lbGrey(src,cols,rows){ const d=mkSample(src,cols,rows,true); const out=new Float32Array(cols*rows); for(let i=0;i<cols*rows;i++){ let L=(0.2126*d[i*4]+0.7152*d[i*4+1]+0.0722*d[i*4+2])/255; if(d[i*4+3]<128) L=1; if(MK.invert) L=1-L; out[i]=L; } return out; }
-function lbThick(grey){ const t=new Float32Array(grey.length); const a=MK.minT, b=Math.max(MK.minT+0.3,MK.maxT); for(let i=0;i<grey.length;i++) t[i]=a+(1-grey[i])*(b-a); return t; }
+function lbGrey(src,cols,rows){ const d=mkSample(src,cols,rows,true); const out=new Float32Array(cols*rows); for(let i=0;i<cols*rows;i++){ let L=(0.2126*d[i*4]+0.7152*d[i*4+1]+0.0722*d[i*4+2])/255; if(d[i*4+3]<128) L=MK.mode==="relief"?0:1; if(MK.invert) L=1-L; out[i]=L; } return out; }
+function lbThick(grey){ const t=new Float32Array(grey.length); const a=MK.minT, b=Math.max(MK.minT+0.3,MK.maxT), up=MK.mode==="relief"; for(let i=0;i<grey.length;i++) t[i]=a+(up?grey[i]:1-grey[i])*(b-a); return t; }
 /* ---- meshes ---- */
 function lbGridSolid(cols,rows,cell,Hfn){ const top=new Float32Array(cols*rows*3); for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){ const i=(r*cols+c)*3; top[i]=c*cell; top[i+1]=r*cell; top[i+2]=Hfn(c,r); }
   const nTop=(cols-1)*(rows-1)*2, nWall=((cols-1)*2+(rows-1)*2)*2, nBot=(cols-1)*2+(rows-1)*2; const out=new Float32Array((nTop+nBot+nWall)*9); let o=0; const put=(...v)=>{ for(let k=0;k<9;k++) out[o++]=v[k]; }; const P=(c,r)=>{ const i=(r*cols+c)*3; return [top[i],top[i+1],top[i+2]]; };
@@ -1060,19 +1155,37 @@ function mk3MF(objects,title){ const esc1=s=>String(s).replace(/&/g,"&amp;").rep
   return mkZip([{name:"[Content_Types].xml",data:`<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/><Default Extension="config" ContentType="text/xml"/></Types>`},{name:"_rels/.rels",data:`<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>`},{name:"3D/3dmodel.model",data:model},{name:"Metadata/model_settings.config",data:conf}]); }
 function lbSlug(s){ return String(s||"maker").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,48)||"maker"; }
 
-function mkMesh(part,L){ const hm=new Float32Array(L.cols*L.rows); for(let i=0;i<hm.length;i++) if(part.mask[i]) hm[i]=part.z1; const f=mkField(hm,L.cols,L.rows,L.res,part.z0,!!part.mirror); return {verts:f.verts,tris:f.tris,name:part.name,color:part.color}; }
+/* the meshes of a layout's parts, kept with the layout: smooth outlines (geo.js), and parts on the same layer share their edges exactly */
+function mkMeshes(L){ if(L._meshes) return L._meshes; const out=new Array(L.parts.length);
+  for(const mir of [true,false]){ const ix=[]; L.parts.forEach((p,i)=>{ if(!!p.mirror===mir) ix.push(i); }); if(!ix.length) continue;
+    const ms=MakerGeo.meshParts(ix.map(i=>L.parts[i]),{C:L.cols,R:L.rows,res:L.res,mirror:mir}); ix.forEach((i,k)=>{ out[i]={verts:ms[k].verts,tris:ms[k].tris,name:L.parts[i].name,color:L.parts[i].color}; }); }
+  return L._meshes=out; }
+function mkMesh(part,L){ return mkMeshes(L)[L.parts.indexOf(part)]; }
 /* all the given parts as one sealed solid (for a one-colour STL): each column runs from 0 to its highest part */
-function mkUnion(parts,L){ const hm=new Float32Array(L.cols*L.rows); for(const p of parts) for(let i=0;i<hm.length;i++) if(p.mask[i]&&p.z1>hm[i]) hm[i]=p.z1; const f=mkField(hm,L.cols,L.rows,L.res,0,!!(parts[0]&&parts[0].mirror)); return f; }
+function mkUnion(parts,L){ return MakerGeo.meshUnion(parts,{C:L.cols,R:L.rows,res:L.res,mirror:!!(parts[0]&&parts[0].mirror)}); }
 /* stand: a cradle the box's bottom edge sits in, standing up. Channel 0.6 mm wider than the box is deep */
 function mkStandMesh(L){ const res=0.5, Wg=L.cols*L.res; const len=Math.min(160,Math.max(40,Wg*0.6)); const deep=MK.depth+(MK.lid?MK.lidT:0); const wS=deep+0.6+10;
   const C=Math.round(len/res), R=Math.round(wS/res), s0=Math.round(5/res); const hm=new Float32Array(C*R); for(let r=0;r<R;r++) for(let c=0;c<C;c++) hm[r*C+c]=(r>=s0&&r<R-s0)?4:12;
   const f=mkField(hm,C,R,res,0,false); return {verts:f.verts,tris:f.tris,name:"Stand",color:mkRgb(MK.frameInk),len:C*res,wS:R*res,deep}; }
 /* ---- export: a reminder about holes for the light's cable, then the printer and nozzle, then the files ---- */
 const MK_TIPKEY="c3d-maker-hole-tip-off";
-function mkHasContent(){ return MK.mode==="sign"?!!(MK.text||"").trim():MK.els.some(mkElOk); }
-function mkExport(){ if(MK.busy) return; if(!mkHasContent()){ toast(MK.mode==="sign"?"Type your sign text first.":"Add an image, some text or a shape first."); return; }
+/* ---- shape makers (solids.js): sliders in, one sealed shape out ---- */
+function mkSolidLayout(){ if(!window.MakerSolids||!MakerSolids.kinds[MK.mode]) return null; const b=MakerSolids.build(MK.mode,(MK.sol||{})[MK.mode]), z=b.mesh.size; const c=mkRgb(MK.solInk);
+  return {solid:true,kind:MK.mode,p:b.p,mesh:b.mesh,size:[mkRound(z[0]),mkRound(z[1]),mkRound(z[2])],cols:Math.ceil(z[0]),rows:Math.ceil(z[1]),res:1,parts:[],palette:[c],color:c,checks:b.checks,print:b.print,smooth:MK.mode==="vase",up:true}; }
+function mkSolidUI(force){ const box=MK.node&&MK.node.querySelector("#mkSolid"); if(!box||mkFam()!=="solid"||!window.MakerSolids) return; const kind=MK.mode, K=MakerSolids.kinds[kind]; if(!K||(!force&&box.dataset.kind===kind)) return; box.dataset.kind=kind;
+  const p=MakerSolids.values(kind,(MK.sol||{})[kind]);
+  box.innerHTML=`<div class="k">Style</div><div class="tiles lbl" id="mkSolStyle" style="flex-wrap:wrap">${K.styles.map((x,i)=>`<button type="button" data-st="${i}" style="flex:1 0 30%">${esc(x[0])}</button>`).join("")}</div>`+K.params.map(q=>mkSl("mkSol_"+q.k,q.label,q.min,q.max,q.step,p[q.k],q.unit===""?" ":q.unit)+(q.hint?`<p class="hint">${esc(q.hint)}</p>`:"")).join("")+K.flags.map(q=>`<label class="chk" style="margin-top:12px"><input type="checkbox" id="mkSol_${q.k}" ${p[q.k]?"checked":""}> ${esc(q.label)}</label>${q.hint?`<p class="hint">${esc(q.hint)}</p>`:""}`).join("");
+  const put=o=>{ MK.sol=Object.assign({},MK.sol,{[kind]:Object.assign({},(MK.sol||{})[kind],o)}); };
+  for(const q of K.params){ const n=box.querySelector("#mkSol_"+q.k), r=box.querySelector("#mkSol_"+q.k+"R"); r.oninput=()=>{ n.value=r.value; put({[q.k]:+r.value}); lbPreview(90); };
+    n.onchange=()=>{ const v=Math.min(q.max,Math.max(q.min,Number.isFinite(+n.value)&&n.value!==""?+n.value:q.def)); n.value=v; r.value=v; put({[q.k]:v}); lbPreview(0); }; }
+  for(const q of K.flags) box.querySelector("#mkSol_"+q.k).onchange=e=>{ put({[q.k]:e.target.checked}); lbPreview(0); };
+  box.querySelector("#mkSolStyle").onclick=e=>{ const b=e.target.closest("[data-st]"); if(!b) return; put(K.styles[+b.dataset.st][1]); mkSolidUI(true); lbPreview(0); mkCommitNow(); }; }
+/* the 3D view as a square picture (plate thumbnail, My designs) */
+function mkSolidShot(){ try{ const T=MK.three; if(!T||!T.canvas.width) return null; T.render(); const s=Math.min(T.canvas.width,T.canvas.height), cv=document.createElement("canvas"); cv.width=cv.height=512; const x=cv.getContext("2d"); x.fillStyle="#f2f2f2"; x.fillRect(0,0,512,512); x.drawImage(T.canvas,(T.canvas.width-s)/2,(T.canvas.height-s)/2,s,s,0,0,512,512); return cv; }catch{ return null; } }
+function mkHasContent(){ return mkFam()==="solid"?true:MK.mode==="qr"?!!(MK.qrText||"").trim():mkFam()==="sign"?!!(MK.text||"").trim():MK.els.some(mkElOk); }
+function mkExport(){ if(MK.busy) return; if(!mkHasContent()){ toast(MK.mode==="qr"?"Type the link or text for the code first.":mkFam()==="sign"?"Type your sign text first.":"Add an image, some text or a shape first."); return; }
   let off=false; try{ off=localStorage.getItem(MK_TIPKEY)==="1"; }catch{}
-  if(MK.mode==="lightbox"&&!MK.holes.length&&!off) mkHoleTip(); else mkPrinterDlg(); }
+  if(mkFam()==="lightbox"&&!MK.holes.length&&!off) mkHoleTip(); else mkPrinterDlg(); }
 function mkDlg(id,title,body,foot,wide){ const old=document.getElementById(id); if(old) old.remove(); const back=document.activeElement; const wrap=document.createElement("div"); wrap.className="modal"+(wide?" wide":""); wrap.id=id; wrap.setAttribute("role","dialog"); wrap.setAttribute("aria-modal","true"); wrap.setAttribute("aria-labelledby",id+"T");
   wrap.innerHTML=`<div class="dlg"><div class="dlg-h"><h2 id="${id}T">${title}</h2><button type="button" class="btn ghost icon" data-x aria-label="Close">${mkIc("x")}</button></div><div class="dlg-b">${body}</div><div class="dlg-f">${foot||""}</div></div>`;
   const close=()=>{ wrap.remove(); document.removeEventListener("keydown",k); mkMenuClose(); if(back&&back.focus&&document.body.contains(back)) try{ back.focus(); }catch{} }; const k=e=>{ if(e.key==="Escape"&&!document.getElementById("mkFloatMenu")) close(); };
@@ -1083,7 +1196,7 @@ function mkHoleTip(){ const w=mkDlg("mkHoleDlg","Holes for the light's cable",`<
   w.querySelector("#mkHoleGo").onclick=()=>{ remember(); w.close(); mkPrinterDlg(); };
   w.querySelector("#mkHoleNow").onclick=()=>{ remember(); w.close(); mkSetDP("design"); mkSelect(null); MK.sec="hole"; mkAccUI(); if(mkPhone()) mkSheet("props"); const s=MK.node.querySelector('[data-sec="hole"]'); if(s&&s.scrollIntoView) s.scrollIntoView({block:"nearest"}); };
   w.querySelector("#mkHoleNow").focus(); }
-function mkPrinterDlg(){ const cur=(MK_PRINTERS.find(p=>p[0]===MK.printer&&p[1]===MK.bed)||MK_PRINTERS.find(p=>p[0]===MK_BEDPRINTER[MK.bed])||MK_PRINTERS[5])[0];
+function mkPrinterDlg(){ const cur=(MK_PRINTERS.find(p=>p[0]===MK.printer&&p[1]===MK.bed)||MK_PRINTERS.find(p=>p[0]===MK_BEDPRINTER[MK.bed])||MK_PRINTERS[2])[0];
   const w=mkDlg("mkPrinterDlg","Printer and nozzle",`<label class="fld">Printer<select id="mkPrinter">${MK_PRINTERS.map(p=>`<option ${p[0]===cur?"selected":""}>${p[0]}</option>`).join("")}</select></label>
     <label class="fld" style="margin-top:14px">Nozzle<select id="mkNozzle">${MK_NOZZLES.map(n=>`<option value="${n}" ${n===+MK.nozzle?"selected":""}>${n} mm</option>`).join("")}</select></label>
     <label class="chk" style="margin-top:12px"><input type="checkbox" id="mkWithStl" ${MK.withStl!==false?"checked":""}> Also include STL files</label><p class="hint" id="mkPrFit"></p>`,
@@ -1095,33 +1208,48 @@ function mkPrinterDlg(){ const cur=(MK_PRINTERS.find(p=>p[0]===MK.printer&&p[1]=
   w.querySelector("#mkPrinter").onchange=fit; w.querySelector("#mkNozzle").onchange=fit; fit();
   w.querySelector("#mkPrGo").onclick=()=>{ const p=pick(); MK.printer=p[0]; MK.bed=p[1]; MK.nozzle=parseFloat(w.querySelector("#mkNozzle").value)||0.4; MK.withStl=w.querySelector("#mkWithStl").checked; w.close(); mkCommitNow(); lbBuild(); };
   w.querySelector("#mkPrGo").focus(); }
+/* Bambu PLA Basic for every printer (bambu-presets.js), fetched the first time a file is exported */
+let mkPresetsP=null; function mkPresets(){ if(window.MakerBambuPresets) return Promise.resolve(); if(!mkPresetsP) mkPresetsP=mkLoadScript(["bambu-presets.js"]).catch(()=>{ mkPresetsP=null; }); return mkPresetsP; }
+/* the picture Bambu Studio shows for a plate: the print's colours from the front (or the back cover), on white */
+function mkPlatePng(L,lid){ return new Promise(ok=>{ try{ const S=512, cv=document.createElement("canvas"); cv.width=cv.height=S; const ctx=cv.getContext("2d"); ctx.fillStyle="#fff"; ctx.fillRect(0,0,S,S); const s=S*0.9/Math.max(L.cols,L.rows);
+    mkPaint(ctx,L,{s,ox:(S-L.cols*s)/2,oy:(S-L.rows*s)/2},lid?"lid":"front"); cv.toBlob(async b=>{ try{ ok(b?new Uint8Array(await b.arrayBuffer()):null); }catch{ ok(null); } },"image/png"); }catch(e){ ok(null); } }); }
 async function lbBuild(){ if(MK.busy) return; if(!mkHasContent()){ toast("Add an image, some text or a shape first."); return; }
   clearTimeout(lbPrevTimer); lbPreviewNow();
   MK.busy=true; const m=MK.node, st=m.querySelector("#lbStat"), btn=m.querySelector("#mkExport"); btn.disabled=true; btn.textContent="Exporting…"; st.textContent="Building the print files…"; await new Promise(r=>setTimeout(r,30));
   try{ const name=MK.name||mkDefName(); const slug=lbSlug(name); const parts=[]; const stl=MK.withStl!==false; MK.meta={}; let sealed={ok:true,n:0,bad:0,mode:MK.mode}, plates=[];
-    if(MK.mode==="litho"){ const src=mkSource(); const {w,h}=lbDims(src); const cell=MK.lres; const cols=Math.round(w/cell)+1, rows=Math.round(h/cell)+1; const T=lbThick(lbGrey(src,cols,rows)); let tri=lbGridSolid(cols,rows,cell,(c,r)=>T[(rows-1-r)*cols+c]); if(MK.arc>0) tri=lbBend(tri,(cols-1)*cell,MK.arc); tri=lbStandUp(tri); parts.push({name:slug+"-lithophane.stl",blob:lbSTL(tri,name),label:"Lithophane STL"}); sealed.n=1; MK.meta={w,h}; }
-    else { const L=mkLayout(); if(!L) throw new Error("no source"); const fp=L.parts.filter(p=>!p.lid), lp=L.parts.filter(p=>p.lid); const front=fp.map(p=>mkMesh(p,L)), lid=lp.map(p=>mkMesh(p,L));
-      const one=mkUnion(fp,L), oneLid=lp.length?mkUnion(lp,L):null, stand=MK.mode==="lightbox"&&MK.stand?mkStandMesh(L):null; if(stand) stand.name="Base";
-      for(const x of [...front,...lid,one,...(oneLid?[oneLid]:[]),...(stand?[stand]:[])]){ if(!mkSealed(x)){ sealed.ok=false; sealed.bad++; } } sealed.n=front.length+lid.length+(stand?1:0);
-      const objects=[{name:MK.mode==="lightbox"?"Front and side":mkTitle(),plateName:MK.mode==="lightbox"?"Plate 1 - Front and side":"Plate 1",plate:1,meshes:front}];
-      if(lid.length) objects.push({name:"Back cover",plateName:stand?"Plate 2 - Back and base":"Plate 2 - Back",plate:2,meshes:lid}); if(stand) objects.push({name:"Base",plate:lid.length?2:1,meshes:[stand]});
-      plates=[...new Set(objects.map(o=>o.plate))];
-      parts.push({name:slug+".3mf",blob:mk3MF(objects,name),label:`3MF for Bambu Studio (${plates.length} plate${plates.length>1?"s":""})`});
-      if(stl){ parts.push({name:slug+"-one-colour.stl",blob:lbSTL(mkTriArray(one),name),label:"One-colour STL"}); if(oneLid) parts.push({name:slug+"-back-cover.stl",blob:lbSTL(mkTriArray(oneLid),name+" back cover"),label:"Back cover STL"}); if(stand) parts.push({name:slug+"-base.stl",blob:lbSTL(mkTriArray(stand),name+" base"),label:"Base STL"}); }
-      MK.meta={w:mkRound(L.cols*L.res),h:mkRound(L.rows*L.res),palette:L.palette.map(mkHex),parts:L.parts.length,plates:plates.length}; }
+    if(mkFam()==="litho"){ const src=mkSource(); const {w,h}=lbDims(src); const cell=MK.lres; const cols=Math.round(w/cell)+1, rows=Math.round(h/cell)+1; const T=lbThick(lbGrey(src,cols,rows)); let tri=lbGridSolid(cols,rows,cell,(c,r)=>T[(rows-1-r)*cols+c]); const flat=MK.mode==="relief"; if(!flat){ if(MK.arc>0) tri=lbBend(tri,(cols-1)*cell,MK.arc); tri=lbStandUp(tri); } parts.push({name:slug+(flat?"-relief.stl":"-lithophane.stl"),blob:lbSTL(tri,name),label:flat?"Relief STL":"Lithophane STL"}); sealed.n=1; MK.meta={w,h}; }
+    else if(mkFam()==="solid"){ const L=mkSolidLayout(); if(!L) throw new Error("no shape"); const mesh={name:mkTitle(),color:L.color,verts:L.mesh.verts,tris:L.mesh.tris}; if(!MakerGeo.sealed(mesh)){ sealed.ok=false; sealed.bad=1; } sealed.n=1;
+      const objects=[{name:mkTitle(),plateName:mkTitle(),plate:1,parts:[mesh]}]; plates=[1]; const thumbs={}, shot=mkSolidShot(); if(shot){ const t=await new Promise(r=>shot.toBlob(async b=>{ try{ r(b?new Uint8Array(await b.arrayBuffer()):null); }catch{ r(null); } },"image/png")); if(t) thumbs[1]=t; }
+      await mkPresets(); const pr=await MakerBambu.project({title:name,printer:MK.printer,nozzle:MK.nozzle,presets:window.MakerBambuPresets,objects,thumbs});
+      parts.push({name:slug+".3mf",blob:new Blob([pr.bytes],{type:"model/3mf"}),label:"Bambu Studio project (1 plate, colour set)"}); if(stl) parts.push({name:slug+".stl",blob:new Blob([MakerBambu.stl(mesh,name)]),label:"STL"});
+      MK.meta={up:true,solid:true,spiral:!!L.p.spiral,w:L.size[0],h:L.size[1],tall:L.size[2],palette:[mkHex(L.color)],parts:1,plates:1,filaments:pr.filaments.map(f=>f.hex),preset:pr.preset}; }
+    else { /* cut from a finer layout than the one on screen, with the very same colours */
+      const L=mkLayout({fine:true,qpal:MK.L&&MK.L.qpal}); if(!L) throw new Error("no source"); const ms=mkMeshes(L);
+      const pm=L.parts.map((p,i)=>({name:p.name,color:p.fil||p.color,verts:ms[i].verts,tris:ms[i].tris,lid:!!p.lid})).filter(x=>x.tris.length), front=pm.filter(x=>!x.lid), lid=pm.filter(x=>x.lid);
+      const one=mkUnion(L.parts.filter(p=>!p.lid),L), oneLid=lid.length?mkUnion(L.parts.filter(p=>p.lid),L):null, stand=mkFam()==="lightbox"&&MK.stand?mkStandMesh(L):null; if(stand) stand.name="Base";
+      for(const x of [...front,...lid,one,...(oneLid?[oneLid]:[]),...(stand?[stand]:[])]){ if(!MakerGeo.sealed(x)){ sealed.ok=false; sealed.bad++; } } sealed.n=front.length+lid.length+(stand?1:0);
+      const objects=[{name:mkFam()==="lightbox"?"Front and side":mkTitle(),plateName:mkFam()==="lightbox"?"Front and side":mkTitle(),plate:1,parts:front}];
+      /* the back cover goes out as one joined piece: plate and rim as two bodies make Bambu Studio flag the rim as a loose object */
+      if((mkFam()==="lightbox"||MK.mode==="puzzle")&&oneLid&&lid.length>1&&oneLid.tris.length){ const c=lid[0].color; lid.length=0; lid.push({name:L.plate2||"Back cover",color:c,verts:oneLid.verts,tris:oneLid.tris,lid:true}); }
+      if(lid.length) objects.push({name:L.plate2||"Back cover",plateName:L.plate2||(stand?"Back and base":"Back cover"),plate:2,parts:lid}); if(stand) objects.push({name:"Base",plateName:"Base",plate:lid.length?2:1,parts:[stand]});
+      plates=[...new Set(objects.map(o=>o.plate))]; const thumbs={}; for(const pl of plates){ const t=await mkPlatePng(L,pl===2&&lid.length>0); if(t) thumbs[pl]=t; }
+      await mkPresets(); const pr=await MakerBambu.project({title:name,printer:MK.printer,nozzle:MK.nozzle,presets:window.MakerBambuPresets,objects,thumbs});
+      parts.push({name:slug+".3mf",blob:new Blob([pr.bytes],{type:"model/3mf"}),label:`Bambu Studio project (${plates.length} plate${plates.length>1?"s":""}, ${pr.filaments.length} colours set)`});
+      if(stl){ parts.push({name:slug+"-one-colour.stl",blob:new Blob([MakerBambu.stl(one,name)]),label:"One-colour STL"}); if(oneLid) parts.push({name:slug+(L.plate2?"-"+lbSlug(L.plate2):"-back-cover")+".stl",blob:new Blob([MakerBambu.stl(oneLid,name+" "+(L.plate2||"back cover").toLowerCase())]),label:(L.plate2||"Back cover")+" STL"}); if(stand) parts.push({name:slug+"-base.stl",blob:new Blob([MakerBambu.stl(stand,name+" base")]),label:"Base STL"}); }
+      MK.meta={up:!!L.up,swaps:L.swaps||null,paintBase:L.paintBase||null,w:mkRound(L.cols*L.res),h:mkRound(L.rows*L.res),palette:L.palette.map(mkHex),parts:pm.length,plates:plates.length,filaments:pr.filaments.map(f=>f.hex),preset:pr.preset,res:L.res}; }
     MK.parts=parts; MK.dirty=false; MK.sealed=sealed; const tot=parts.reduce((s,p)=>s+p.blob.size,0);
     const ck=m.querySelector("#mkCheck"); if(MK.L&&ck) ck.innerHTML=mkChecks(MK.L).map(([k,t])=>`<li class="${k}">${ICON[k]}<span>${esc(t)}</span></li>`).join("");
-    st.textContent=MK.mode==="litho"?`Ready · ${(tot/1048576).toFixed(1)} MB · Bambu Studio: white PLA, 0.12 mm layers, 100% infill, print standing.`:`Ready · ${(tot/1048576).toFixed(1)} MB · Open the 3MF in Bambu Studio: ${plates.length>1?`${plates.length} plates, `:""}one part per colour (the part names show the colour). Pick a filament for each part.`;
+    st.textContent=MK.mode==="relief"?`Ready · ${(tot/1048576).toFixed(1)} MB · Bambu Studio: lies flat as it opens, 0.12 mm layers, any colour, no supports.`:mkFam()==="litho"?`Ready · ${(tot/1048576).toFixed(1)} MB · Bambu Studio: white PLA, 0.12 mm layers, 100% infill, print standing.`:`Ready · ${(tot/1048576).toFixed(1)} MB · Opens in Bambu Studio as a finished project: ${MK.meta.preset.model.replace("Bambu Lab ","")}, ${MK.meta.preset.nozzle} mm nozzle, ${plates.length>1?`${plates.length} plates, `:""}every colour already on its own filament.`;
     const dl=m.querySelector("#lbDl"); dl.innerHTML=`<button type="button" class="btn sm block" data-lbdlall>Download all again (.zip)</button>`+parts.map((p,i)=>`<button type="button" class="btn sm block" data-lbdl="${i}">${esc(p.label||p.name)} only</button>`).join("");
     dl.querySelector("[data-lbdlall]").onclick=()=>lbDownloadZip(MK.parts,slug+"-print-files.zip");
     dl.querySelectorAll("[data-lbdl]").forEach(b=>b.onclick=()=>lbDownloadZip([MK.parts[+b.dataset.lbdl]],MK.parts[+b.dataset.lbdl].name.replace(/\.\w+$/,"")+".zip"));
-    await lbDownloadZip(parts,slug+"-print-files.zip"); toast("Print files downloaded.");
+    if(await lbDownloadZip(parts,slug+"-print-files.zip")) toast(mkFam()==="litho"?"Saved. Open the zip, then open the .stl in Bambu Studio.":"Saved. Open the zip and double-click the .3mf file: Bambu Studio opens it ready to print.");
   }catch(e){ console.error("maker build",e); st.textContent="Couldn't build that: "+String(e&&e.message||e).slice(0,120)+". Try a smaller size or less detail."; toast("Couldn't build the print files. See Print check."); }
   MK.busy=false; btn.disabled=false; btn.textContent="Export"; }
 async function lbDownloadZip(list,zipName){ try{ const files=[]; for(const p of list) files.push({name:p.name,data:new Uint8Array(await p.blob.arrayBuffer())});
   const made=`Made for the ${mkPrinterName()} with a ${MK.nozzle} mm nozzle.\r\n`;
-  files.push({name:"HOW TO PRINT.txt",data:made+(MK.mode==="litho"?"Open the .stl in Bambu Studio. White PLA, 0.12 mm layers, 100% infill, print standing up.\r\n":"Open the .3mf in Bambu Studio. Each plate holds one object with one part per colour; the part names show the colour. Pick a filament for each part. The front prints face down (colours first).\r\n"+(MK.mode==="lightbox"?"Plate 2 is the back cover: it prints flat side down. Glue the lights to the inside through the back, then press the cover in.\r\n"+(MK.stand?"The base prints on plate 2 next to the back cover, open side up. Stand the box in it.\r\n":""):"")+"The STL files are the same parts in one colour, if you'd rather paint or use one filament.\r\n")});
-  const z=mkZip(files); await lbDownload({name:zipName,blob:new Blob([z],{type:"application/zip"})}); }catch(e){ console.error("maker zip",e); toast("Couldn't package the files. Try again."); } }
+  files.push({name:"HOW TO PRINT.txt",data:made+(MK.mode==="relief"?"Open the .stl in Bambu Studio. It lies flat with the picture up. 0.12 mm layers show the most detail. Any colour, no supports.\r\n":mkFam()==="litho"?"Open the .stl in Bambu Studio. White PLA, 0.12 mm layers, 100% infill, print standing up.\r\n":mkFam()==="solid"?"Open the .3mf in Bambu Studio (File, Open Project, or double-click it). The printer and the filament colour are already set: Slice and Print. It prints standing up with no supports.\r\n"+(MK.meta&&MK.meta.spiral?"This is a solid shape for spiral vase mode: in Bambu Studio turn on Others, Special mode, Spiral vase before you slice.\r\n":MK.mode==="vase"?"For a vase that holds water, set 3 or more wall loops and 100% infill for the bottom layers.\r\n":""):"Open the .3mf in Bambu Studio (File, Open Project, or double-click it). The printer, the plates and the filament colours are already set: load the filaments in the colours shown, then Slice and Print. "+(MK.meta&&MK.meta.up?"It prints face up.":"The front prints face down (colours first).")+"\r\n"+(MK.mode==="puzzle"?"Plate 1 is the tiles, already in their colours. Plate 2 is the tray. Tip the tiles out, mix them up and build the picture in the tray.\r\n":"")+(MK.mode==="stamp"?"Plate 2 is the handle: glue it to the flat back of the stamp. TPU makes a soft stamp; with PLA, press onto a foam pad.\r\n":"")+(MK.mode==="painting"&&MK.meta&&MK.meta.swaps&&MK.meta.swaps.length?"No AMS? Print it in one go with filament swaps: start with "+MK.meta.paintBase+", then add a pause in Bambu Studio (right-click the layer slider, Add Pause) and change filament at: "+MK.meta.swaps.map(x=>x[0]+" mm to "+x[1]).join(", ")+".\r\n":"")+(MK.mode==="magnet"?"Press or glue the magnets into the pockets on the back.\r\n":"")+(mkFam()==="lightbox"?"Plate 2 is the back cover: it prints flat side down. Glue the lights to the inside through the back, then press the cover in.\r\n"+(MK.stand?"The base prints on plate 2 next to the back cover, open side up. Stand the box in it.\r\n":""):"")+"The STL files are the same parts in one colour, if you'd rather paint or use one filament.\r\n")});
+  const z=mkZip(files); return (await lbDownload({name:zipName,blob:new Blob([z],{type:"application/zip"})}))!==false; }catch(e){ console.error("maker zip",e); toast("Couldn't package the files. Try again."); return false; } }
 async function lbDownload(p){ if(!p||!p.blob) return; return dlBlob(p.name,p.blob); }
 /* ---- My designs: kept in this browser as you work (up to 30) ---- */
 const MK_DKEY="c3d-maker-drafts-v1", MK_DMAX=30;
@@ -1130,7 +1258,7 @@ function mkDraftsSave(list){ try{ localStorage.setItem(MK_DKEY,JSON.stringify(li
 let mkAutoT=null, mkSpaceWarned=false;
 function mkAutosave(){ clearTimeout(mkAutoT); mkAutoT=setTimeout(mkSaveDraftNow,1200); }
 function mkThumb(){ try{ const L=MK.L; const t=document.createElement("canvas"); t.width=320; t.height=240; const x=t.getContext("2d"); x.fillStyle="#efefef"; x.fillRect(0,0,320,240);
-    const img=L&&!L.litho?mkFaceCells(L,false).face:(mkSource()||{}).img; if(img){ const sc=Math.min(250/img.width,180/img.height), w=Math.max(1,img.width*sc), h=Math.max(1,img.height*sc); x.drawImage(mkUp(img,w,h),(320-w)/2,(240-h)/2); }
+    const img=L&&L.solid?mkSolidShot():L&&!L.litho?mkFaceCells(L,false).face:(mkSource()||{}).img; if(img){ const sc=Math.min(250/img.width,180/img.height), w=Math.max(1,img.width*sc), h=Math.max(1,img.height*sc); x.drawImage(mkUp(img,w,h),(320-w)/2,(240-h)/2); }
     return t.toDataURL("image/jpeg",0.78); }catch{ return ""; } }
 function mkSaveDraftNow(){ clearTimeout(mkAutoT); if(!MK.node) return; if(!mkHasContent()) return; if(!MK.draftId) MK.draftId=mkId("d");
   const pics={}; for(const e of MK.els) if(e.type==="image"&&!pics[e.pic]){ const p=MK.pics.get(e.pic); if(p) pics[e.pic]=p.data; }
