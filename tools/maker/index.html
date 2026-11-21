@@ -572,7 +572,7 @@ function mkMoveLayer(from,to){ const i=MK.els.findIndex(e=>e.id===from), j=MK.el
 function mkDelBtn(){ const b=MK.node&&MK.node.querySelector("#mkDel"); if(b) b.disabled=!MK.sel&&!MK.selHole; }
 /* the right panel: the selected element's settings, or Overall */
 function mkElUI(){ const m=MK.node; if(!m) return; const box=m.querySelector("#mkElProps"), ov=m.querySelector("#mkOverallBody"), title=m.querySelector("#mkPropsTitle"), back=m.querySelector("#mkOverall");
-  const e=(mkFam()==="sign"||MK.dp!=="design")?null:mkSelEl(); box.hidden=!e; ov.hidden=!!e; back.hidden=!e; mkDelBtn();
+  const e=(mkFam()==="sign"||mkFam()==="solid"||MK.dp!=="design")?null:mkSelEl(); box.hidden=!e; ov.hidden=!!e; back.hidden=!e; mkDelBtn();
   if(!e){ box.innerHTML=""; title.textContent="Overall"; return; }
   title.textContent=e.type==="text"?"Text":e.type==="shape"?"Shape":"Image"; let body="";
   const colRow=(k,label,id,swId)=>`<div class="k">${label}</div><div class="colrow"><span class="cdot" style="background:${esc(e[k])}"></span><input type="text" class="hex" id="${id}" value="${esc(String(e[k]).replace("#","").toUpperCase())}" maxlength="7" aria-label="${label} as a hex code"></div>${mkSwatches(swId,e[k])}`;
