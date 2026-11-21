@@ -7,7 +7,7 @@
 //   node scripts/meshy-runner.mjs            send waiting jobs, check running ones, then exit
 //   node scripts/meshy-runner.mjs --status   say whether the Meshy CLI is signed in and the credit balance
 //
-// Never sends a paid job twice: each Meshy task id is written to sent.json before the engine hears about it,
+// Never sends a paid job twice: each Meshy task id is written to state.json before the engine hears about it,
 // and a send whose result is unknown is reported as failed (check meshy.ai) instead of being tried again.
 // The CLI keeps its own sign-in; this script never reads it. The console key (drive-server\setup.ps1) is only
 // sent to the engine as a header.
