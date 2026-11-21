@@ -84,6 +84,8 @@ function fakeShopify(opts = {}) {
       case "ConsoleActivate": return data({ productUpdate: { product: { id: PID, status: "ACTIVE" }, userErrors: opts.activateErrors ?? [] } });
       case "ConsolePublish": return data({ publishablePublish: { userErrors: opts.publishErrors ?? [] } });
       case "ConsoleUnpublish": return data({ publishableUnpublish: { userErrors: [] } });
+      case "ConsoleDeleteLookup": return data({ product: opts.missing ? null : { id: variables.id, title: "Name Ornament", handle: "name-ornament", status: "DRAFT" } });
+      case "ConsoleProductDelete": return data({ productDelete: { deletedProductId: opts.deleteErrors ? null : variables.input.id, userErrors: opts.deleteErrors ?? [] } });
       case "ConsoleProductTags": return data({ product: opts.missing ? null : { id: variables.id, tags: opts.product?.tags ?? [] } });
       case "ConsoleTagsAdd": return data({ tagsAdd: { node: { id: variables.id }, userErrors: opts.tagErrors ?? [] } });
       case "ConsoleTagsRemove": return data({ tagsRemove: { node: { id: variables.id }, userErrors: opts.tagErrors ?? [] } });
@@ -155,6 +157,39 @@ test("publish: activates, publishes to Online Store, pings IndexNow, returns liv
   const ping = sh.calls.find((c) => c.indexnow).indexnow;
   assert.deepEqual(ping, { host: "charleston3d.com", key: "abc123indexnow", keyLocation: "https://charleston3d.com/abc123indexnow.txt", urlList: ["https://charleston3d.com/products/name-ornament"] });
   assert.equal(res.body.indexNow.sent, true);
+});
+
+// ---------- Delete (Post to site) ----------
+const del = (body, headers = { "content-type": "application/json", "x-console-key": "open-sesame-test-key-0001" }) => ({ ...post(body, headers), method: "DELETE" });
+
+test("delete: needs the key and confirm, Charleston 3D only, then deletes the product", async () => {
+  const sh = fakeShopify();
+  const ctx = { env: envOf(), fetch: sh.fetch };
+  assert.equal((await handleProducts(del({ store: "c3d", id: PID, confirm: "delete" }, { "content-type": "application/json" }), ctx)).status, 401);
+  const noConfirm = await handleProducts(del({ store: "c3d", id: PID }), ctx);
+  assert.equal(noConfirm.status, 400); assert.equal(noConfirm.body.code, "confirm_needed");
+  assert.equal((await handleProducts(del({ store: "ed", id: PID, confirm: "delete" }), ctx)).body.code, "wrong_store");
+  assert.equal((await handleProducts(del({ store: "c3d", id: "123", confirm: "delete" }), ctx)).status, 400);
+  assert.equal((await handleProducts(del({ store: "c3d", id: PID, confirm: "delete", live: false }), ctx)).status, 400);
+  const guard = await handleProducts(del({ store: "c3d", id: "gid://shopify/Product/15442527223995", confirm: "delete" }), ctx);
+  assert.equal(guard.status, 409); assert.equal(guard.body.code, "protected");
+  assert.ok(!sh.calls.some((c) => c.op), "nothing reached Shopify before the checks passed");
+  const res = await handleProducts(del({ store: "c3d", id: PID, confirm: "delete" }), ctx);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.deleted, true); assert.equal(res.body.already, false); assert.equal(res.body.title, "Name Ornament");
+  assert.deepEqual(sh.calls.filter((c) => c.op).map((c) => c.op), ["ConsoleDeleteLookup", "ConsoleProductDelete"]);
+  assert.deepEqual(sh.calls.find((c) => c.op === "ConsoleProductDelete").variables, { input: { id: PID } });
+  noLeak(res);
+});
+
+test("delete: an item already gone counts as deleted; Shopify errors come back plainly", async () => {
+  const gone = fakeShopify({ missing: true });
+  const r1 = await handleProducts(del({ store: "c3d", id: PID, confirm: "delete" }), { env: envOf(), fetch: gone.fetch });
+  assert.equal(r1.status, 200); assert.equal(r1.body.already, true);
+  assert.ok(!gone.calls.some((c) => c.op === "ConsoleProductDelete"));
+  const bad = fakeShopify({ deleteErrors: [{ field: ["id"], message: "Product is in use" }] });
+  const r2 = await handleProducts(del({ store: "c3d", id: PID, confirm: "delete" }), { env: envOf(), fetch: bad.fetch });
+  assert.ok(r2.status >= 400); assert.match(r2.body.error, /in use/);
 });
 
 // ---------- Edit price ----------
@@ -427,7 +462,7 @@ test("Shopify timeout is 504", async () => {
 });
 
 test("unsupported method is 405", async () => {
-  const res = await handleProducts({ method: "DELETE", query: new URLSearchParams(), header: () => null, text: async () => "" }, { env: envOf(), fetch: fakeShopify().fetch });
+  const res = await handleProducts({ method: "PUT", query: new URLSearchParams(), header: () => null, text: async () => "" }, { env: envOf(), fetch: fakeShopify().fetch });
   assert.equal(res.status, 405);
 });
 
