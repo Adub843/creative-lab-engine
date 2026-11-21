@@ -13,7 +13,8 @@
 //              agents' handoff board and manager brief (lib/handoffs.mjs)
 // Secrets (set with `npx wrangler secret put NAME`, never in code): CONSOLE_KEY, the Shopify
 // domains and tokens (C3D_*, ED_*), and optionally INDEXNOW_KEY, ED_HANDLING_DAYS, *_SITE_URL,
-// MESHY_API_KEY (the 3D maker, lib/meshy.mjs). Variable (public): ED_CUSTOMER_CLIENT_ID (store sign-in
+// MESHY_API_KEY (the 3D maker, lib/meshy.mjs; optional: without it Meshy runs through the CLI signed in on
+// Aaron's PC, scripts/meshy-runner.mjs). Variable (public): ED_CUSTOMER_CLIENT_ID (store sign-in
 // for the shirt app, lib/members.mjs), DRIVE_ORIGIN (the E: drive library's tunnel on Aaron's PC, lib/drive.mjs).
 import { handleProducts, HttpError, requireKey } from "../lib/shopify.mjs";
 import { handleInsights } from "../lib/insights.mjs";
@@ -229,9 +230,12 @@ export async function handleRequest(req, env) {
       return await handleFiles(req, { blobs: fileStore(env), thumbs: kvBlobStore(env.IMAGES, "c3d-thumb:"), env: envReader(env), afterSave: fusionRemake(env) });
     }
     // The 3D maker: jobs under their own prefix; a model it keeps goes into the 3D file library above.
+    // Without a Meshy key, jobs go through the Meshy CLI signed in on Aaron's PC (RESULTS bucket, meshy/).
     if (pathname === "/api/meshy" || pathname.startsWith("/api/meshy/")) {
       imageStore(env);
-      return await handleMeshy(req, { jobs: kvBlobStore(env.IMAGES, "c3d-meshy:"), files: fileStore(env), env: envReader(env), fetch: (input, init) => fetch(input, init), afterSave: fusionRemake(env) });
+      const relay = env?.RESULTS && typeof env.RESULTS.get === "function" ? env.RESULTS : null;
+      return await handleMeshy(req, { jobs: kvBlobStore(env.IMAGES, "c3d-meshy:"), files: fileStore(env), env: envReader(env), fetch: (input, init) => fetch(input, init), afterSave: fusionRemake(env),
+        relay, relayJobs: relay ? r2BlobStore(relay, "meshy/job/") : null });
     }
     if (pathname === "/api" || pathname.startsWith("/api/")) return json({ error: "Not found" }, 404);
   } catch (e) {
