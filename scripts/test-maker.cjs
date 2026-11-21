@@ -443,6 +443,31 @@ function unzip(buf) { const out = {}; let o = 0;
     });
   }
 
+  /* the other generators share the same builds: each one switches on, shows its own options, and exports sealed parts */
+  for (const [mode, want] of [["bookmark", "Base"], ["coaster", "Base"], ["magnet", "Base back (magnet pockets)"], ["ornament", "Base"], ["stamp", "Handle (glue to the back)"], ["painting", "Layer 2"], ["qr", "Code"], ["relief", null]]) {
+    await step(`${mode}: builds and exports${want ? " sealed parts" : ""}`, async () => {
+      await page.click('[data-dp="design"]'); await page.evaluate((m) => mkSetMode(m), mode);
+      if (mode === "qr") { await page.fill("#mkQr", "https://example.com/a-longer-link-for-the-test"); await page.waitForFunction(() => MK.L && MK.L.parts && MK.L.parts.length === 2, null, { timeout: 15000 }); }
+      await settle(700);
+      const info = await page.evaluate(() => ({ title: mkTitle(), fam: mkFam(), up: !!(MK.L && MK.L.up), parts: MK.L && MK.L.parts ? MK.L.parts.map((x) => x.name) : null, lid: MK.L && MK.L.parts ? MK.L.parts.filter((x) => x.lid).length : 0 }));
+      if (want) { assert.ok(info.parts.some((n) => n.startsWith(want)), `${mode} has "${want}": ${info.parts}`); assert.deepEqual(await bad(), []); }
+      assert.equal(info.up, ["stamp", "painting", "qr"].includes(mode));
+      if (mode === "stamp") assert.equal(info.lid, 1, "the handle is on plate 2");
+      if (mode === "painting") { const z = await page.evaluate(() => MK.L.parts.map((x) => [x.z0, x.z1])); for (let i = 1; i < z.length; i++) assert.equal(z[i][0], z[i - 1][1], "each colour starts where the last one ends"); }
+      assert.equal(await page.isVisible("#mkMagN"), false || (mode === "magnet" && await page.isVisible("#mkMagN")));
+      await page.click("#mkExport"); const [d] = await Promise.all([page.waitForEvent("download", { timeout: 120000 }), page.click("#mkPrGo")]);
+      assert.ok(d.suggestedFilename().endsWith(".zip")); await page.waitForFunction(() => !MK.busy);
+      const out = await page.evaluate(() => ({ sealed: MK.sealed, names: MK.parts.map((x) => x.name) }));
+      assert.ok(out.sealed.ok, "sealed"); assert.ok(out.names.some((n) => n.endsWith(mode === "relief" ? "-relief.stl" : ".3mf")));
+      if (mode === "stamp") assert.ok(out.names.some((n) => n.endsWith("-handle.stl")));
+      await page.screenshot({ path: path.join(SHOTS, `${mode}-1280.png`) });
+    });
+  }
+  await step("switching back to Light box still works after the other generators", async () => {
+    await page.evaluate(() => mkSetMode("lightbox")); await settle(700);
+    assert.ok(await page.evaluate(() => MK.L.parts.some((x) => x.name === "Box wall"))); assert.deepEqual(await bad(), []);
+  });
+
   await step("lithophane STL is sealed (bottom matches the walls)", async () => {
     const ok = await page.evaluate(() => { const tri = lbGridSolid(12, 9, 0.5, (c, r) => 1 + ((c * 7 + r * 3) % 5) / 4);
       const key = (i) => [tri[i], tri[i + 1], tri[i + 2]].map((v) => v.toFixed(4)).join(","); const cnt = new Map();
