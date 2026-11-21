@@ -463,6 +463,23 @@ function unzip(buf) { const out = {}; let o = 0;
       await page.screenshot({ path: path.join(SHOTS, `${mode}-1280.png`) });
     });
   }
+  /* shape makers: made from sizes, shown in 3D, one sealed shape out */
+  for (const mode of ["vase", "organizer"]) {
+    await step(`${mode}: sliders build a sealed shape and it exports`, async () => {
+      await page.evaluate((m) => mkSetMode(m), mode); await settle(900);
+      const a = await page.evaluate(() => ({ fam: mkFam(), solid: !!(MK.L && MK.L.solid), size: MK.L.size, sliders: document.querySelectorAll("#mkSolid input[type=range]").length, styles: document.querySelectorAll("#mkSolStyle button").length, rail: [...document.querySelectorAll("#mkRail [data-tool]")].filter((x) => !x.hidden).map((x) => x.dataset.tool), shapeOpen: document.querySelector('.acc[data-sec="solid"]').classList.contains("open") }));
+      assert.equal(a.fam, "solid"); assert.ok(a.solid); assert.ok(a.sliders >= 8 && a.styles >= 4); assert.deepEqual(a.rail, ["settings"]); assert.ok(a.shapeOpen, "Shape section is open");
+      await page.evaluate(() => { const r = document.querySelector("#mkSol_hR"); r.value = 60; r.dispatchEvent(new Event("input", { bubbles: true })); }); await settle(500);
+      assert.equal(await page.evaluate(() => MK.L.size[2] >= 60 && MK.L.p.h === 60), true, "the height slider changes the shape");
+      await page.click("#mkSolStyle button:nth-child(2)"); await settle(500);
+      assert.notEqual(await page.evaluate(() => MK.L.p.h), 60, "a style sets the sizes");
+      await page.click("#mkExport"); const [d] = await Promise.all([page.waitForEvent("download", { timeout: 120000 }), page.click("#mkPrGo")]);
+      assert.ok(d.suggestedFilename().endsWith(".zip")); await page.waitForFunction(() => !MK.busy);
+      const out = await page.evaluate(() => ({ sealed: MK.sealed, names: MK.parts.map((x) => x.name) }));
+      assert.ok(out.sealed.ok, "sealed"); assert.ok(out.names.some((n) => n.endsWith(".3mf")) && out.names.some((n) => n.endsWith(".stl")));
+      await page.screenshot({ path: path.join(SHOTS, `${mode}-1280.png`) });
+    });
+  }
   await step("switching back to Light box still works after the other generators", async () => {
     await page.evaluate(() => mkSetMode("lightbox")); await settle(700);
     assert.ok(await page.evaluate(() => MK.L.parts.some((x) => x.name === "Box wall"))); assert.deepEqual(await bad(), []);

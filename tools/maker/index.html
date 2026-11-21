@@ -218,6 +218,7 @@ svg.i{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6;stro
 <script src="../vendor/earcut.min.js"></script>
 <script src="geo.js"></script>
 <script src="bambu.js"></script>
+<script src="solids.js"></script>
 <script>
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const SV=p=>`<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${p}</svg>`;
@@ -238,9 +239,11 @@ const MK_MODES=[["lightbox","Light box","Pictures, text and shapes glowing in a 
   ["stamp","Stamp","Your design raised and mirrored on a plate, with a handle to glue on the back."],
   ["painting","Filament painting","Stacked colour layers, darkest first. One colour per layer, so it prints with filament swaps and no AMS."],
   ["qr","QR code","A link or text as a two-colour plate your phone can scan."],
-  ["relief","Relief","Photo as a raised sculpture: the bright parts stand tall. Prints lying flat."]];
+  ["relief","Relief","Photo as a raised sculpture: the bright parts stand tall. Prints lying flat."],
+  ["vase","Vase","Pick a style, then set the height, widths, ribs and twist. No picture needed."],
+  ["organizer","Desk organizer","A tray of compartments in your sizes, with a taller back row for pens."]];
 /* each thing to make belongs to one of four families that share a build: light box, flat tag (keychain), plate with raised marks (sign), height map (lithophane) */
-const MK_FAM={bookmark:"keychain",coaster:"keychain",magnet:"keychain",ornament:"keychain",stamp:"keychain",painting:"keychain",qr:"sign",relief:"litho"};
+const MK_FAM={bookmark:"keychain",coaster:"keychain",magnet:"keychain",ornament:"keychain",stamp:"keychain",painting:"keychain",qr:"sign",relief:"litho",vase:"solid",organizer:"solid"}; /* "solid" things are made from sizes, not from a picture (solids.js) */
 function mkFam(md){ md=md||MK.mode; return MK_FAM[md]||md; }
 /* sensible starting sizes when you switch to a thing (your design stays as it is) */
 const MK_PRESET={keychain:{keyT:3,ring:true,border:4},bookmark:{keyT:1.2,ring:true,border:2},coaster:{keyT:4,ring:false,border:3},magnet:{keyT:4,ring:false,border:3},ornament:{keyT:2.4,ring:true,border:3},stamp:{ring:false,border:3},painting:{ring:false,border:2},litho:{minT:0.8,maxT:3,invert:false},relief:{minT:1.2,maxT:4,arc:0,invert:false}};
@@ -266,11 +269,11 @@ const MK_HOLES={rect:{label:"Rectangle hole",w:20,h:10},circle:{label:"Round hol
 const MK={mode:"lightbox", els:[], pics:new Map(), sel:null, selHole:null, pop:null, sheet:null, dp:"design", pv:"render", plate:1, sec:"color", hand:false, zoom:1, pan:[0,0], frame:false, holeType:"rect", holeW:20, holeH:10, withStl:true,
   shape:"trace", bgType:"standard", width:120, height:90, res:0.25, colors:4, border:4, gap:5, depth:40, wallT:3, frameW:10, imgT:0.8, diffuse:true, backT:1.0, reflect:true, reverse:false, lid:true, lidT:2, holes:[], stand:false, bed:"x1", printer:"P1S", nozzle:0.4,
   keyT:3, ring:true, magN:1, magD:8, magH:2, paintT:0.4, qrText:"", text:"", font:"Archivo Black", textT:1, plateT:3, name:"", minT:0.8, maxT:3.0, lres:0.3, arc:0, invert:false, bright:0, contrast:0, blur:0.6,
-  inkMap:{}, frameInk:"#1d1d1f", backInk:"#1d1d1f", lit3d:true, apart:false, inkOpen:null,
+  inkMap:{}, frameInk:"#1d1d1f", backInk:"#1d1d1f", sol:{}, solInk:"#f7e6de", lit3d:true, apart:false, inkOpen:null,
   busy:false, parts:[], node:null, dirty:true, keyTol:40, L:null, sealed:null, fontGen:0, comp:null, hist:[], fut:[], draftId:null};
 const LB=MK; /* legacy alias */
 /* what undo, redo and saved designs keep */
-const MK_SAVE=["mode","shape","bgType","width","height","res","colors","border","gap","depth","wallT","frameW","imgT","diffuse","backT","reflect","reverse","lid","lidT","holes","stand","bed","printer","nozzle","keyT","ring","magN","magD","magH","paintT","qrText","text","font","textT","plateT","name","minT","maxT","lres","arc","invert","bright","contrast","blur","inkMap","frameInk","backInk"];
+const MK_SAVE=["mode","shape","bgType","width","height","res","colors","border","gap","depth","wallT","frameW","imgT","diffuse","backT","reflect","reverse","lid","lidT","holes","stand","bed","printer","nozzle","keyT","ring","magN","magD","magH","paintT","qrText","text","font","textT","plateT","name","minT","maxT","lres","arc","invert","bright","contrast","blur","inkMap","frameInk","backInk","sol","solInk"];
 let mkUid=0; const mkId=p=>p+(++mkUid).toString(36)+Date.now().toString(36).slice(-4);
 
 function mkRound(n,d){ return Math.round(n*(d||10))/(d||10); }
@@ -382,8 +385,9 @@ function lbMount(){ const m=document.getElementById("lbMount"); if(!m) return; M
         <div id="mkElProps" hidden></div>
         <div id="mkOverallBody">
           ${MK_SOLO?"":`<label class="fld ph-mode">What to make<select id="mkModeSel">${opt(MK_MODES.map(x=>[x[0],x[1]]),MK.mode)}</select></label>`}
+          ${mkAcc("solid","Shape",`<div id="mkSolid"></div>`,"solid",1)}
           ${mkAcc("signtext","Text",`<div class="stack" style="margin-top:12px"><label class="fld mk-qr">Link or text for the code<input type="text" id="mkQr" maxlength="300" placeholder="https://…" value="${esc(MK.qrText)}"></label><label class="fld mk-signtext">Sign text<input type="text" id="mkText" maxlength="40" placeholder="e.g. THE LEWIS FAMILY" value="${esc(MK.text)}"></label><label class="fld mk-signtext">Font<select id="mkFont">${opt(MK_FONTS.map(f=>[f[0],f[0]]),MK.font)}</select></label></div>`,"sign")}
-          ${mkAcc("color","Color",`<div id="lbPal"></div><label class="fld mk-color" style="margin-top:12px">Colours taken from the image<select id="mkColors">${opt([2,3,4,5,6,8].map(n=>[n,n]),MK.colors)}</select></label>`,"lightbox keychain sign litho",1)}
+          ${mkAcc("color","Color",`<div id="lbPal"></div><label class="fld mk-color" style="margin-top:12px">Colours taken from the image<select id="mkColors">${opt([2,3,4,5,6,8].map(n=>[n,n]),MK.colors)}</select></label>`,"lightbox keychain sign litho solid",1)}
           ${mkAcc("background","Background",`<div class="k">Type</div>${mkSegw("mkBgType",[["standard","Standard shape"],["outline","Outline"]],MK.bgType)}
             <div class="tiles" id="mkBgShape"${MK.bgType==="outline"?" hidden":""}>${MK_SHAPES.map(s=>`<button type="button" data-v="${s[0]}" title="${s[1]}" aria-label="${s[1]}" aria-pressed="${MK.shape===s[0]}">${MK_BG_SVG[s[0]]}</button>`).join("")}</div>
             <div id="mkBgOutline"${MK.bgType==="outline"?"":" hidden"}>${mkSl("mkGap","Margin round the design",1,15,0.5,MK.gap)}</div>
@@ -407,7 +411,7 @@ function lbMount(){ const m=document.getElementById("lbMount"); if(!m) return; M
             <label class="chk" style="margin-top:8px"><input type="checkbox" id="mkDiffuse" ${MK.diffuse?"checked":""}> Diffusion layer</label><label class="chk"><input type="checkbox" id="mkReflect" ${MK.reflect?"checked":""}> Reflection layer</label>
             <p class="hint">Reversed prints the background solid in the side colour, so only the design lights up. The diffusion layer spreads the light evenly; the reflection layer lines the walls in white so the box glows brighter.</p>`,"lightbox",1)}
           ${mkAcc("base","Base",`<div style="margin-top:12px">${mkSegw("mkBase",[["with","With base"],["without","Without base"]],MK.stand?"with":"without")}</div><p class="hint">The base is a stand that prints next to the back cover and holds the box upright.</p>`,"lightbox")}
-          ${mkAcc("check","Print check",`<dl class="kv" id="mkSize"></dl><ul class="pcheck" id="mkCheck"></ul><div class="lbstat small muted" id="lbStat"></div><div id="lbDl"></div>`,"lightbox keychain sign litho",1)}
+          ${mkAcc("check","Print check",`<dl class="kv" id="mkSize"></dl><ul class="pcheck" id="mkCheck"></ul><div class="lbstat small muted" id="lbStat"></div><div id="lbDl"></div>`,"lightbox keychain sign litho solid",1)}
         </div>
       </div>
     </aside>
@@ -481,7 +485,7 @@ function mkMenu(btn,items,fn){ mkMenuClose(); const r=btn.getBoundingClientRect(
   mn.onclick=e=>{ const b=e.target.closest("[data-v]"); if(!b) return; mkMenuClose(); fn(b.dataset.v); };
   mn.onkeydown=e=>{ if(e.key==="Escape"){ e.stopPropagation(); mkMenuClose(); btn.focus(); } }; const f=mn.querySelector("button"); if(f) f.focus(); }
 function mkMenuClose(){ const x=document.getElementById("mkFloatMenu"); if(x) x.remove(); }
-function mkSetMode(md){ if(!MK_MODES.some(x=>x[0]===md)) return; const m=MK.node; mkFlush(); const was=MK.mode; MK.mode=md; const P=was!==md&&MK_PRESET[md]; if(P) Object.assign(MK,P); try{ if(window.parent!==window&&typeof parent.mkLabMode==="function") parent.mkLabMode(md); }catch{}
+function mkSetMode(md){ if(!MK_MODES.some(x=>x[0]===md)) return; const m=MK.node; mkFlush(); const was=MK.mode; MK.mode=md; if(mkFam(md)==="solid") MK.sec="solid"; const P=was!==md&&MK_PRESET[md]; if(P) Object.assign(MK,P); try{ if(window.parent!==window&&typeof parent.mkLabMode==="function") parent.mkLabMode(md); }catch{}
   m.querySelectorAll("#mkModes [data-mode]").forEach(x=>x.setAttribute("aria-checked",x.dataset.mode===md)); m.querySelector("#mkModeBtn span").textContent=mkTitle(); m.querySelector("#mkModes").hidden=true; m.querySelector("#mkModeBtn").setAttribute("aria-expanded","false");
   const s=m.querySelector("#mkModeSel"); if(s) s.value=md; m.querySelector("#lbName").placeholder=mkDefName();
   if(mkFam(md)==="sign") MK.sec="signtext"; else if(MK.sec==="signtext") MK.sec="color";
@@ -509,7 +513,7 @@ function mkShowOpts(){ const m=MK.node; if(!m) return; const md=mkFam(), raw=MK.
   m.querySelectorAll(".ed-props [class*='mk-'], .pop [class*='mk-']").forEach(x=>{ const cls=[...x.classList].filter(c=>c in rule); if(cls.length) x.hidden=!cls.some(c=>rule[c]); });
   const vis=[]; m.querySelectorAll("#mkOverallBody .acc").forEach(s=>{ const on=s.dataset.modes.split(" ").includes(md); s.hidden=!on; if(on) vis.push(s.dataset.sec); });
   if(MK.sec&&!vis.includes(MK.sec)) MK.sec=vis[0];
-  for(const t of ["image","shape","layer"]) m.querySelector(".r-"+t).hidden=md==="sign"; if(md==="sign") mkClosePop();
+  for(const t of ["image","shape","layer"]) m.querySelector(".r-"+t).hidden=md==="sign"||md==="solid"; m.querySelector(".r-text").hidden=md==="solid"; if(md==="sign"||md==="solid") mkClosePop(); mkSolidUI(true);
   m.querySelector("#mkEmpty [data-act=text]").hidden=md==="litho"; m.querySelector("#mkEmpty [data-act=upload]").hidden=md==="sign";
   mkAccUI(); mkBgUI(); mkRailState(); mkElUI(); mkPvUI(); }
 function mkHand(on){ MK.hand=!!on; const m=MK.node; m.querySelector("#mkToolSel").setAttribute("aria-pressed",!MK.hand); m.querySelector("#mkToolHand").setAttribute("aria-pressed",MK.hand); m.querySelector("#mkStage").classList.toggle("grab",MK.hand); }
@@ -520,13 +524,13 @@ function mkChipUI(){ const m=MK.node; if(!m) return; const c=m.querySelector("#m
   const R=MK.bedR; if(MK.dp!=="design"||!R){ c.hidden=true; return; } c.hidden=false; const d=R[4]; c.style.left=Math.max(c.offsetWidth+6,(R[0]+R[2])/d)+"px"; c.style.top=Math.max(c.offsetHeight+6,R[1]/d)+"px"; }
 /* Preview: rendering effect or the plates as they print */
 function mkPvUI(){ const m=MK.node; if(!m) return; const pv=MK.dp==="preview", md=mkFam(); const pl=m.querySelector("#mkPlates");
-  m.querySelector("#mkPvBar").hidden=!pv; m.querySelector("#mkPvSeg").hidden=md==="litho"; if(md==="litho") MK.pv="render";
+  m.querySelector("#mkPvBar").hidden=!pv; m.querySelector("#mkPvSeg").hidden=md==="litho"||md==="solid"; if(md==="litho"||md==="solid") MK.pv="render";
   m.querySelectorAll("#mkPvSeg [data-pv]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.pv===MK.pv));
   const lt=m.querySelector("#mkLight"); lt.hidden=!((md==="lightbox"&&MK.pv==="render")||md==="litho"); lt.setAttribute("aria-pressed",MK.lit3d);
   const show=pv&&MK.pv==="plates"&&!!MK.L; pl.hidden=!show;
   if(show){ const list=mkPlateList(); if(!list.some(x=>x[0]===MK.plate)) MK.plate=1; pl.innerHTML=list.map(x=>`<button type="button" data-plate="${x[0]}" aria-pressed="${MK.plate===x[0]}"><img src="${x[2]}" alt=""><span>${esc(x[1])}</span></button>`).join(""); }
-  m.querySelectorAll("#mkTbar .t-d").forEach(x=>x.hidden=pv); m.querySelector("#mkFramePill").hidden=pv||md!=="lightbox"; mkChipUI(); }
-function mkPlateList(){ const L=MK.L; if(!L||L.litho) return []; if(MK.thumbs&&MK.thumbs.gen===MK.Lgen) return MK.thumbs.list;
+  m.querySelectorAll("#mkTbar .t-d").forEach(x=>x.hidden=pv||md==="solid"); const chip=m.querySelector("#mkPrevChip"); if(chip) chip.textContent=md==="solid"?"Drag to turn it":"Design preview"; m.querySelector("#mkFramePill").hidden=pv||md!=="lightbox"; mkChipUI(); }
+function mkPlateList(){ const L=MK.L; if(!L||L.litho||L.solid) return []; if(MK.thumbs&&MK.thumbs.gen===MK.Lgen) return MK.thumbs.list;
   const th=(cells,flip)=>{ const c=document.createElement("canvas"); c.width=c.height=112; const x=c.getContext("2d"); x.fillStyle="#3c3c3f"; x.fillRect(0,0,112,112); const r=cells.height/cells.width, w=r>1?Math.round(92/r):92, h=r>1?92:Math.round(92*r); x.drawImage(mkUp(cells,w,h,flip),(112-w)/2,(112-h)/2); return c.toDataURL("image/png"); };
   const list=[[1,mkFam()==="lightbox"?"Plate 1 – Front and side":"Plate 1",th(mkFaceCells(L,false).face,mkFam()!=="sign")]];
   if(mkFam()==="lightbox"&&L.lidPlate){ const bc=mkRgb(MK.backInk).map(v=>Math.round(v*0.85+28)); list.push([2,MK.stand?"Plate 2 – Back and base":"Plate 2 – Back",th(mkCells(L.cols,L.rows,i=>L.lidPlate[i]?bc:null),false)]); }
@@ -801,6 +805,8 @@ function mkLayout(o){ const src=mkSource(); if(!src) return null; const {w,h}=lb
 /* ---- print check ---- */
 function mkPrinterName(){ const p=MK_PRINTERS.find(x=>x[0]===MK.printer); return p&&p[1]===MK.bed?p[0]:mkBed()[1]; }
 function mkChecks(L){ const out=[]; const ok=t=>out.push(["ok",t]), warn=t=>out.push(["warn",t]), info=t=>out.push(["info",t]); const b=mkBed(), pn=mkPrinterName(), nz=+MK.nozzle||0.4, mf=mkMinFeat(), minLetter=Math.max(5,mkRound(nz*10));
+  if(L&&L.solid){ const [w,d,h]=L.size, top={a1mini:180,x1:250}[b[0]]||320; const fit=((w<=b[2]&&d<=b[3])||(w<=b[3]&&d<=b[2]))&&h<=top; (fit?ok:warn)(fit?`${w} × ${d} mm and ${h} mm tall fits the ${pn}.`:h>top?`${h} mm is too tall for the ${pn} (${top} mm). Make it shorter.`:`${w} × ${d} mm is too big for the ${pn} bed. Make it smaller.`); for(const c of L.checks) out.push(c);
+    if(MK.sealed&&MK.sealed.mode===MK.mode&&!MK.dirty) (MK.sealed.ok?ok:warn)(MK.sealed.ok?"The shape is a sealed solid (checked).":"The shape isn't sealed. Change a size a little and export again."); return out; }
   if(MK.mode==="relief"){ const {w,h}=lbDims(); const fit=(w<=b[2]&&h<=b[3])||(w<=b[3]&&h<=b[2]); (fit?ok:warn)(fit?`${w} × ${h} mm fits the ${pn} lying flat.`:`${w} × ${h} mm is too big for the ${pn} bed. Make it smaller.`); ok(`Base ${MK.minT} mm, tallest point ${mkRound(Math.max(MK.minT+0.3,MK.maxT))} mm.`); info("Any colour works. 0.12 mm layers show the most detail; no supports needed."); return out; }
   if(mkFam()==="litho"){ const {w,h}=lbDims(); const fit=Math.max(w,h)<=Math.min(b[2],b[3]); (fit?ok:warn)(fit?`${w} × ${h} mm fits the ${pn} standing up.`:`${w} × ${h} mm is too tall for the ${pn}. Make it smaller.`); (MK.minT>=0.6?ok:warn)(MK.minT>=0.6?`Thinnest spot ${MK.minT} mm: no see-through holes.`:`Thinnest spot ${MK.minT} mm can print with holes. Use 0.6 mm or more.`); if(nz>0.4) info(`A ${nz} mm nozzle softens the detail. 0.4 mm or finer shows the most.`); info("Print in white PLA, 0.12 mm layers, 100% infill."); return out; }
   const W=mkRound(L.cols*L.res), H=mkRound(L.rows*L.res); const fits=(W<=b[2]&&H<=b[3])||(W<=b[3]&&H<=b[2]); (fits?ok:warn)(fits?`Fits the ${pn} bed (${b[2]} × ${b[3]} mm).`:`${W} × ${H} mm is too big for the ${pn} bed (${b[2]} × ${b[3]} mm). Make it smaller or pick a bigger printer.`);
@@ -829,16 +835,17 @@ function mkChecks(L){ const out=[]; const ok=t=>out.push(["ok",t]), warn=t=>out.
 let lbPrevTimer=null; function lbPreview(ms){ clearTimeout(lbPrevTimer); lbPrevTimer=setTimeout(lbPreviewNow,ms==null?150:ms); mkCommit(); }
 function lbPreviewNow(){ const m=MK.node; if(!m) return; const st=m.querySelector("#lbStat"), size=m.querySelector("#mkSize"), ck=m.querySelector("#mkCheck"); MK.dirty=true; MK.parts=[]; const dl=m.querySelector("#lbDl"); if(dl) dl.innerHTML="";
   const src=mkSource(); const hint=m.querySelector("#mkShapeHint"); if(hint) hint.hidden=!(MK.shape==="trace"&&src&&src.textOnly&&mkFam()!=="sign");
-  const L=mkFam()==="litho"?(src?mkLithoLayout():null):mkLayout(); if(L) L.sig=mkElSig(); MK.L=L; MK.Lgen=(MK.Lgen||0)+1; MK.thumbs=null;
+  const L=mkFam()==="solid"?mkSolidLayout():mkFam()==="litho"?(src?mkLithoLayout():null):mkLayout(); if(L) L.sig=mkElSig(); MK.L=L; MK.Lgen=(MK.Lgen||0)+1; MK.thumbs=null;
   m.querySelector("#mkEmpty").hidden=!!L; m.querySelector("#mkEmptyMsg").textContent=MK.mode==="qr"?"Type a link or some text to make its QR code.":mkFam()==="sign"?"Type your sign text to start.":mkFam()==="litho"?"Upload a photo to start.":"Add an image, some text or a shape to start.";
   if(!L){ size.innerHTML=""; ck.innerHTML=""; st.textContent=""; mkInksUI(null); mkPvUI(); mkDraw(); return; }
   const row=(a,b)=>`<dt>${a}</dt><dd>${b}</dd>`;
-  if(mkFam()==="litho") size.innerHTML=row("Size",`${L.w} × ${L.h} mm`)+row(MK.mode==="relief"?"Height":"Thickness",`${MK.minT}–${mkRound(Math.max(MK.minT+0.3,MK.maxT))} mm`)+row("Prints",MK.mode==="relief"?"lying flat":"standing up");
+  if(L.solid) size.innerHTML=row("Footprint",`${L.size[0]} × ${L.size[1]} mm`)+row("Height",`${L.size[2]} mm`)+row("Prints","standing, no supports");
+  else if(mkFam()==="litho") size.innerHTML=row("Size",`${L.w} × ${L.h} mm`)+row(MK.mode==="relief"?"Height":"Thickness",`${MK.minT}–${mkRound(Math.max(MK.minT+0.3,MK.maxT))} mm`)+row("Prints",MK.mode==="relief"?"lying flat":"standing up");
   else { const W=mkRound(L.cols*L.res), H=mkRound(L.rows*L.res); const nh=(L.holes||[]).length;
     size.innerHTML=row("Outside",`${W} × ${H} mm`)+(mkFam()==="lightbox"?row("Depth",`${MK.depth} mm`)+row("Back cover",MK.lid?(nh?`${nh} hole${nh>1?"s":""}`:"no holes"):"none")+(MK.stand?row("Base","yes"):""):MK.mode==="stamp"?row("Height",`${L.stampH} mm`)+row("Handle","on plate 2"):MK.mode==="painting"?row("Height",`${L.paintH} mm`):mkFam()==="keychain"?row("Thickness",`${MK.keyT} mm`):row("Thickness",`${mkZ(MK.plateT+MK.textT)} mm`))+row("Prints",L.up?"face up":"face down"); }
   mkInksUI(L);
   ck.innerHTML=mkChecks(L).map(([k,t])=>`<li class="${k}">${ICON[k]}<span>${esc(t)}</span></li>`).join("");
-  st.textContent=MK.mode==="relief"?"Prints lying flat, picture side up.":mkFam()==="litho"?"Prints standing up in white PLA.":MK.mode==="painting"?"Prints face up, one colour per layer.":(MK.L&&MK.L.up)?"Prints face up.":"Prints face down, colours first.";
+  st.textContent=L.solid?L.print:MK.mode==="relief"?"Prints lying flat, picture side up.":mkFam()==="litho"?"Prints standing up in white PLA.":MK.mode==="painting"?"Prints face up, one colour per layer.":(MK.L&&MK.L.up)?"Prints face up.":"Prints face down, colours first.";
   mkPvUI(); mkDraw(); }
 /* Color section: Plate 1 front colours and side, Plate 2 back. Click a dot to pick its filament */
 function mkInksUI(L){ const pal=MK.node&&MK.node.querySelector("#lbPal"); if(!pal) return; const md=mkFam(), raw=MK.mode;
@@ -849,6 +856,7 @@ function mkInksUI(L){ const pal=MK.node&&MK.node.querySelector("#lbPal"); if(!pa
   else if(md==="litho") html=`<div class="pl">Plate 1</div><div class="plate">${grp("Lithophane",[{label:"Lithophane",cur:"#f4f3ef",sub:"White PLA"}])}</div>`;
   else if(raw==="qr") html=`<div class="pl">Plate 1</div><div class="plate">${grp("Code",[{label:"Code",cur:"#18181a",sub:"Black"}])}${grp("Plate",[{label:"Plate",cur:"#fafafa",sub:"White"}])}</div><p class="hint">Black on white scans best. Use matte filament.</p>`;
   else if(md==="sign") html=`<div class="pl">Plate 1</div><div class="plate">${grp("Letters",[{label:"Letters",cur:"#f4f3ef",sub:"White"}])}${grp("Plate",[{label:"Plate",cur:"#1d1d1f",sub:"Black"}])}</div>`;
+  else if(md==="solid"){ const one={key:"sol",label:"Colour",cur:MK.solInk,sel:MK.solInk,sub:mkInkName(MK.solInk)}; all=[one]; html=`<div class="pl">Plate 1</div><div class="plate">${grp(mkTitle(),[one])}</div><p class="hint">Click the dot to pick the filament colour.</p>`; }
   else { const front=((L&&L.inks)||[]).map((x,i)=>({key:"c:"+x.src,label:`Front colour ${i+1}`,cur:x.cur,sel:x.mapped?x.cur:"",orig:true,sub:x.mapped?mkInkName(x.cur):"Image colour"}));
     const side={key:"frame",label:md==="lightbox"?"Side":"Base",cur:MK.frameInk,sel:MK.frameInk,sub:mkInkName(MK.frameInk)}; all=[...front,side];
     if(md==="lightbox"){ const back={key:"back",label:"Back",cur:MK.backInk,sel:MK.backInk,sub:mkInkName(MK.backInk)}; all.push(back);
@@ -857,7 +865,7 @@ function mkInksUI(L){ const pal=MK.node&&MK.node.querySelector("#lbPal"); if(!pa
     else html=`<div class="pl">Plate 1</div><div class="plate">${grp("Front",front,"Add an image or text to see its colours.")}${grp("Base",[side])}</div>`; }
   const open=all.find(r=>r.key===MK.inkOpen); if(!open) MK.inkOpen=null;
   pal.innerHTML=html+(open?`<div class="inkpick"><div class="k">${esc(open.label)} · ${esc(open.sub)}</div>${mkSwatches("mkInkSw",open.sel,open.orig)}</div>`:"");
-  pal.onclick=e=>{ const sw=e.target.closest("[data-ink]"); if(sw&&MK.inkOpen){ const key=MK.inkOpen, ink=sw.dataset.ink; if(key==="frame") MK.frameInk=ink||MK.frameInk; else if(key==="back") MK.backInk=ink||MK.backInk; else { const src=key.slice(2); if(ink) MK.inkMap[src]=ink; else delete MK.inkMap[src]; MK.inkMap=Object.assign({},MK.inkMap); } MK.inkOpen=null; lbPreview(0); mkCommitNow(); return; }
+  pal.onclick=e=>{ const sw=e.target.closest("[data-ink]"); if(sw&&MK.inkOpen){ const key=MK.inkOpen, ink=sw.dataset.ink; if(key==="frame") MK.frameInk=ink||MK.frameInk; else if(key==="sol") MK.solInk=ink||MK.solInk; else if(key==="back") MK.backInk=ink||MK.backInk; else { const src=key.slice(2); if(ink) MK.inkMap[src]=ink; else delete MK.inkMap[src]; MK.inkMap=Object.assign({},MK.inkMap); } MK.inkOpen=null; lbPreview(0); mkCommitNow(); return; }
     const d=e.target.closest("[data-key]"); if(!d) return; MK.inkOpen=MK.inkOpen===d.dataset.key?null:d.dataset.key; mkInksUI(MK.L); }; }
 function mkLithoLayout(){ const src=mkSource(); if(!src) return null; const {w,h}=lbDims(src); const cols=Math.min(360,Math.round(w/0.3)), rows=Math.max(8,Math.round(cols*h/w)); return {w,h,cols,rows,cols0:cols,rows0:rows,pad:0,res:w/cols,T:lbThick(lbGrey(src,cols,rows)),litho:true}; }
 let mkNoise=null; function mkNoisePat(ctx){ if(!mkNoise){ mkNoise=document.createElement("canvas"); mkNoise.width=mkNoise.height=96; const c=mkNoise.getContext("2d"); const im=c.createImageData(96,96); for(let i=0;i<96*96;i++){ const v=Math.random()*255|0; im.data[i*4]=im.data[i*4+1]=im.data[i*4+2]=v; im.data[i*4+3]=255; } c.putImageData(im,0,0); } return ctx.createPattern(mkNoise,"repeat"); }
@@ -872,10 +880,11 @@ function mkCss(v,f){ try{ return getComputedStyle(MK.node).getPropertyValue(v).t
 /* Design: the printer bed with the design on it at true size. Preview: the 3D box (or one plate as it prints) on a dark stage */
 function mkDraw(){ const m=MK.node; if(!m) return; const cv=m.querySelector("#mkStage"), c3=m.querySelector("#mk3d"), sc=m.querySelector("#mkStageC"); const box=sc.getBoundingClientRect(); const dpr=Math.min(2,window.devicePixelRatio||1); const W=Math.max(10,Math.round(box.width*dpr)), H=Math.max(10,Math.round(box.height*dpr)); if(cv.width!==W) cv.width=W; if(cv.height!==H) cv.height=H;
   const L=MK.L, pv=MK.dp==="preview"; MK.vp=null; MK.vpB=null; MK.vpH=null; MK.bedR=null;
-  const use3d=pv&&!!L&&!MK.no3d&&mkFam()!=="litho"&&(MK.pv==="plates"||mkFam()==="lightbox");
+  const use3d=!!L&&!MK.no3d&&(L.solid||(pv&&mkFam()!=="litho"&&(MK.pv==="plates"||mkFam()==="lightbox")));
   c3.hidden=!use3d; cv.style.visibility=use3d?"hidden":"";
   if(use3d){ mkChipUI(); mk3D(L,box); return; }
   const ctx=cv.getContext("2d"); ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,W,H);
+  if(L&&L.solid){ ctx.fillStyle=mkCss("--stage","#ececec"); ctx.fillRect(0,0,W,H); ctx.fillStyle=mkCss("--muted","#666"); ctx.font=`${14*dpr}px system-ui,sans-serif`; ctx.textAlign="center"; ctx.fillText(`${mkTitle()} · ${L.size[0]} × ${L.size[1]} × ${L.size[2]} mm (the 3D view isn't available in this browser)`,W/2,H/2); mkChipUI(); return; }
   if(!pv){ try{ mkDrawDesign(ctx,W,H,L,dpr); }catch(e){ console.error("maker design",e); } mkChipUI(); return; }
   mkChipUI(); if(!L) return;
   try{ if(mkFam()==="litho") mkDrawLitho(ctx,W,H,L,MK.lit3d&&MK.mode!=="relief"?"lit":"relief",dpr);
@@ -1030,7 +1039,14 @@ function mk3D(L,box){ const m=MK.node, c3=m.querySelector("#mk3d");
     const add=(tri,col,glow)=>{ const g=new THREE.BufferGeometry(); g.setAttribute("position",new THREE.BufferAttribute(tri,3)); g.computeVertexNormals(); const c=new THREE.Color(col[0]/255,col[1]/255,col[2]/255);
       const mat=new THREE.MeshStandardMaterial({color:c,roughness:0.82,metalness:0,flatShading:true}); if(glow&&lit&&!plates){ mat.emissive=c.clone(); mat.emissiveIntensity=0.32; } T.group.add(new THREE.Mesh(g,mat)); };
     let cam;
-    if(!plates){ /* the box standing up, seen from the front left, the back cover pressed in */ const lidOff=MK.depth+MK.lidT;
+    if(L.solid){ /* the shape standing on the printer bed, at true size */ const [w,d,h]=L.size, g=new THREE.BufferGeometry(), pos=new Float32Array(L.mesh.verts.length); for(let i=0;i<pos.length;i+=3){ pos[i]=L.mesh.verts[i]-w/2; pos[i+1]=L.mesh.verts[i+2]; pos[i+2]=-(L.mesh.verts[i+1]-d/2); }
+      g.setAttribute("position",new THREE.BufferAttribute(pos,3)); g.setIndex(new THREE.BufferAttribute(new Uint32Array(L.mesh.tris),1)); g.computeVertexNormals(); const c=new THREE.Color(L.color[0]/255,L.color[1]/255,L.color[2]/255);
+      T.group.add(new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:c,roughness:0.6,metalness:0,flatShading:!L.smooth,side:THREE.DoubleSide})));
+      const bed=new THREE.Mesh(new THREE.BoxGeometry(b[2],1.6,b[3]),new THREE.MeshStandardMaterial({color:0xb9babd,roughness:0.95,metalness:0})); bed.position.set(0,-0.81,0); T.group.add(bed); T.group.add(mkShadowPlane(Math.max(w,d)*1.9,Math.max(w,d)*1.9,0,0.05,0,0.3));
+      T.hemi.intensity=0.72; T.dir.intensity=0.6; T.dir.position.set(-0.6,1.5,1.0);
+      const asp=T.cam.aspect, big=Math.max(b[2]*0.62,h*1.25,w,d), dist=big*3.5/Math.min(1,asp*0.95); cam=["s",b[0],Math.round(big/15),Math.round(asp*10)].join("x");
+      if(T.dims!==cam){ T.dims=cam; T.cam.position.set(dist*0.5,h*0.45+dist*0.42,dist*0.76); T.cam.near=dist/50; T.cam.far=dist*20; T.cam.updateProjectionMatrix(); if(T.ctl){ T.ctl.target.set(0,h*0.42,0); T.ctl.update(); } else T.cam.lookAt(0,h*0.42,0); } }
+    else if(!plates){ /* the box standing up, seen from the front left, the back cover pressed in */ const lidOff=MK.depth+MK.lidT;
       for(const p of L.parts){ const tri=mkTriArray(mkMesh(p,L)); if(p.lid) for(let i=0;i<tri.length;i+=3){ tri[i]=Wg-tri[i]; tri[i+2]=lidOff-tri[i+2]; } add(tri,p.color,p.lit); }
       let r1=0; for(let i=0;i<L.outer.length;i++) if(L.outer[i]) r1=Math.floor(i/L.cols); const yb=Hg-(r1+1)*L.res;
       if(MK.stand){ const s=mkStandMesh(L), tri=mkTriArray(s); for(let i=0;i<tri.length;i+=3){ const x=tri[i],y=tri[i+1],z=tri[i+2]; tri[i]=(Wg-s.len)/2+x; tri[i+1]=yb+z-4; tri[i+2]=y-s.wS/2+s.deep/2; } add(tri,s.color,false); }
@@ -1139,7 +1155,20 @@ function mkStandMesh(L){ const res=0.5, Wg=L.cols*L.res; const len=Math.min(160,
   const f=mkField(hm,C,R,res,0,false); return {verts:f.verts,tris:f.tris,name:"Stand",color:mkRgb(MK.frameInk),len:C*res,wS:R*res,deep}; }
 /* ---- export: a reminder about holes for the light's cable, then the printer and nozzle, then the files ---- */
 const MK_TIPKEY="c3d-maker-hole-tip-off";
-function mkHasContent(){ return MK.mode==="qr"?!!(MK.qrText||"").trim():mkFam()==="sign"?!!(MK.text||"").trim():MK.els.some(mkElOk); }
+/* ---- shape makers (solids.js): sliders in, one sealed shape out ---- */
+function mkSolidLayout(){ if(!window.MakerSolids||!MakerSolids.kinds[MK.mode]) return null; const b=MakerSolids.build(MK.mode,(MK.sol||{})[MK.mode]), z=b.mesh.size; const c=mkRgb(MK.solInk);
+  return {solid:true,kind:MK.mode,p:b.p,mesh:b.mesh,size:[mkRound(z[0]),mkRound(z[1]),mkRound(z[2])],cols:Math.ceil(z[0]),rows:Math.ceil(z[1]),res:1,parts:[],palette:[c],color:c,checks:b.checks,print:b.print,smooth:MK.mode==="vase",up:true}; }
+function mkSolidUI(force){ const box=MK.node&&MK.node.querySelector("#mkSolid"); if(!box||mkFam()!=="solid"||!window.MakerSolids) return; const kind=MK.mode, K=MakerSolids.kinds[kind]; if(!K||(!force&&box.dataset.kind===kind)) return; box.dataset.kind=kind;
+  const p=MakerSolids.values(kind,(MK.sol||{})[kind]);
+  box.innerHTML=`<div class="k">Style</div><div class="tiles lbl" id="mkSolStyle" style="flex-wrap:wrap">${K.styles.map((x,i)=>`<button type="button" data-st="${i}" style="flex:1 0 30%">${esc(x[0])}</button>`).join("")}</div>`+K.params.map(q=>mkSl("mkSol_"+q.k,q.label,q.min,q.max,q.step,p[q.k],q.unit===""?" ":q.unit)+(q.hint?`<p class="hint">${esc(q.hint)}</p>`:"")).join("")+K.flags.map(q=>`<label class="chk" style="margin-top:12px"><input type="checkbox" id="mkSol_${q.k}" ${p[q.k]?"checked":""}> ${esc(q.label)}</label>${q.hint?`<p class="hint">${esc(q.hint)}</p>`:""}`).join("");
+  const put=o=>{ MK.sol=Object.assign({},MK.sol,{[kind]:Object.assign({},(MK.sol||{})[kind],o)}); };
+  for(const q of K.params){ const n=box.querySelector("#mkSol_"+q.k), r=box.querySelector("#mkSol_"+q.k+"R"); r.oninput=()=>{ n.value=r.value; put({[q.k]:+r.value}); lbPreview(90); };
+    n.onchange=()=>{ const v=Math.min(q.max,Math.max(q.min,Number.isFinite(+n.value)&&n.value!==""?+n.value:q.def)); n.value=v; r.value=v; put({[q.k]:v}); lbPreview(0); }; }
+  for(const q of K.flags) box.querySelector("#mkSol_"+q.k).onchange=e=>{ put({[q.k]:e.target.checked}); lbPreview(0); };
+  box.querySelector("#mkSolStyle").onclick=e=>{ const b=e.target.closest("[data-st]"); if(!b) return; put(K.styles[+b.dataset.st][1]); mkSolidUI(true); lbPreview(0); mkCommitNow(); }; }
+/* the 3D view as a square picture (plate thumbnail, My designs) */
+function mkSolidShot(){ try{ const T=MK.three; if(!T||!T.canvas.width) return null; T.render(); const s=Math.min(T.canvas.width,T.canvas.height), cv=document.createElement("canvas"); cv.width=cv.height=512; const x=cv.getContext("2d"); x.fillStyle="#f2f2f2"; x.fillRect(0,0,512,512); x.drawImage(T.canvas,(T.canvas.width-s)/2,(T.canvas.height-s)/2,s,s,0,0,512,512); return cv; }catch{ return null; } }
+function mkHasContent(){ return mkFam()==="solid"?true:MK.mode==="qr"?!!(MK.qrText||"").trim():mkFam()==="sign"?!!(MK.text||"").trim():MK.els.some(mkElOk); }
 function mkExport(){ if(MK.busy) return; if(!mkHasContent()){ toast(MK.mode==="qr"?"Type the link or text for the code first.":mkFam()==="sign"?"Type your sign text first.":"Add an image, some text or a shape first."); return; }
   let off=false; try{ off=localStorage.getItem(MK_TIPKEY)==="1"; }catch{}
   if(mkFam()==="lightbox"&&!MK.holes.length&&!off) mkHoleTip(); else mkPrinterDlg(); }
@@ -1175,6 +1204,11 @@ async function lbBuild(){ if(MK.busy) return; if(!mkHasContent()){ toast("Add an
   MK.busy=true; const m=MK.node, st=m.querySelector("#lbStat"), btn=m.querySelector("#mkExport"); btn.disabled=true; btn.textContent="Exporting…"; st.textContent="Building the print files…"; await new Promise(r=>setTimeout(r,30));
   try{ const name=MK.name||mkDefName(); const slug=lbSlug(name); const parts=[]; const stl=MK.withStl!==false; MK.meta={}; let sealed={ok:true,n:0,bad:0,mode:MK.mode}, plates=[];
     if(mkFam()==="litho"){ const src=mkSource(); const {w,h}=lbDims(src); const cell=MK.lres; const cols=Math.round(w/cell)+1, rows=Math.round(h/cell)+1; const T=lbThick(lbGrey(src,cols,rows)); let tri=lbGridSolid(cols,rows,cell,(c,r)=>T[(rows-1-r)*cols+c]); const flat=MK.mode==="relief"; if(!flat){ if(MK.arc>0) tri=lbBend(tri,(cols-1)*cell,MK.arc); tri=lbStandUp(tri); } parts.push({name:slug+(flat?"-relief.stl":"-lithophane.stl"),blob:lbSTL(tri,name),label:flat?"Relief STL":"Lithophane STL"}); sealed.n=1; MK.meta={w,h}; }
+    else if(mkFam()==="solid"){ const L=mkSolidLayout(); if(!L) throw new Error("no shape"); const mesh={name:mkTitle(),color:L.color,verts:L.mesh.verts,tris:L.mesh.tris}; if(!MakerGeo.sealed(mesh)){ sealed.ok=false; sealed.bad=1; } sealed.n=1;
+      const objects=[{name:mkTitle(),plateName:mkTitle(),plate:1,parts:[mesh]}]; plates=[1]; const thumbs={}, shot=mkSolidShot(); if(shot){ const t=await new Promise(r=>shot.toBlob(async b=>{ try{ r(b?new Uint8Array(await b.arrayBuffer()):null); }catch{ r(null); } },"image/png")); if(t) thumbs[1]=t; }
+      await mkPresets(); const pr=await MakerBambu.project({title:name,printer:MK.printer,nozzle:MK.nozzle,presets:window.MakerBambuPresets,objects,thumbs});
+      parts.push({name:slug+".3mf",blob:new Blob([pr.bytes],{type:"model/3mf"}),label:"Bambu Studio project (1 plate, colour set)"}); if(stl) parts.push({name:slug+".stl",blob:new Blob([MakerBambu.stl(mesh,name)]),label:"STL"});
+      MK.meta={up:true,solid:true,spiral:!!L.p.spiral,w:L.size[0],h:L.size[1],tall:L.size[2],palette:[mkHex(L.color)],parts:1,plates:1,filaments:pr.filaments.map(f=>f.hex),preset:pr.preset}; }
     else { /* cut from a finer layout than the one on screen, with the very same colours */
       const L=mkLayout({fine:true,qpal:MK.L&&MK.L.qpal}); if(!L) throw new Error("no source"); const ms=mkMeshes(L);
       const pm=L.parts.map((p,i)=>({name:p.name,color:p.fil||p.color,verts:ms[i].verts,tris:ms[i].tris,lid:!!p.lid})).filter(x=>x.tris.length), front=pm.filter(x=>!x.lid), lid=pm.filter(x=>x.lid);
@@ -1200,7 +1234,7 @@ async function lbBuild(){ if(MK.busy) return; if(!mkHasContent()){ toast("Add an
   MK.busy=false; btn.disabled=false; btn.textContent="Export"; }
 async function lbDownloadZip(list,zipName){ try{ const files=[]; for(const p of list) files.push({name:p.name,data:new Uint8Array(await p.blob.arrayBuffer())});
   const made=`Made for the ${mkPrinterName()} with a ${MK.nozzle} mm nozzle.\r\n`;
-  files.push({name:"HOW TO PRINT.txt",data:made+(MK.mode==="relief"?"Open the .stl in Bambu Studio. It lies flat with the picture up. 0.12 mm layers show the most detail. Any colour, no supports.\r\n":mkFam()==="litho"?"Open the .stl in Bambu Studio. White PLA, 0.12 mm layers, 100% infill, print standing up.\r\n":"Open the .3mf in Bambu Studio (File, Open Project, or double-click it). The printer, the plates and the filament colours are already set: load the filaments in the colours shown, then Slice and Print. "+(MK.meta&&MK.meta.up?"It prints face up.":"The front prints face down (colours first).")+"\r\n"+(MK.mode==="stamp"?"Plate 2 is the handle: glue it to the flat back of the stamp. TPU makes a soft stamp; with PLA, press onto a foam pad.\r\n":"")+(MK.mode==="painting"&&MK.meta&&MK.meta.swaps&&MK.meta.swaps.length?"No AMS? Print it in one go with filament swaps: start with "+MK.meta.paintBase+", then add a pause in Bambu Studio (right-click the layer slider, Add Pause) and change filament at: "+MK.meta.swaps.map(x=>x[0]+" mm to "+x[1]).join(", ")+".\r\n":"")+(MK.mode==="magnet"?"Press or glue the magnets into the pockets on the back.\r\n":"")+(mkFam()==="lightbox"?"Plate 2 is the back cover: it prints flat side down. Glue the lights to the inside through the back, then press the cover in.\r\n"+(MK.stand?"The base prints on plate 2 next to the back cover, open side up. Stand the box in it.\r\n":""):"")+"The STL files are the same parts in one colour, if you'd rather paint or use one filament.\r\n")});
+  files.push({name:"HOW TO PRINT.txt",data:made+(MK.mode==="relief"?"Open the .stl in Bambu Studio. It lies flat with the picture up. 0.12 mm layers show the most detail. Any colour, no supports.\r\n":mkFam()==="litho"?"Open the .stl in Bambu Studio. White PLA, 0.12 mm layers, 100% infill, print standing up.\r\n":mkFam()==="solid"?"Open the .3mf in Bambu Studio (File, Open Project, or double-click it). The printer and the filament colour are already set: Slice and Print. It prints standing up with no supports.\r\n"+(MK.meta&&MK.meta.spiral?"This is a solid shape for spiral vase mode: in Bambu Studio turn on Others, Special mode, Spiral vase before you slice.\r\n":MK.mode==="vase"?"For a vase that holds water, set 3 or more wall loops and 100% infill for the bottom layers.\r\n":""):"Open the .3mf in Bambu Studio (File, Open Project, or double-click it). The printer, the plates and the filament colours are already set: load the filaments in the colours shown, then Slice and Print. "+(MK.meta&&MK.meta.up?"It prints face up.":"The front prints face down (colours first).")+"\r\n"+(MK.mode==="stamp"?"Plate 2 is the handle: glue it to the flat back of the stamp. TPU makes a soft stamp; with PLA, press onto a foam pad.\r\n":"")+(MK.mode==="painting"&&MK.meta&&MK.meta.swaps&&MK.meta.swaps.length?"No AMS? Print it in one go with filament swaps: start with "+MK.meta.paintBase+", then add a pause in Bambu Studio (right-click the layer slider, Add Pause) and change filament at: "+MK.meta.swaps.map(x=>x[0]+" mm to "+x[1]).join(", ")+".\r\n":"")+(MK.mode==="magnet"?"Press or glue the magnets into the pockets on the back.\r\n":"")+(mkFam()==="lightbox"?"Plate 2 is the back cover: it prints flat side down. Glue the lights to the inside through the back, then press the cover in.\r\n"+(MK.stand?"The base prints on plate 2 next to the back cover, open side up. Stand the box in it.\r\n":""):"")+"The STL files are the same parts in one colour, if you'd rather paint or use one filament.\r\n")});
   const z=mkZip(files); return (await lbDownload({name:zipName,blob:new Blob([z],{type:"application/zip"})}))!==false; }catch(e){ console.error("maker zip",e); toast("Couldn't package the files. Try again."); return false; } }
 async function lbDownload(p){ if(!p||!p.blob) return; return dlBlob(p.name,p.blob); }
 /* ---- My designs: kept in this browser as you work (up to 30) ---- */
@@ -1210,7 +1244,7 @@ function mkDraftsSave(list){ try{ localStorage.setItem(MK_DKEY,JSON.stringify(li
 let mkAutoT=null, mkSpaceWarned=false;
 function mkAutosave(){ clearTimeout(mkAutoT); mkAutoT=setTimeout(mkSaveDraftNow,1200); }
 function mkThumb(){ try{ const L=MK.L; const t=document.createElement("canvas"); t.width=320; t.height=240; const x=t.getContext("2d"); x.fillStyle="#efefef"; x.fillRect(0,0,320,240);
-    const img=L&&!L.litho?mkFaceCells(L,false).face:(mkSource()||{}).img; if(img){ const sc=Math.min(250/img.width,180/img.height), w=Math.max(1,img.width*sc), h=Math.max(1,img.height*sc); x.drawImage(mkUp(img,w,h),(320-w)/2,(240-h)/2); }
+    const img=L&&L.solid?mkSolidShot():L&&!L.litho?mkFaceCells(L,false).face:(mkSource()||{}).img; if(img){ const sc=Math.min(250/img.width,180/img.height), w=Math.max(1,img.width*sc), h=Math.max(1,img.height*sc); x.drawImage(mkUp(img,w,h),(320-w)/2,(240-h)/2); }
     return t.toDataURL("image/jpeg",0.78); }catch{ return ""; } }
 function mkSaveDraftNow(){ clearTimeout(mkAutoT); if(!MK.node) return; if(!mkHasContent()) return; if(!MK.draftId) MK.draftId=mkId("d");
   const pics={}; for(const e of MK.els) if(e.type==="image"&&!pics[e.pic]){ const p=MK.pics.get(e.pic); if(p) pics[e.pic]=p.data; }
