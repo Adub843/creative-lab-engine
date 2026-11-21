@@ -31,11 +31,12 @@ svg.i{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6;stro
 #lbName::placeholder{color:var(--fg);opacity:1}#lbName:hover{border-color:var(--line)}#lbName:focus{outline:none;border-color:var(--line2);background:var(--field)}
 .modemenu{position:relative;margin-left:8px}.modemenu>.btn{color:var(--muted);border-color:var(--line);padding:4px 8px 4px 10px;font-size:12.5px}
 .menu{position:absolute;z-index:30;background:var(--card);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.14);padding:4px;display:grid;min-width:180px}
+#mkModes{max-height:min(560px,calc(100vh - 70px));overflow-y:auto;grid-template-columns:1fr 1fr}@media (max-width:700px){#mkModes{grid-template-columns:1fr}}
 .menu button{font:inherit;font-size:13px;text-align:left;border:0;background:none;color:var(--fg);padding:7px 10px;border-radius:5px;cursor:pointer;white-space:nowrap}
 .menu button:hover,.menu button[aria-current="true"],.menu button[aria-checked="true"]{background:var(--raise)}
 .menu button b{font-weight:600}.menu button small{display:block;color:var(--muted);font-size:11.5px;white-space:normal}
 .menu button.danger{color:#b42318}
-#mkModes{top:calc(100% + 6px);left:0;width:290px}
+#mkModes{top:calc(100% + 6px);left:0;width:min(580px,92vw)}
 .menu.float{position:fixed;z-index:60;min-width:160px}
 .seg{display:inline-flex;background:var(--raise);border:1px solid var(--line);border-radius:7px;padding:2px;gap:2px}
 .seg button{font:inherit;font-size:13px;font-weight:500;border:0;background:none;color:var(--muted);padding:5px 22px;border-radius:5px;cursor:pointer;white-space:nowrap}
